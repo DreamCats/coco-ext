@@ -2,10 +2,8 @@ module github.com/DreamCats/coco-repo
 
 go 1.24.11
 
-replace github.com/DreamCats/coco-acp-sdk => ../coco-acp-sdk
-
 require (
-	github.com/DreamCats/coco-acp-sdk v0.0.0-00010101000000-000000000000
+	github.com/DreamCats/coco-acp-sdk v0.1.0
 	github.com/fatih/color v1.18.0
 	github.com/spf13/cobra v1.10.2
 )
