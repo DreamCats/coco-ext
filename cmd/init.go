@@ -67,6 +67,11 @@ func runInit(cmd *cobra.Command, args []string) error {
 	}
 	defer gen.Close()
 
+	// 打印 daemon 信息
+	if pid, sessionID, modelID, uptime, err := gen.Info(); err == nil {
+		fmt.Printf("  daemon pid=%d, session=%s, model=%s, uptime=%s\n", pid, sessionID, modelID, uptime)
+	}
+
 	summary := scanResult.Summary()
 
 	// 按顺序生成：glossary → architecture → patterns → gotchas

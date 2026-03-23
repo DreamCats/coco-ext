@@ -25,6 +25,15 @@ func New(repoPath string) (*Generator, error) {
 	return &Generator{conn: conn, modelID: config.DefaultModel}, nil
 }
 
+// Info 获取 daemon 状态信息（PID、SessionID、ModelID、Uptime）
+func (g *Generator) Info() (pid int, sessionID, modelID, uptime string, err error) {
+	resp, err := g.conn.Status()
+	if err != nil {
+		return 0, "", "", "", err
+	}
+	return resp.PID, resp.SessionID, resp.ModelID, resp.Uptime, nil
+}
+
 // Close 关闭连接
 func (g *Generator) Close() {
 	if g.conn != nil {
