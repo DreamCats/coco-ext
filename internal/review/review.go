@@ -5,18 +5,18 @@ import (
 	"strings"
 
 	"github.com/DreamCats/coco-ext/internal/generator"
-	"github.com/DreamCats/coco-ext/internal/gitlab"
+	"github.com/DreamCats/coco-ext/internal/git"
 )
 
 const reviewPromptTemplate = `## Code Review 任务
 
-请对以下 GitLab Merge Request 进行 Code Review。
+请对以下代码变更进行 Code Review。
 
-### MR 信息
-- **标题**: %s
+### 变更信息
+- **分支**: %s → %s
+- **提交**: %s
 - **作者**: %s
-- **源分支**: %s → **目标分支**: %s
-- **链接**: %s
+- **变更统计**: +%d -%d，%d 个文件
 
 ### 代码变更 (diff)
 %s
@@ -52,7 +52,7 @@ const reviewPromptTemplate = `## Code Review 任务
 - 边界条件是否有测试
 
 ### 6. 影响面评估 (Impact)
-- 这个 MR 会影响哪些模块
+- 这个变更会影响哪些模块
 - 是否有破坏性变更
 - 是否需要同步修改相关文档
 
@@ -68,7 +68,7 @@ const reviewPromptTemplate = `## Code Review 任务
 
 ### 概要
 - 整体评价
-- 建议的 merge 策略（可以直接合并 / 需要修改后合并 / 建议拒绝）
+- 建议（可以直接合并 / 需要修改后合并 / 建议撤销）
 
 ### 详细 Review
 #### 正确性
@@ -77,7 +77,14 @@ const reviewPromptTemplate = `## Code Review 任务
 #### 安全性
 [详细说明]
 
-...
+#### 性能
+[详细说明]
+
+#### 可维护性
+[详细说明]
+
+#### 测试
+[详细说明]
 
 ### 影响面评估
 [详细说明]
@@ -94,14 +101,16 @@ const reviewPromptTemplate = `## Code Review 任务
 `
 
 // GenerateReport 生成 review 报告
-func GenerateReport(gen *generator.Generator, mrInfo *gitlab.MRInfo, diff string, onChunk func(string)) (string, error) {
+func GenerateReport(gen *generator.Generator, diffInfo *git.DiffInfo, onChunk func(string)) (string, error) {
 	prompt := fmt.Sprintf(reviewPromptTemplate,
-		mrInfo.Title,
-		mrInfo.Author,
-		mrInfo.SourceBranch,
-		mrInfo.TargetBranch,
-		mrInfo.WebURL,
-		truncateDiff(diff, 50000), // 限制 diff 长度
+		diffInfo.SourceBranch,
+		diffInfo.TargetBranch,
+		diffInfo.CommitMessage,
+		diffInfo.Author,
+		diffInfo.Additions,
+		diffInfo.Deletions,
+		diffInfo.FileCount,
+		truncateDiff(diffInfo.Diff, 50000), // 限制 diff 长度
 	)
 
 	result, err := gen.Prompt(prompt, onChunk)
