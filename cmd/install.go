@@ -111,6 +111,14 @@ exit 0
 func installPreCommitHook(repoRoot string) error {
 	color.Cyan("正在安装 pre-commit hook...")
 
+	// 检测 goimports 是否安装
+	if !isCommandAvailable("goimports") {
+		color.Yellow("⚠ goimports 未安装，pre-commit hook 将无法工作")
+		color.Yellow("  请运行: go install golang.org/x/tools/cmd/goimports@latest")
+	} else {
+		color.Green("✓ goimports 已安装")
+	}
+
 	hooksDir := filepath.Join(repoRoot, ".git", "hooks")
 	if err := os.MkdirAll(hooksDir, 0755); err != nil {
 		return fmt.Errorf("创建 hooks 目录失败: %w", err)
@@ -153,6 +161,12 @@ exit 0
 
 	color.Green("✓ pre-commit hook 已安装")
 	return nil
+}
+
+// isCommandAvailable 检测命令是否可用
+func isCommandAvailable(name string) bool {
+	cmd := exec.Command("command", "-v", name)
+	return cmd.Run() == nil
 }
 
 // syncSkills 同步 skills 到 ~/.trae/skills/
