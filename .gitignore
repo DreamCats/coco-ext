@@ -13,3 +13,6 @@ dist/
 # Test
 *.test
 *.out
+
+# Livecoding
+.livecoding/

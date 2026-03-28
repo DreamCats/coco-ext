@@ -8,10 +8,10 @@ import (
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 
-	"github.com/DreamCats/coco-repo/internal/config"
-	"github.com/DreamCats/coco-repo/internal/generator"
-	"github.com/DreamCats/coco-repo/internal/knowledge"
-	"github.com/DreamCats/coco-repo/internal/scanner"
+	"github.com/DreamCats/coco-ext/internal/config"
+	"github.com/DreamCats/coco-ext/internal/generator"
+	"github.com/DreamCats/coco-ext/internal/knowledge"
+	"github.com/DreamCats/coco-ext/internal/scanner"
 )
 
 var forceInit bool

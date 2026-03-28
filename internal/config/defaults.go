@@ -16,7 +16,7 @@ const (
 // DefaultConfigDir 返回用户级配置目录
 func DefaultConfigDir() string {
 	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".config", "coco-repo")
+	return filepath.Join(home, ".config", "coco-ext")
 }
 
 // KnowledgeFiles 知识文件列表及说明

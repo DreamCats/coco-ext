@@ -1,4 +1,4 @@
-module github.com/DreamCats/coco-repo
+module github.com/DreamCats/coco-ext
 
 go 1.24.11
 

@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"github.com/DreamCats/coco-acp-sdk/daemon"
-	"github.com/DreamCats/coco-repo/internal/config"
+	"github.com/DreamCats/coco-ext/internal/config"
 )
 
 // Generator 知识文件生成器

@@ -5,7 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/DreamCats/coco-repo/internal/config"
+	"github.com/DreamCats/coco-ext/internal/config"
 )
 
 // EnsureDir 确保 .context/ 目录存在

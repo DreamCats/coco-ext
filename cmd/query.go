@@ -8,7 +8,7 @@ import (
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 
-	"github.com/DreamCats/coco-repo/internal/knowledge"
+	"github.com/DreamCats/coco-ext/internal/knowledge"
 )
 
 var queryFile string
@@ -40,7 +40,7 @@ func runQuery(cmd *cobra.Command, args []string) error {
 	}
 
 	if len(files) == 0 {
-		return fmt.Errorf(".livecoding/context/ 为空，请先运行 coco-repo init")
+		return fmt.Errorf(".livecoding/context/ 为空，请先运行 coco-ext init")
 	}
 
 	found := false

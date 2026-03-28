@@ -7,7 +7,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/DreamCats/coco-acp-sdk/daemon"
-	"github.com/DreamCats/coco-repo/internal/config"
+	"github.com/DreamCats/coco-ext/internal/config"
 )
 
 var daemonCwd string

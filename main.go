@@ -1,6 +1,6 @@
 package main
 
-import "github.com/DreamCats/coco-repo/cmd"
+import "github.com/DreamCats/coco-ext/cmd"
 
 // 通过 ldflags 注入
 var (

@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/DreamCats/coco-repo/internal/config"
+	"github.com/DreamCats/coco-ext/internal/config"
 )
 
 // FileStatus 单个知识文件的状态

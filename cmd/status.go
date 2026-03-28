@@ -8,8 +8,8 @@ import (
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 
-	"github.com/DreamCats/coco-repo/internal/config"
-	"github.com/DreamCats/coco-repo/internal/knowledge"
+	"github.com/DreamCats/coco-ext/internal/config"
+	"github.com/DreamCats/coco-ext/internal/knowledge"
 )
 
 var statusCmd = &cobra.Command{
@@ -35,7 +35,7 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	}
 
 	if !st.Exists {
-		color.Yellow(".livecoding/context/ 目录不存在，请先运行 coco-repo init")
+		color.Yellow(".livecoding/context/ 目录不存在，请先运行 coco-ext init")
 		return nil
 	}
 

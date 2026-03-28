@@ -10,9 +10,9 @@ import (
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 
-	"github.com/DreamCats/coco-repo/internal/config"
-	"github.com/DreamCats/coco-repo/internal/generator"
-	"github.com/DreamCats/coco-repo/internal/knowledge"
+	"github.com/DreamCats/coco-ext/internal/config"
+	"github.com/DreamCats/coco-ext/internal/generator"
+	"github.com/DreamCats/coco-ext/internal/knowledge"
 )
 
 var commitRange string
@@ -38,7 +38,7 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 	// 检查 .livecoding/context/ 是否存在
 	contextDir := filepath.Join(repoRoot, config.ContextDir)
 	if _, err := os.Stat(contextDir); err != nil {
-		return fmt.Errorf(".livecoding/context/ 不存在，请先运行 coco-repo init")
+		return fmt.Errorf(".livecoding/context/ 不存在，请先运行 coco-ext init")
 	}
 
 	// 1. 获取 git diff

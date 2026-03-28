@@ -1,4 +1,4 @@
-APP_NAME := coco-repo
+APP_NAME := coco-ext
 VERSION := v0.1.0
 GIT_COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 BUILD_DATE := $(shell date -u +%Y-%m-%d)

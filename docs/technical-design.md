@@ -1,4 +1,4 @@
-# coco-repo 技术设计文档
+# coco-ext 技术设计文档
 
 > 日期：2026-03-22
 > 状态：Draft
@@ -8,18 +8,18 @@
 
 ## 1. 项目定位
 
-coco-repo 是一个仓库级代码上下文知识库生成工具。CLI 命令名为 `coco-repo`。通过调用 coco ACP 的代码理解能力，自动扫描分析目标仓库，生成并维护 `.livecoding/context/` 目录下的业务知识文件，让后续 AI 编码具备业务上下文。
+coco-ext 是一个仓库级代码上下文知识库生成工具。CLI 命令名为 `coco-ext`。通过调用 coco ACP 的代码理解能力，自动扫描分析目标仓库，生成并维护 `.livecoding/context/` 目录下的业务知识文件，让后续 AI 编码具备业务上下文。
 
 ## 2. 核心命令
 
 | 命令 | 用途 | 触发方式 |
 |------|------|----------|
-| `coco-repo init` | 首次为仓库生成知识库 | 人工执行 |
-| `coco-repo update` | 基于 git diff 增量更新知识文件 | commit hook 或人工执行 |
-| `coco-repo query` | 查询知识库内容 | MCP 工具调用 / 人工执行 |
-| `coco-repo status` | 查看知识库状态和覆盖率 | 人工执行 |
+| `coco-ext init` | 首次为仓库生成知识库 | 人工执行 |
+| `coco-ext update` | 基于 git diff 增量更新知识文件 | commit hook 或人工执行 |
+| `coco-ext query` | 查询知识库内容 | MCP 工具调用 / 人工执行 |
+| `coco-ext status` | 查看知识库状态和覆盖率 | 人工执行 |
 
-暂不实现 `coco-repo config`，所有配置硬编码默认值。
+暂不实现 `coco-ext config`，所有配置硬编码默认值。
 
 ## 3. 知识文件结构
 
@@ -34,17 +34,17 @@ coco-repo 是一个仓库级代码上下文知识库生成工具。CLI 命令名
 ## 4. 项目结构
 
 ```
-coco-repo/
+coco-ext/
 ├── main.go                         # 入口，ldflags 注入版本信息
 ├── Makefile                        # build / test / install
-├── go.mod                          # module github.com/DreamCats/coco-repo
+├── go.mod                          # module github.com/DreamCats/coco-ext
 ├── cmd/                            # cobra 命令定义
-│   ├── root.go                     # coco-repo 根命令
-│   ├── init.go                     # coco-repo init
-│   ├── update.go                   # coco-repo update
-│   ├── query.go                    # coco-repo query
-│   ├── status.go                   # coco-repo status
-│   └── version.go                  # coco-repo version
+│   ├── root.go                     # coco-ext 根命令
+│   ├── init.go                     # coco-ext init
+│   ├── update.go                   # coco-ext update
+│   ├── query.go                    # coco-ext query
+│   ├── status.go                   # coco-ext status
+│   └── version.go                  # coco-ext version
 ├── internal/
 │   ├── scanner/                    # 仓库扫描
 │   │   └── scanner.go              # 分析代码结构、核心类型、RPC 接口
@@ -77,13 +77,13 @@ coco-repo/
 
 ## 6. coco-acp-sdk 连接配置
 
-当前硬编码默认值，后续可通过 `coco-repo config` 命令开放配置。
+当前硬编码默认值，后续可通过 `coco-ext config` 命令开放配置。
 
 ```go
 // internal/config/defaults.go
 
 const (
-    DefaultConfigDir = "~/.config/coco-repo"
+    DefaultConfigDir = "~/.config/coco-ext"
     DefaultModel     = "Doubao-Seed-2.0-Code"
     ContextDir       = ".context"
 )
@@ -107,7 +107,7 @@ conn, err := daemon.Dial(repoPath, config.DefaultDialOption())
 
 ## 7. 命令详细设计
 
-### 7.1 coco-repo init
+### 7.1 coco-ext init
 
 **流程：**
 
@@ -120,7 +120,7 @@ conn, err := daemon.Dial(repoPath, config.DefaultDialOption())
 
 **生成顺序：** glossary → architecture → patterns → gotchas（有依赖关系，术语表优先）
 
-### 7.2 coco-repo update
+### 7.2 coco-ext update
 
 **流程：**
 
@@ -132,7 +132,7 @@ conn, err := daemon.Dial(repoPath, config.DefaultDialOption())
 
 **触发方式：** 可配置为 git commit hook（`post-commit`）或人工执行。
 
-### 7.3 coco-repo query
+### 7.3 coco-ext query
 
 **流程：**
 
@@ -140,9 +140,9 @@ conn, err := daemon.Dial(repoPath, config.DefaultDialOption())
 2. 在 `.livecoding/context/` 知识文件中搜索匹配内容
 3. 返回结构化结果（术语定义、代码位置、相关模式等）
 
-**设计为 MCP 工具：** coco 编码时可通过 MCP 协议调用 `coco-repo query` 获取业务上下文，无需人工喂信息。
+**设计为 MCP 工具：** coco 编码时可通过 MCP 协议调用 `coco-ext query` 获取业务上下文，无需人工喂信息。
 
-### 7.4 coco-repo status
+### 7.4 coco-ext status
 
 **输出示例：**
 
