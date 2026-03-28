@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -10,6 +11,7 @@ import (
 )
 
 var daemonCwd string
+var daemonIdleTimeout string
 
 var daemonCmd = &cobra.Command{
 	Use:    "daemon",
@@ -26,7 +28,16 @@ var daemonStartCmd = &cobra.Command{
 			daemonCwd = "."
 		}
 
-		server := daemon.NewServer(configDir, daemonCwd)
+		var idleTimeout time.Duration
+		if daemonIdleTimeout != "" {
+			var err error
+			idleTimeout, err = time.ParseDuration(daemonIdleTimeout)
+			if err != nil {
+				return fmt.Errorf("无效的 idle-timeout 值: %w", err)
+			}
+		}
+
+		server := daemon.NewServer(configDir, daemonCwd, idleTimeout)
 		return server.Run()
 	},
 }
@@ -86,4 +97,5 @@ func init() {
 	daemonCmd.AddCommand(daemonStatusCmd)
 	daemonCmd.AddCommand(daemonStopCmd)
 	daemonStartCmd.Flags().StringVar(&daemonCwd, "cwd", "", "工作目录")
+	daemonStartCmd.Flags().StringVar(&daemonIdleTimeout, "idle-timeout", "", "空闲超时时间（如 10m）")
 }
