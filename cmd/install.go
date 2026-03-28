@@ -104,7 +104,7 @@ func syncSkills() error {
 
 	repoSkillsDir := filepath.Join(repoRoot, "skills")
 	if _, err := os.Stat(repoSkillsDir); os.IsNotExist(err) {
-		color.Yellow("⚠ 仓库中没有 .trae/skills 目录，跳过 skills 同步")
+		color.Yellow("⚠ 仓库中没有 skills/ 目录，跳过 skills 同步")
 		return nil
 	}
 
