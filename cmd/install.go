@@ -61,8 +61,9 @@ func installGitHook(repoRoot string) error {
 	hookPath := filepath.Join(hooksDir, "pre-push")
 	hookContent := `#!/bin/bash
 # coco-ext pre-push hook
-# 1. 检测烂 commit message，阻塞 push 并自动优化
-# 2. 仅修改 go.mod/go.sum 时跳过 review
+# 1. 仅修改 go.mod/go.sum 时跳过所有检查
+# 2. 烂 commit message 时阻塞 push 并自动优化
+# 3. 其他情况异步触发 review
 
 BRANCH=$(git rev-parse --abbrev-ref HEAD)
 if [ "$BRANCH" = "HEAD" ]; then
@@ -70,7 +71,14 @@ if [ "$BRANCH" = "HEAD" ]; then
     exit 0
 fi
 
-# 获取最新 commit 的 message
+# 检查是否仅修改了 go.mod/go.sum（这些不需要检查 message 和 review）
+CHANGES=$(git diff --name-only HEAD~1 HEAD 2>/dev/null | grep -v '^$' | grep -v -E '^(go\.mod|go\.sum|go\.mod\.lock)$' | wc -l)
+if [ "$CHANGES" = "0" ]; then
+    echo "仅修改 go.mod/go.sum，跳过检查"
+    exit 0
+fi
+
+# 获取最新 commit 的 message，烂 message 时阻塞 push
 COMMIT_MSG=$(git log -1 --pretty=%B 2>/dev/null | head -n 1 | tr -d '[:space:]')
 if [ -z "$COMMIT_MSG" ] || [ ${#COMMIT_MSG} -lt 10 ]; then
     echo "⚠ commit message 太简短，正在生成更好的 message..."
@@ -79,13 +87,6 @@ if [ -z "$COMMIT_MSG" ] || [ ${#COMMIT_MSG} -lt 10 ]; then
     else
         echo "✗ commit message 优化失败，将使用原 message 推送"
     fi
-fi
-
-# 检查是否仅修改了 go.mod/go.sum
-CHANGES=$(git diff --name-only HEAD~1 HEAD 2>/dev/null | grep -v '^$' | grep -v -E '^(go\.mod|go\.sum|go\.mod\.lock)$' | wc -l)
-if [ "$CHANGES" = "0" ]; then
-    echo "仅修改 go.mod/go.sum，跳过 review"
-    exit 0
 fi
 
 # 执行 review（异步模式，不阻塞 push）
