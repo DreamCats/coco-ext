@@ -35,18 +35,18 @@ make install
 ```bash
 # 1. 初始化 — 首次为仓库生成知识库
 cd /path/to/your/repo
-coco-ext init
+coco-ext context init
 
 # 2. 增量更新 — 基于 git diff 更新知识文件
-coco-ext update
-coco-ext update --range HEAD~3..HEAD   # 指定 commit 范围
+coco-ext context update
+coco-ext context update --range HEAD~3..HEAD   # 指定 commit 范围
 
 # 3. 查询 — 搜索知识库内容
-coco-ext query "讲解卡"
-coco-ext query --file glossary.md "PopCard"
+coco-ext context query "讲解卡"
+coco-ext context query --file glossary.md "PopCard"
 
 # 4. 状态 — 查看知识库覆盖率
-coco-ext status
+coco-ext context status
 
 # 5. Code Review — AI 审查代码变更
 coco-ext review              # 审查最后一个 commit
