@@ -17,13 +17,13 @@ var installSkills bool
 var installCmd = &cobra.Command{
 	Use:   "install",
 	Short: "安装 git hooks 和同步 skills",
-	Long:  "安装 git pre-push/pre-commit/post-commit hook 和同步 skills 到用户目录",
+	Long:  "安装 git pre-push/pre-commit/commit-msg hook 和同步 skills 到用户目录",
 	RunE:  runInstall,
 }
 
 func init() {
 	rootCmd.AddCommand(installCmd)
-	installCmd.Flags().BoolVarP(&installHooks, "hooks", "", true, "安装 git pre-push hook")
+	installCmd.Flags().BoolVarP(&installHooks, "hooks", "", true, "安装 git hooks")
 	installCmd.Flags().BoolVarP(&installSkills, "skills", "", true, "同步 skills 到 ~/.trae/skills/")
 }
 
@@ -40,7 +40,10 @@ func runInstall(cmd *cobra.Command, args []string) error {
 		if err := installPreCommitHook(repoRoot); err != nil {
 			return err
 		}
-		if err := installPostCommitHook(repoRoot); err != nil {
+		if err := installCommitMsgHook(repoRoot); err != nil {
+			return err
+		}
+		if err := removeLegacyPostCommitHook(repoRoot); err != nil {
 			return err
 		}
 	}
@@ -104,37 +107,45 @@ exit 0
 	return nil
 }
 
-// installPostCommitHook 安装 post-commit hook
-func installPostCommitHook(repoRoot string) error {
-	color.Cyan("正在安装 post-commit hook...")
+// installCommitMsgHook 安装 commit-msg hook
+func installCommitMsgHook(repoRoot string) error {
+	color.Cyan("正在安装 commit-msg hook...")
 
 	hooksDir := filepath.Join(repoRoot, ".git", "hooks")
 	if err := os.MkdirAll(hooksDir, 0755); err != nil {
 		return fmt.Errorf("创建 hooks 目录失败: %w", err)
 	}
 
-	hookPath := filepath.Join(hooksDir, "post-commit")
+	hookPath := filepath.Join(hooksDir, "commit-msg")
 	hookContent := `#!/bin/bash
-# coco-ext post-commit hook
+# coco-ext commit-msg hook
 # 1. 烂 commit message 时同步优化 message
-# 2. 使用环境变量防止 amend 触发递归
+# 2. 失败时保留原始 message，不阻塞 commit
 # 3. 输出本次优化耗时
 
-if [ "${COCO_EXT_SKIP_POST_COMMIT:-0}" = "1" ]; then
+MSG_FILE="$1"
+if [ -z "$MSG_FILE" ] || [ ! -f "$MSG_FILE" ]; then
     exit 0
 fi
 
-BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)
-if [ "$BRANCH" = "HEAD" ]; then
+FIRST_LINE=$(sed -n '/^[[:space:]]*#/d;/^[[:space:]]*$/d;p;q' "$MSG_FILE" | tr -d '[:space:]')
+if [ -z "$FIRST_LINE" ] || [ ${#FIRST_LINE} -ge 10 ]; then
     exit 0
 fi
 
-COMMIT_MSG=$(git log -1 --pretty=%B 2>/dev/null | head -n 1 | tr -d '[:space:]')
-if [ -n "$COMMIT_MSG" ] && [ ${#COMMIT_MSG} -ge 10 ]; then
+RAW_FIRST_LINE=$(sed -n '/^[[:space:]]*#/d;/^[[:space:]]*$/d;p;q' "$MSG_FILE")
+case "$RAW_FIRST_LINE" in
+    Merge*|Revert*)
+        exit 0
+        ;;
+esac
+
+if ! git diff --cached --quiet --exit-code; then
+    :
+else
     exit 0
 fi
 
-ORIGINAL_COMMIT_ID=$(git rev-parse --short HEAD 2>/dev/null)
 START_TIME=$(date +%s)
 
 echo "⚠ commit message 太简短，正在优化..."
@@ -144,9 +155,9 @@ echo "   [1/3] 生成规范 commit message..."
 echo "   [2/3] 调用 AI 生成 message..."
 
 mkdir -p .livecoding/logs
-LOG_FILE=".livecoding/logs/gcmsg-${ORIGINAL_COMMIT_ID}-$(date +%Y%m%d%H%M%S).log"
+LOG_FILE=".livecoding/logs/gcmsg-commitmsg-$(date +%Y%m%d%H%M%S).log"
 
-COCO_EXT_SKIP_POST_COMMIT=1 coco-ext gcmsg --amend --changelog --commit-id="$ORIGINAL_COMMIT_ID" 2>&1 | tee "$LOG_FILE"
+coco-ext gcmsg --staged --commit-msg-file "$MSG_FILE" 2>&1 | tee "$LOG_FILE"
 EXIT_CODE=${PIPESTATUS[0]}
 END_TIME=$(date +%s)
 ELAPSED_SECONDS=$((END_TIME - START_TIME))
@@ -157,7 +168,8 @@ if [ $EXIT_CODE -eq 0 ]; then
     echo "⏱ 本次优化耗时: ${ELAPSED_SECONDS}s"
 else
     echo ""
-    echo "✗ 优化失败，请检查日志: $LOG_FILE"
+    echo "⚠ 优化失败，继续使用原始 commit message"
+    echo "日志: $LOG_FILE"
     echo "⏱ 本次优化耗时: ${ELAPSED_SECONDS}s"
 fi
 
@@ -168,7 +180,7 @@ exit 0
 		return fmt.Errorf("写入 hook 失败: %w", err)
 	}
 
-	color.Green("✓ post-commit hook 已安装")
+	color.Green("✓ commit-msg hook 已安装")
 	return nil
 }
 
@@ -359,7 +371,7 @@ var uninstallSkills bool
 var uninstallCmd = &cobra.Command{
 	Use:   "uninstall",
 	Short: "卸载 git hooks 和 skills",
-	Long:  "卸载 git pre-push/pre-commit/post-commit hook 和 skills（仅删除从 coco-ext 安装的部分）",
+	Long:  "卸载 git pre-push/pre-commit/commit-msg hook 和 skills（仅删除从 coco-ext 安装的部分）",
 	RunE:  runUninstall,
 }
 
@@ -380,6 +392,9 @@ func runUninstall(cmd *cobra.Command, args []string) error {
 			return err
 		}
 		if err := removePreCommitHook(repoRoot); err != nil {
+			return err
+		}
+		if err := removeCommitMsgHook(repoRoot); err != nil {
 			return err
 		}
 		if err := removePostCommitHook(repoRoot); err != nil {
@@ -427,6 +442,21 @@ func removePreCommitHook(repoRoot string) error {
 	return nil
 }
 
+func removeCommitMsgHook(repoRoot string) error {
+	color.Cyan("正在卸载 commit-msg hook...")
+	hooksDir := filepath.Join(repoRoot, ".git", "hooks")
+	hookPath := filepath.Join(hooksDir, "commit-msg")
+	if _, err := os.Stat(hookPath); err == nil {
+		if err := os.Remove(hookPath); err != nil {
+			return fmt.Errorf("删除 commit-msg hook 失败: %w", err)
+		}
+		color.Green("✓ commit-msg hook 已卸载")
+	} else {
+		color.Yellow("⚠ commit-msg hook 不存在，跳过")
+	}
+	return nil
+}
+
 func removePostCommitHook(repoRoot string) error {
 	color.Cyan("正在卸载 post-commit hook...")
 	hooksDir := filepath.Join(repoRoot, ".git", "hooks")
@@ -438,6 +468,18 @@ func removePostCommitHook(repoRoot string) error {
 		color.Green("✓ post-commit hook 已卸载")
 	} else {
 		color.Yellow("⚠ post-commit hook 不存在，跳过")
+	}
+	return nil
+}
+
+func removeLegacyPostCommitHook(repoRoot string) error {
+	hooksDir := filepath.Join(repoRoot, ".git", "hooks")
+	hookPath := filepath.Join(hooksDir, "post-commit")
+	if _, err := os.Stat(hookPath); err == nil {
+		if err := os.Remove(hookPath); err != nil {
+			return fmt.Errorf("删除 legacy post-commit hook 失败: %w", err)
+		}
+		color.Green("✓ legacy post-commit hook 已移除")
 	}
 	return nil
 }

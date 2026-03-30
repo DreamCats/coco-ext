@@ -50,15 +50,18 @@ coco-ext context status
 
 # 5. Code Review — AI 审查代码变更
 coco-ext review              # 审查最后一个 commit
-coco-ext review --full      # 审查分支整体 diff
+coco-ext review --full       # 审查分支整体 diff
+coco-ext review --async      # 后台启动 review，立即返回日志和报告目录
 
 # 6. Commit Message 生成 — 自动生成规范 commit message
 coco-ext gcmsg              # 生成 message
 coco-ext gcmsg --amend      # 生成并覆盖上一个 commit
+coco-ext gcmsg --staged     # 基于暂存区 diff 生成 message
+coco-ext gcmsg --commit-msg-file .git/COMMIT_EDITMSG   # 写入 commit message 文件
 
 # 7. 安装钩子 — 一键安装 git hooks
 cd /path/to/your/repo
-coco-ext install            # 安装 pre-push hook + pre-commit hook + 同步 skills
+coco-ext install            # 安装 commit-msg + pre-push + pre-commit hook + 同步 skills
 coco-ext uninstall          # 卸载 hooks + skills（仅删除从 coco-ext 安装的部分）
 
 # 8. Daemon 管理 — 手动管理 coco daemon
@@ -69,14 +72,26 @@ coco-ext daemon stop        # 停止 daemon
 
 ## Git Hooks
 
+### commit-msg hook
+- 烂 commit message（< 10 字符）时，基于暂存区 diff 自动生成规范 message
+- 直接写入 Git 传入的 `COMMIT_EDITMSG`，不再通过 `post-commit` 二次 `amend`
+- AI 生成失败时自动回退到本地兜底 message，不阻塞 commit
+- 输出优化耗时和日志路径，便于排查
+
 ### pre-push hook
-- 烂 commit message（< 10 字符）时阻塞 push，自动 `gcmsg --amend` 优化
 - 仅修改 go.mod/go.sum 时跳过所有检查
 - 异步触发 review，不阻塞 push
+- 会打印 review 触发时间和日志路径，便于对齐 push 与后台任务时序
 
 ### pre-commit hook
 - 自动格式化已修改的 .go 文件（goimports）
 - 保证 import 顺序一致
+
+## 生成与超时策略
+
+- `gcmsg` 优先使用 AI 生成 commit message；当模型输出夹带说明文字时，会自动提取真正的 conventional commit message
+- 如果 AI 生成失败，会根据变更文件生成本地兜底 message（如 `docs: 更新 AGENTS.md`）
+- `review`、`gcmsg`、`context init/update` 走的 AI 调用链统一带 30 秒超时保护，避免长时间卡住
 
 ## 前置依赖
 
@@ -86,6 +101,7 @@ coco-ext daemon stop        # 停止 daemon
 - goimports（用于 pre-commit hook格式化）
 
 > coco daemon 会在首次调用时自动拉起，无需手动启动。
+> 更新 hook 行为后，请在目标仓库重新执行一次 `coco-ext install`。
 
 ## 开发
 

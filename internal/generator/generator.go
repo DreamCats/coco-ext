@@ -66,59 +66,40 @@ func (g *Generator) Generate(name, scanSummary string, onChunk func(string)) (st
 		return "", fmt.Errorf("未知的知识文件: %s", name)
 	}
 
-	var result strings.Builder
-	_, err := g.conn.Prompt(
-		prompt,
-		g.modelID,
-		"",
-		func(text string) {
-			result.WriteString(text)
-			if onChunk != nil {
-				onChunk(text)
-			}
-		},
-		func(kind, title, status string) {
-			// 工具调用回调（暂不处理）
-		},
-	)
+	result, err := g.executePromptWithTimeout(prompt, onChunk)
 	if err != nil {
 		return "", fmt.Errorf("生成 %s 失败: %w", name, err)
 	}
 
-	return result.String(), nil
+	return result, nil
 }
 
 // Update 增量更新知识文件
 func (g *Generator) Update(name, existingContent, diffContent string, onChunk func(string)) (string, error) {
 	prompt := GetUpdatePrompt(name, existingContent, diffContent)
 
-	var result strings.Builder
-	_, err := g.conn.Prompt(
-		prompt,
-		g.modelID,
-		"",
-		func(text string) {
-			result.WriteString(text)
-			if onChunk != nil {
-				onChunk(text)
-			}
-		},
-		func(kind, title, status string) {},
-	)
+	result, err := g.executePromptWithTimeout(prompt, onChunk)
 	if err != nil {
 		return "", fmt.Errorf("更新 %s 失败: %w", name, err)
 	}
 
-	content := result.String()
-	if strings.TrimSpace(content) == "NO_UPDATE" {
+	if strings.TrimSpace(result) == "NO_UPDATE" {
 		return "", nil // 无需更新
 	}
 
-	return content, nil
+	return result, nil
 }
 
 // Prompt 直接发送 prompt，返回完整响应
 func (g *Generator) Prompt(prompt string, onChunk func(string)) (string, error) {
+	result, err := g.executePromptWithTimeout(prompt, onChunk)
+	if err != nil {
+		return "", err
+	}
+	return result, nil
+}
+
+func (g *Generator) executePromptWithTimeout(prompt string, onChunk func(string)) (string, error) {
 	const promptTimeout = 30 * time.Second
 
 	type promptResult struct {

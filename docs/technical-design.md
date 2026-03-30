@@ -130,7 +130,7 @@ conn, err := daemon.Dial(repoPath, config.DefaultDialOption())
 4. 仅对受影响的文件调用 `generator` 局部更新
 5. 写回 `.livecoding/context/`
 
-**触发方式：** 可配置为 git commit hook（`post-commit`）或人工执行。
+**触发方式：** 人工执行；如需自动化，可由外部脚本或 CI 调用。当前默认安装的 Git hooks 不会自动触发 `context update`。
 
 ### 7.3 coco-ext query
 
@@ -163,3 +163,53 @@ conn, err := daemon.Dial(repoPath, config.DefaultDialOption())
 - 文件权限：配置文件 `0600`，目录 `0700`
 - `.livecoding/context/` 应纳入 git 版本管理，团队共享
 - commit message 风格与 byte-auth 保持一致
+
+## 9. Git Hook 设计
+
+当前默认安装 3 个 hook：
+
+### 9.1 commit-msg
+
+- 触发时机：`git commit` 写入 `COMMIT_EDITMSG` 后、真正创建 commit 前
+- 目标：对过短的 commit message 做自动优化
+- 行为：
+  1. 读取 `COMMIT_EDITMSG` 第一行
+  2. 若长度小于 10，则调用 `coco-ext gcmsg --staged --commit-msg-file`
+  3. `gcmsg` 基于暂存区 diff 生成 commit message，并直接写回 `COMMIT_EDITMSG`
+  4. AI 失败时，退回本地兜底 message；若仍失败，则保留原始 message，不阻塞 commit
+
+### 9.2 pre-commit
+
+- 触发时机：`git commit` 创建前
+- 目标：格式化暂存区中的 `.go` 文件
+- 行为：执行 `goimports -w` 并重新 `git add`
+
+### 9.3 pre-push
+
+- 触发时机：`git push` 前
+- 目标：异步触发本地 Code Review，不阻塞 push
+- 行为：
+  1. 若仅修改 `go.mod` / `go.sum` / `go.mod.lock`，直接跳过
+  2. 否则后台执行 `coco-ext review --async`
+  3. 打印 review 触发时间、日志路径和报告目录，便于排查
+
+## 10. gcmsg 设计补充
+
+`gcmsg` 当前支持两类入口：
+
+- **已提交 commit 模式**：默认读取 `HEAD` 的 diff，用于人工执行 `coco-ext gcmsg` 或 `--amend`
+- **暂存区模式**：通过 `--staged` 读取 `git diff --cached`，用于 `commit-msg` hook
+
+输出处理策略：
+
+1. 优先使用 AI 生成 commit message
+2. 若模型输出包含解释性前言或 Markdown 代码块，提取真正的 conventional commit message
+3. 若 AI 失败，则根据变更文件类型生成本地兜底 message，如：
+   - `docs: 更新 AGENTS.md`
+   - `build: 更新 2 个构建配置文件`
+
+## 11. 超时与会话策略
+
+- 每次 `generator.New()` 都会新建一个 coco ACP session，不复用历史 session
+- `Prompt`、`Generate`、`Update` 三条 AI 调用链统一使用 30 秒超时
+- 超时后主动关闭当前 daemon 连接，避免 `gcmsg`、`review` 或知识库生成长时间卡住
