@@ -26,9 +26,6 @@ const (
 
 	// ReviewPromptTimeout review 专用超时，允许更长时间生成报告
 	ReviewPromptTimeout = 3 * time.Minute
-
-	// ReviewAsyncDelay 后台 review 默认延迟启动时间，减少与 git push 的资源竞争
-	ReviewAsyncDelay = 5 * time.Second
 )
 
 const (

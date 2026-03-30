@@ -71,7 +71,7 @@ func installGitHook(repoRoot string) error {
 	hookContent := `#!/bin/bash
 # coco-ext pre-push hook
 # 1. 仅修改 go.mod/go.sum 时跳过所有检查
-# 2. 其他情况异步触发 review
+# 2. 其他情况在 push 结束后后台触发 review
 
 BRANCH=$(git rev-parse --abbrev-ref HEAD)
 if [ "$BRANCH" = "HEAD" ]; then
@@ -86,13 +86,24 @@ if [ "$CHANGES" = "0" ]; then
     exit 0
 fi
 
-# 执行 review（异步模式，不阻塞 push）
+# 排队执行 review（等待当前 push 结束后再后台启动）
 COMMIT_ID=$(git rev-parse --short HEAD 2>/dev/null)
 REVIEW_LAUNCHED_AT=$(date '+%Y-%m-%d %H:%M:%S')
+GIT_PUSH_PID="$PPID"
+GIT_PUSH_STARTED_AT=$(ps -p "$GIT_PUSH_PID" -o lstart= 2>/dev/null | sed 's/^ *//')
 LOG_FILE=".livecoding/logs/review-${COMMIT_ID}-${BRANCH}-$(date +%Y%m%d%H%M%S).log"
 mkdir -p .livecoding/logs
-nohup coco-ext review --async --defer-seconds 5 --low-priority > "$LOG_FILE" 2>&1 < /dev/null &
-echo "Review 已触发: $REVIEW_LAUNCHED_AT"
+( while true; do
+    CURRENT_START=$(ps -p "$GIT_PUSH_PID" -o lstart= 2>/dev/null | sed 's/^ *//')
+    if [ -z "$CURRENT_START" ] || [ "$CURRENT_START" != "$GIT_PUSH_STARTED_AT" ]; then
+        break
+    fi
+    sleep 1
+done
+nohup coco-ext review --async --low-priority > "$LOG_FILE" 2>&1 < /dev/null &
+) >/dev/null 2>&1 &
+echo "Review 已排队: $REVIEW_LAUNCHED_AT"
+echo "Review 将在 push 结束后后台启动"
 echo "Review 日志: $LOG_FILE"
 echo "请在 .livecoding/review/ 目录查看报告"
 
