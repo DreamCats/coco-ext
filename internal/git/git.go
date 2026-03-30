@@ -13,6 +13,7 @@ import (
 type DiffInfo struct {
 	SourceBranch  string `json:"source_branch"`
 	TargetBranch  string `json:"target_branch"`
+	CommitID      string `json:"commit_id"`
 	CommitMessage string `json:"commit_message"`
 	Author        string `json:"author"`
 	Additions     int    `json:"additions"`
@@ -62,8 +63,9 @@ func GetDiffInfo(repoRoot, baseBranch string, fullBranchDiff bool) (*DiffInfo, e
 	additions, deletions, fileCount := parseDiffStats(diff)
 
 	// 获取最新提交信息
-	commitMsg, author, err := getLastCommit(repoRoot)
+	commitID, commitMsg, author, err := getLastCommit(repoRoot)
 	if err != nil {
+		commitID = "unknown"
 		commitMsg = "(无法获取提交信息)"
 		author = "(未知)"
 	}
@@ -71,6 +73,7 @@ func GetDiffInfo(repoRoot, baseBranch string, fullBranchDiff bool) (*DiffInfo, e
 	return &DiffInfo{
 		SourceBranch:  sourceBranch,
 		TargetBranch:  baseBranch,
+		CommitID:      commitID,
 		CommitMessage: commitMsg,
 		Author:        author,
 		Additions:     additions,
@@ -163,19 +166,26 @@ func getDiff(repoRoot, baseBranch, sourceBranch string, fullBranchDiff bool) (st
 	return string(output), nil
 }
 
-// getLastCommit 获取最新提交的标题和作者
-func getLastCommit(repoRoot string) (string, string, error) {
-	cmd := exec.Command("git", "log", "-1", "--format=%s%n%an")
+// getLastCommit 获取最新提交的短 commit ID、标题和作者
+func getLastCommit(repoRoot string) (string, string, string, error) {
+	cmd := exec.Command("git", "log", "-1", "--format=%h %s%n%an")
 	cmd.Dir = repoRoot
 	output, err := cmd.Output()
 	if err != nil {
-		return "", "", err
+		return "", "", "", err
 	}
 	lines := strings.SplitN(strings.TrimSpace(string(output)), "\n", 2)
 	if len(lines) < 2 {
-		return lines[0], "", nil
+		parts := strings.SplitN(lines[0], " ", 2)
+		if len(parts) < 2 {
+			return parts[0], "", "", nil
+		}
+		return parts[0], parts[1], "", nil
 	}
-	return lines[0], lines[1], nil
+	parts := strings.SplitN(lines[0], " ", 2)
+	commitID := parts[0]
+	commitMsg := parts[1]
+	return commitID, commitMsg, lines[1], nil
 }
 
 // parseDiffStats 解析 diff 统计信息

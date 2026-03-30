@@ -68,7 +68,7 @@ internal/
 
 **uninstall 命令**：卸载 git hooks 和 skills（仅删除从 coco-ext 安装的部分，不影响其他来源的 skills）。
 
-**pre-push hook**：仅修改 go.mod/go.sum 时跳过；烂 message（< 10 字符）时阻塞 push，执行 `gcmsg --amend` 后继续；其他情况异步触发 review。
+**pre-push hook**：仅修改 go.mod/go.sum 时跳过；烂 message（< 10 字符）时立即返回（不阻塞），后台异步执行 `gcmsg --amend --changelog --push`，成功后写入 `.livecoding/changelog/`；其他情况异步触发 review。
 
 **pre-commit hook**：检测暂存区中已修改的 .go 文件，运行 `goimports -w` 格式化后重新 add。
 
@@ -80,6 +80,7 @@ internal/
 - CLI 框架：Cobra（`spf13/cobra`）
 - 默认模型：`Doubao-Seed-2.0-Code`（字节跳动模型）
 - 知识文件目录：`.livecoding/context/`（已 gitignore）
+- Changelog 目录：`.livecoding/changelog/`（按分支名组织，记录 commit 优化历史）
 - scanner 跳过的目录：.git, .livecoding, vendor, node_modules, kitex_gen, dist, .idea, .vscode
 - prompt 和用户界面均为中文
 - 版本信息通过 Makefile ldflags 注入到 main 包变量

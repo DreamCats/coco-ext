@@ -63,9 +63,11 @@ func runReview(cmd *cobra.Command, args []string) error {
 	if branchSlug == "" {
 		branchSlug = "current"
 	}
+	// 格式：分支名-短commitid
+	dirName := fmt.Sprintf("%s-%s", branchSlug, diffInfo.CommitID)
 	outputDir := reviewOutputDir
 	if outputDir == "" {
-		outputDir = filepath.Join(repoRoot, config.ReviewOutputDir, branchSlug)
+		outputDir = filepath.Join(repoRoot, config.ReviewOutputDir, dirName)
 	}
 
 	if err := os.MkdirAll(outputDir, 0755); err != nil {

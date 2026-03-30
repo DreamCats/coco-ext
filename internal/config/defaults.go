@@ -14,6 +14,9 @@ const (
 
 	// ReviewOutputDir Review 报告输出目录
 	ReviewOutputDir = ".livecoding/review"
+
+	// ChangelogDir Commit changelog 目录
+	ChangelogDir = ".livecoding/changelog"
 )
 
 // DefaultConfigDir 返回用户级配置目录

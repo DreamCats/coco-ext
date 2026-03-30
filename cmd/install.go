@@ -65,7 +65,7 @@ func installGitHook(repoRoot string) error {
 	hookContent := `#!/bin/bash
 # coco-ext pre-push hook
 # 1. 仅修改 go.mod/go.sum 时跳过所有检查
-# 2. 烂 commit message 时阻塞 push 并自动优化
+# 2. 烂 commit message 时异步优化（不阻塞 push），成功后自动 push
 # 3. 其他情况异步触发 review
 
 BRANCH=$(git rev-parse --abbrev-ref HEAD)
@@ -81,15 +81,18 @@ if [ "$CHANGES" = "0" ]; then
     exit 0
 fi
 
-# 获取最新 commit 的 message，烂 message 时阻塞 push
+# 获取当前 commit 的 message
 COMMIT_MSG=$(git log -1 --pretty=%B 2>/dev/null | head -n 1 | tr -d '[:space:]')
+
+# 烂 message 时：异步优化，不阻塞 push
 if [ -z "$COMMIT_MSG" ] || [ ${#COMMIT_MSG} -lt 10 ]; then
-    echo "⚠ commit message 太简短，正在生成更好的 message..."
-    if coco-ext gcmsg --amend; then
-        echo "✓ commit message 已优化"
-    else
-        echo "✗ commit message 优化失败，将使用原 message 推送"
-    fi
+    echo "⚠ commit message 太简短，将在后台优化..."
+    echo "✓ push 已完成，请在后台任务完成后检查 changelog"
+
+    # 后台执行 gcmsg --amend --changelog --push
+    # gcmsg 内部会检查 changelog 是否有记录，有则复用，无则调用 acp
+    (coco-ext gcmsg --amend --changelog --push) 2>&1 &
+    exit 0
 fi
 
 # 执行 review（异步模式，不阻塞 push）
