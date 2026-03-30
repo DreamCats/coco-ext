@@ -86,6 +86,9 @@ func AnalyzeRelease(facts Facts) ReleaseResult {
 	}
 
 	for _, path := range facts.LargeFiles {
+		if isDocOnlyPath(facts, path) {
+			continue
+		}
 		result.Findings = append(result.Findings, Finding{
 			Severity:   SeverityP2,
 			Source:     "risk-check",
@@ -96,7 +99,7 @@ func AnalyzeRelease(facts Facts) ReleaseResult {
 		})
 	}
 
-	if facts.TotalChangedLines > 500 {
+	if facts.TotalChangedLines > 500 && hasNonDocRiskFiles(facts) {
 		result.Findings = append(result.Findings, Finding{
 			Severity:   SeverityP1,
 			Source:     "risk-check",
@@ -107,6 +110,24 @@ func AnalyzeRelease(facts Facts) ReleaseResult {
 	}
 
 	return result
+}
+
+func hasNonDocRiskFiles(facts Facts) bool {
+	for _, file := range facts.Files {
+		if !file.IsDocLike {
+			return true
+		}
+	}
+	return false
+}
+
+func isDocOnlyPath(facts Facts, path string) bool {
+	for _, file := range facts.Files {
+		if file.Path == path {
+			return file.IsDocLike
+		}
+	}
+	return false
 }
 
 func AnalyzeImpact(facts Facts) ImpactResult {

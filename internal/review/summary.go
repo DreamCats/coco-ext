@@ -19,6 +19,7 @@ func BuildReport(inputs ReportInputs) string {
 	b.WriteString(fmt.Sprintf("> 分支：%s → %s  \n", inputs.Facts.DiffInfo.SourceBranch, inputs.Facts.DiffInfo.TargetBranch))
 	b.WriteString(fmt.Sprintf("> 改动：%d 个文件，+%d/-%d 行  \n", inputs.Facts.DiffInfo.FileCount, inputs.Facts.DiffInfo.Additions, inputs.Facts.DiffInfo.Deletions))
 	b.WriteString(fmt.Sprintf("> 审查时间：%s\n\n", time.Now().Format("2006-01-02 15:04:05")))
+	b.WriteString(renderChangeSummary(inputs.Facts))
 
 	b.WriteString(fmt.Sprintf("## 综合评级：%s\n\n", rating))
 	if inputs.Quality.Summary != "" {
@@ -173,4 +174,58 @@ func renderPathList(paths []string) string {
 		return "无"
 	}
 	return strings.Join(paths, ", ")
+}
+
+func renderChangeSummary(facts Facts) string {
+	docCount := 0
+	goCount := 0
+	configCount := 0
+	idlCount := 0
+	otherCount := 0
+	for _, file := range facts.Files {
+		switch {
+		case file.IsGoLike:
+			goCount++
+		case file.IsDocLike:
+			docCount++
+		case file.IsConfigLike:
+			configCount++
+		case file.IsIDLLike:
+			idlCount++
+		default:
+			otherCount++
+		}
+	}
+
+	var changeType string
+	switch {
+	case len(facts.Files) == 0:
+		changeType = "无变更"
+	case docCount == len(facts.Files):
+		changeType = "文档变更"
+	case goCount == len(facts.Files):
+		changeType = "代码变更"
+	case configCount == len(facts.Files):
+		changeType = "配置变更"
+	default:
+		changeType = "混合变更"
+	}
+
+	mainFiles := make([]string, 0, min(len(facts.Files), 3))
+	for i, file := range facts.Files {
+		if i >= 3 {
+			break
+		}
+		mainFiles = append(mainFiles, file.Path)
+	}
+
+	var b strings.Builder
+	b.WriteString("## 变更摘要\n\n")
+	b.WriteString(fmt.Sprintf("- 变更类型：%s\n", changeType))
+	b.WriteString(fmt.Sprintf("- 文件分布：代码 %d / 文档 %d / 配置 %d / IDL %d / 其他 %d\n", goCount, docCount, configCount, idlCount, otherCount))
+	if len(mainFiles) > 0 {
+		b.WriteString(fmt.Sprintf("- 主要文件：%s\n", strings.Join(mainFiles, ", ")))
+	}
+	b.WriteString("\n")
+	return b.String()
 }
