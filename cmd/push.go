@@ -27,6 +27,10 @@ func runPush(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("获取当前目录失败: %w", err)
 	}
 
+	return triggerPushFlow(repoRoot, args)
+}
+
+func triggerPushFlow(repoRoot string, args []string) error {
 	gitArgs := append([]string{"push"}, args...)
 	gitPushCmd := exec.Command("git", gitArgs...)
 	gitPushCmd.Dir = repoRoot

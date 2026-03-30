@@ -298,7 +298,11 @@ type changedFile struct {
 }
 
 func buildFallbackCommitMsg(repoRoot string) (string, error) {
-	files, err := getChangedFilesForFallback(repoRoot)
+	return buildFallbackCommitMsgWithMode(repoRoot, gcmsgStaged)
+}
+
+func buildFallbackCommitMsgWithMode(repoRoot string, staged bool) (string, error) {
+	files, err := getChangedFilesForFallback(repoRoot, staged)
 	if err != nil {
 		return "", fmt.Errorf("本地兜底 message 生成失败: %w", err)
 	}
@@ -311,9 +315,9 @@ func buildFallbackCommitMsg(repoRoot string) (string, error) {
 	return fmt.Sprintf("%s: %s", prefix, subject), nil
 }
 
-func getChangedFilesForFallback(repoRoot string) ([]changedFile, error) {
+func getChangedFilesForFallback(repoRoot string, staged bool) ([]changedFile, error) {
 	var cmd *exec.Cmd
-	if gcmsgStaged {
+	if staged {
 		args := []string{"diff", "--cached", "--name-status", "--find-renames"}
 		if !hasHead(repoRoot) {
 			args = append(args, "--root")

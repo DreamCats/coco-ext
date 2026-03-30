@@ -64,6 +64,8 @@ internal/
 
 **gcmsg 命令**：基于当前 commit diff 或暂存区 diff 生成规范 commit message；支持 `--amend` 覆盖上一个 commit，也支持 `--commit-msg-file` 直接写入 Git 的 commit message 文件。AI 失败时会退回本地兜底 message。
 
+**submit 命令**：仅处理已 staged 的变更。优先使用用户提供的高质量 message，否则调用 AI 生成；若 AI 失败，则自动使用本地强兜底 message。随后执行 `git commit` 和 `coco-ext push`。
+
 **install 命令**：安装 commit-msg hook（短 message 自动优化）和 pre-commit hook（goimports 格式化），并同步 repo 内置 skills。install 时检测 goimports 是否安装，未安装给出警告，并清理旧的 legacy post-commit / pre-push hook。
 
 **uninstall 命令**：卸载 git hooks 和 skills（仅删除从 coco-ext 安装的部分，不影响其他来源的 skills）。

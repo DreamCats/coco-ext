@@ -64,12 +64,17 @@ cd /path/to/your/repo
 coco-ext push              # 等价于 git push；成功后后台启动 review
 coco-ext push origin main  # 透传 git push 参数
 
-# 8. 安装钩子 — 一键安装 git hooks
+# 8. Submit 工作流命令 — 提交 staged 变更并 push
+cd /path/to/your/repo
+coco-ext submit                  # AI 优先生成 message，失败时自动本地兜底
+coco-ext submit "fix: 调整 hook"  # 若 message 足够规范，则直接使用
+
+# 9. 安装钩子 — 一键安装 git hooks
 cd /path/to/your/repo
 coco-ext install            # 安装 commit-msg + pre-commit hook + 同步 skills
 coco-ext uninstall          # 卸载 hooks + skills（仅删除从 coco-ext 安装的部分）
 
-# 9. Daemon 管理 — 手动管理 coco daemon
+# 10. Daemon 管理 — 手动管理 coco daemon
 coco-ext daemon status      # 查看 daemon 状态
 coco-ext daemon start       # 前台启动 daemon（阻塞）
 coco-ext daemon start -d    # 后台启动 daemon
@@ -93,14 +98,24 @@ coco-ext daemon stop        # 停止 daemon
 - 只有当 push 成功后，才会后台启动 `coco-ext review --async`
 - 这样可以避免 `pre-push` hook 与真实 push 过程互相干扰
 
+## Submit 工作流命令
+
+- `coco-ext submit` 只处理已 staged 的变更，不会默认执行 `git add .`
+- commit message 生成策略：
+  - 高质量用户 message：直接使用
+  - 否则优先 AI 生成
+  - AI 失败或超时：自动使用本地强兜底 message
+- `submit` 成功后会继续执行 `coco-ext push`
+
 ## 内置 Skills
 
-仓库根目录提供 `skills/`，`coco-ext install` 时会同步到 `~/.trae/skills/`。第一版内置 4 个 skill：
+仓库根目录提供 `skills/`，`coco-ext install` 时会同步到 `~/.trae/skills/`。当前内置 5 个 skill：
 
 - `coco-repo-context`：初始化、更新、查询 `.livecoding/context/`
 - `coco-repo-setup`：安装/卸载 hooks 与同步 repo 内置 skills
 - `coco-review`：手动补跑 review、查看异步日志和报告
 - `coco-commit`：生成或排查 commit message，理解 hook 与兜底策略
+- `coco-submit`：基于 staged 变更自动生成 message、commit 并 push
 
 这些 skill 的目标不是替代 CLI，而是把“何时调用、如何排查、产物在哪看”固化下来，方便 AI 在仓库内稳定复用。
 
