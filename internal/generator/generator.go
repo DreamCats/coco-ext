@@ -66,7 +66,7 @@ func (g *Generator) Generate(name, scanSummary string, onChunk func(string)) (st
 		return "", fmt.Errorf("未知的知识文件: %s", name)
 	}
 
-	result, err := g.executePromptWithTimeout(prompt, onChunk)
+	result, err := g.executePromptWithTimeout(prompt, config.DefaultPromptTimeout, onChunk)
 	if err != nil {
 		return "", fmt.Errorf("生成 %s 失败: %w", name, err)
 	}
@@ -78,7 +78,7 @@ func (g *Generator) Generate(name, scanSummary string, onChunk func(string)) (st
 func (g *Generator) Update(name, existingContent, diffContent string, onChunk func(string)) (string, error) {
 	prompt := GetUpdatePrompt(name, existingContent, diffContent)
 
-	result, err := g.executePromptWithTimeout(prompt, onChunk)
+	result, err := g.executePromptWithTimeout(prompt, config.DefaultPromptTimeout, onChunk)
 	if err != nil {
 		return "", fmt.Errorf("更新 %s 失败: %w", name, err)
 	}
@@ -92,16 +92,23 @@ func (g *Generator) Update(name, existingContent, diffContent string, onChunk fu
 
 // Prompt 直接发送 prompt，返回完整响应
 func (g *Generator) Prompt(prompt string, onChunk func(string)) (string, error) {
-	result, err := g.executePromptWithTimeout(prompt, onChunk)
+	result, err := g.executePromptWithTimeout(prompt, config.DefaultPromptTimeout, onChunk)
 	if err != nil {
 		return "", err
 	}
 	return result, nil
 }
 
-func (g *Generator) executePromptWithTimeout(prompt string, onChunk func(string)) (string, error) {
-	const promptTimeout = 30 * time.Second
+// PromptWithTimeout 直接发送 prompt，并使用指定超时
+func (g *Generator) PromptWithTimeout(prompt string, timeout time.Duration, onChunk func(string)) (string, error) {
+	result, err := g.executePromptWithTimeout(prompt, timeout, onChunk)
+	if err != nil {
+		return "", err
+	}
+	return result, nil
+}
 
+func (g *Generator) executePromptWithTimeout(prompt string, timeout time.Duration, onChunk func(string)) (string, error) {
 	type promptResult struct {
 		content string
 		err     error
@@ -130,7 +137,7 @@ func (g *Generator) executePromptWithTimeout(prompt string, onChunk func(string)
 		done <- promptResult{content: result.String()}
 	}()
 
-	timer := time.NewTimer(promptTimeout)
+	timer := time.NewTimer(timeout)
 	defer timer.Stop()
 
 	select {
@@ -144,6 +151,6 @@ func (g *Generator) executePromptWithTimeout(prompt string, onChunk func(string)
 			_ = g.conn.Close()
 			g.conn = nil
 		}
-		return "", fmt.Errorf("prompt 超时（%s）", promptTimeout)
+		return "", fmt.Errorf("prompt 超时（%s）", timeout)
 	}
 }

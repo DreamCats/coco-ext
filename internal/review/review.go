@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/DreamCats/coco-ext/internal/config"
 	"github.com/DreamCats/coco-ext/internal/generator"
 	"github.com/DreamCats/coco-ext/internal/git"
 )
@@ -25,7 +26,7 @@ func GenerateReport(gen *generator.Generator, diffInfo *git.DiffInfo, onChunk fu
 		truncateDiff(diffInfo.Diff, 50000), // 限制 diff 长度
 	)
 
-	result, err := gen.Prompt(prompt, onChunk)
+	result, err := gen.PromptWithTimeout(prompt, config.ReviewPromptTimeout, onChunk)
 	if err != nil {
 		return "", fmt.Errorf("生成 review 报告失败: %w", err)
 	}

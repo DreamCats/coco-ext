@@ -21,6 +21,8 @@ var reviewBase string
 var reviewAsync bool
 var reviewOutputDir string
 var reviewFull bool
+var reviewDelaySeconds int
+var reviewLowPriority bool
 
 var reviewCmd = &cobra.Command{
 	Use:   "review",
@@ -35,12 +37,35 @@ func init() {
 	reviewCmd.Flags().BoolVarP(&reviewAsync, "async", "", false, "异步模式，不等待结果立即返回")
 	reviewCmd.Flags().StringVarP(&reviewOutputDir, "output", "", "", "自定义输出目录")
 	reviewCmd.Flags().BoolVarP(&reviewFull, "full", "", false, "分析分支整体 diff（默认只分析最后一个 commit）")
+	reviewCmd.Flags().IntVarP(&reviewDelaySeconds, "defer-seconds", "", 0, "延迟启动后台 review 的秒数")
+	reviewCmd.Flags().BoolVarP(&reviewLowPriority, "low-priority", "", false, "降低后台 review 的进程优先级")
+	_ = reviewCmd.Flags().MarkHidden("defer-seconds")
+	_ = reviewCmd.Flags().MarkHidden("low-priority")
 }
 
 func runReview(cmd *cobra.Command, args []string) error {
 	repoRoot, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("获取当前目录失败: %w", err)
+	}
+
+	if reviewAsync {
+		return startReviewAsync(repoRoot, reviewOutputDir)
+	}
+
+	startedAt := time.Now()
+
+	if reviewDelaySeconds > 0 {
+		color.Cyan("后台 review 延迟启动 %ds，避免与 git push 竞争资源...", reviewDelaySeconds)
+		time.Sleep(time.Duration(reviewDelaySeconds) * time.Second)
+	}
+
+	if reviewLowPriority {
+		if err := lowerProcessPriority(config.ReviewBackgroundPriority); err != nil {
+			color.Yellow("⚠ 降低后台 review 优先级失败: %v", err)
+		} else {
+			color.Cyan("后台 review 已降低进程优先级: nice=%d", config.ReviewBackgroundPriority)
+		}
 	}
 
 	// 获取 git diff 信息
@@ -73,11 +98,6 @@ func runReview(cmd *cobra.Command, args []string) error {
 		outputDir = filepath.Join(repoRoot, config.ReviewOutputDir, dirName)
 	}
 
-	if reviewAsync {
-		return startReviewAsync(repoRoot, outputDir)
-	}
-
-	startedAt := time.Now()
 	color.Cyan("Review started at: %s", startedAt.Format("2006-01-02 15:04:05"))
 
 	if err := os.MkdirAll(outputDir, 0755); err != nil {
@@ -155,7 +175,15 @@ func startReviewAsync(repoRoot, outputDir string) error {
 	if reviewFull {
 		reviewArgs = append(reviewArgs, "--full")
 	}
-	reviewArgs = append(reviewArgs, "--output", outputDir)
+	if reviewDelaySeconds > 0 {
+		reviewArgs = append(reviewArgs, "--defer-seconds", fmt.Sprintf("%d", reviewDelaySeconds))
+	}
+	if reviewLowPriority {
+		reviewArgs = append(reviewArgs, "--low-priority")
+	}
+	if outputDir != "" {
+		reviewArgs = append(reviewArgs, "--output", outputDir)
+	}
 
 	reviewCmd := exec.Command(exe, reviewArgs...)
 	reviewCmd.Dir = repoRoot
@@ -171,7 +199,18 @@ func startReviewAsync(repoRoot, outputDir string) error {
 	color.Green("Review 已在后台启动")
 	color.Green("Background spawned at: %s", spawnedAt.Format("2006-01-02 15:04:05"))
 	color.Green("日志: %s", logPath)
-	color.Green("报告目录: %s", outputDir)
+	if outputDir != "" {
+		color.Green("报告目录: %s", outputDir)
+	} else {
+		color.Green("报告目录: %s", filepath.Join(repoRoot, config.ReviewOutputDir))
+	}
 
+	return nil
+}
+
+func lowerProcessPriority(priority int) error {
+	if err := syscall.Setpriority(syscall.PRIO_PROCESS, 0, priority); err != nil {
+		return fmt.Errorf("setpriority 失败: %w", err)
+	}
 	return nil
 }

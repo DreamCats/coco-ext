@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"time"
 )
 
 const (
@@ -17,6 +18,22 @@ const (
 
 	// ChangelogDir Commit changelog 目录
 	ChangelogDir = ".livecoding/changelog"
+)
+
+const (
+	// DefaultPromptTimeout 默认 AI 请求超时，适用于 gcmsg、context 等短流程
+	DefaultPromptTimeout = 30 * time.Second
+
+	// ReviewPromptTimeout review 专用超时，允许更长时间生成报告
+	ReviewPromptTimeout = 3 * time.Minute
+
+	// ReviewAsyncDelay 后台 review 默认延迟启动时间，减少与 git push 的资源竞争
+	ReviewAsyncDelay = 5 * time.Second
+)
+
+const (
+	// ReviewBackgroundPriority 后台 review 进程 nice 优先级
+	ReviewBackgroundPriority = 10
 )
 
 // DefaultConfigDir 返回用户级配置目录

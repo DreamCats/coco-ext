@@ -91,7 +91,7 @@ COMMIT_ID=$(git rev-parse --short HEAD 2>/dev/null)
 REVIEW_LAUNCHED_AT=$(date '+%Y-%m-%d %H:%M:%S')
 LOG_FILE=".livecoding/logs/review-${COMMIT_ID}-${BRANCH}-$(date +%Y%m%d%H%M%S).log"
 mkdir -p .livecoding/logs
-nohup coco-ext review --async > "$LOG_FILE" 2>&1 < /dev/null &
+nohup coco-ext review --async --defer-seconds 5 --low-priority > "$LOG_FILE" 2>&1 < /dev/null &
 echo "Review 已触发: $REVIEW_LAUNCHED_AT"
 echo "Review 日志: $LOG_FILE"
 echo "请在 .livecoding/review/ 目录查看报告"

@@ -87,6 +87,17 @@ coco-ext daemon stop        # 停止 daemon
 - 自动格式化已修改的 .go 文件（goimports）
 - 保证 import 顺序一致
 
+## 内置 Skills
+
+仓库根目录提供 `skills/`，`coco-ext install` 时会同步到 `~/.trae/skills/`。第一版内置 4 个 skill：
+
+- `coco-repo-context`：初始化、更新、查询 `.livecoding/context/`
+- `coco-repo-setup`：安装/卸载 hooks 与同步 repo 内置 skills
+- `coco-review`：手动补跑 review、查看异步日志和报告
+- `coco-commit`：生成或排查 commit message，理解 hook 与兜底策略
+
+这些 skill 的目标不是替代 CLI，而是把“何时调用、如何排查、产物在哪看”固化下来，方便 AI 在仓库内稳定复用。
+
 ## 生成与超时策略
 
 - `gcmsg` 优先使用 AI 生成 commit message；当模型输出夹带说明文字时，会自动提取真正的 conventional commit message
