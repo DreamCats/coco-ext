@@ -285,3 +285,126 @@ func getChangedFiles(repoRoot, from, to string) ([]string, error) {
 	}
 	return result, nil
 }
+
+// uninstall 相关
+
+var uninstallHooks bool
+var uninstallSkills bool
+
+var uninstallCmd = &cobra.Command{
+	Use:   "uninstall",
+	Short: "卸载 git hooks 和 skills",
+	Long:  "卸载 git pre-push/pre-commit hook 和 skills（仅删除从 coco-ext 安装的部分）",
+	RunE:  runUninstall,
+}
+
+func init() {
+	rootCmd.AddCommand(uninstallCmd)
+	uninstallCmd.Flags().BoolVarP(&uninstallHooks, "hooks", "", true, "卸载 git hooks")
+	uninstallCmd.Flags().BoolVarP(&uninstallSkills, "skills", "", true, "删除 skills")
+}
+
+func runUninstall(cmd *cobra.Command, args []string) error {
+	repoRoot, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("获取当前目录失败: %w", err)
+	}
+
+	if uninstallHooks {
+		if err := removeGitHook(repoRoot); err != nil {
+			return err
+		}
+		if err := removePreCommitHook(repoRoot); err != nil {
+			return err
+		}
+	}
+
+	if uninstallSkills {
+		if err := removeSkills(); err != nil {
+			return err
+		}
+	}
+
+	color.Green("✓ 卸载完成")
+	return nil
+}
+
+func removeGitHook(repoRoot string) error {
+	color.Cyan("正在卸载 git pre-push hook...")
+	hooksDir := filepath.Join(repoRoot, ".git", "hooks")
+	hookPath := filepath.Join(hooksDir, "pre-push")
+	if _, err := os.Stat(hookPath); err == nil {
+		if err := os.Remove(hookPath); err != nil {
+			return fmt.Errorf("删除 pre-push hook 失败: %w", err)
+		}
+		color.Green("✓ pre-push hook 已卸载")
+	} else {
+		color.Yellow("⚠ pre-push hook 不存在，跳过")
+	}
+	return nil
+}
+
+func removePreCommitHook(repoRoot string) error {
+	color.Cyan("正在卸载 pre-commit hook...")
+	hooksDir := filepath.Join(repoRoot, ".git", "hooks")
+	hookPath := filepath.Join(hooksDir, "pre-commit")
+	if _, err := os.Stat(hookPath); err == nil {
+		if err := os.Remove(hookPath); err != nil {
+			return fmt.Errorf("删除 pre-commit hook 失败: %w", err)
+		}
+		color.Green("✓ pre-commit hook 已卸载")
+	} else {
+		color.Yellow("⚠ pre-commit hook 不存在，跳过")
+	}
+	return nil
+}
+
+func removeSkills() error {
+	color.Cyan("正在卸载 skills...")
+
+	repoRoot, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("获取当前目录失败: %w", err)
+	}
+
+	repoSkillsDir := filepath.Join(repoRoot, "skills")
+	_, err = os.Stat(repoSkillsDir)
+	if os.IsNotExist(err) {
+		color.Yellow("⚠ 仓库中没有 skills/ 目录，无需卸载")
+		return nil
+	}
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("获取用户目录失败: %w", err)
+	}
+
+	userSkillsDir := filepath.Join(home, ".trae", "skills")
+	if _, err := os.Stat(userSkillsDir); os.IsNotExist(err) {
+		color.Yellow("⚠ 用户 skills 目录不存在，跳过")
+		return nil
+	}
+
+	entries, err := os.ReadDir(repoSkillsDir)
+	if err != nil {
+		return fmt.Errorf("读取仓库 skills 目录失败: %w", err)
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() {
+			targetPath := filepath.Join(userSkillsDir, entry.Name())
+			if _, err := os.Stat(targetPath); err == nil {
+				if err := os.RemoveAll(targetPath); err != nil {
+					color.Yellow("⚠ 删除 %s 失败: %v", entry.Name(), err)
+				} else {
+					color.Green("✓ 删除 skill: %s", entry.Name())
+				}
+			} else {
+				color.Yellow("⚠ %s 不存在，跳过", entry.Name())
+			}
+		}
+	}
+
+	color.Green("✓ skills 卸载完成")
+	return nil
+}

@@ -40,7 +40,7 @@ cmd/                        # Cobra CLI 命令层
   status.go                 #   coco-ext context status
   review.go                 #   AI Code Review（基于 git diff）
   gcmsg.go                  #   Commit message 生成（支持 --amend）
-  install.go                #   安装 git hooks + 同步 skills
+  install.go                #   安装/卸载 git hooks + skills
   daemon.go                 #   daemon 管理（start/status/stop）
   version.go                #   版本信息
 internal/
@@ -65,6 +65,8 @@ internal/
 **gcmsg 命令**：获取当前 commit diff → 连接 coco daemon → 生成符合规范的 commit message → 支持 `--amend` 自动覆盖上一个 commit
 
 **install 命令**：安装 pre-push hook（烂 message 检测 + gcmsg --amend + 异步 review）和 pre-commit hook（goimports 格式化）。install 时检测 goimports 是否安装，未安装给出警告。
+
+**uninstall 命令**：卸载 git hooks 和 skills（仅删除从 coco-ext 安装的部分，不影响其他来源的 skills）。
 
 **pre-push hook**：仅修改 go.mod/go.sum 时跳过；烂 message（< 10 字符）时阻塞 push，执行 `gcmsg --amend` 后继续；其他情况异步触发 review。
 

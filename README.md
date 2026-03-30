@@ -59,6 +59,7 @@ coco-ext gcmsg --amend      # 生成并覆盖上一个 commit
 # 7. 安装钩子 — 一键安装 git hooks
 cd /path/to/your/repo
 coco-ext install            # 安装 pre-push hook + pre-commit hook + 同步 skills
+coco-ext uninstall          # 卸载 hooks + skills（仅删除从 coco-ext 安装的部分）
 
 # 8. Daemon 管理 — 手动管理 coco daemon
 coco-ext daemon status      # 查看 daemon 状态
