@@ -77,6 +77,9 @@ func runReview(cmd *cobra.Command, args []string) error {
 		return startReviewAsync(repoRoot, outputDir)
 	}
 
+	startedAt := time.Now()
+	color.Cyan("Review started at: %s", startedAt.Format("2006-01-02 15:04:05"))
+
 	if err := os.MkdirAll(outputDir, 0755); err != nil {
 		return fmt.Errorf("创建输出目录失败: %w", err)
 	}
@@ -119,11 +122,13 @@ func runReview(cmd *cobra.Command, args []string) error {
 
 	color.Green("\n✓ Review 完成!")
 	color.Green("报告已生成: %s", reportPath)
+	color.Green("Review finished at: %s", time.Now().Format("2006-01-02 15:04:05"))
 
 	return nil
 }
 
 func startReviewAsync(repoRoot, outputDir string) error {
+	spawnedAt := time.Now()
 	exe, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("获取可执行文件路径失败: %w", err)
@@ -164,6 +169,7 @@ func startReviewAsync(repoRoot, outputDir string) error {
 	}
 
 	color.Green("Review 已在后台启动")
+	color.Green("Background spawned at: %s", spawnedAt.Format("2006-01-02 15:04:05"))
 	color.Green("日志: %s", logPath)
 	color.Green("报告目录: %s", outputDir)
 
