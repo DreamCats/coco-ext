@@ -17,7 +17,7 @@ var installSkills bool
 var installCmd = &cobra.Command{
 	Use:   "install",
 	Short: "安装 git hooks 和同步 skills",
-	Long:  "安装 git pre-push hook 和同步 skills 到用户目录",
+	Long:  "安装 git pre-push/pre-commit/post-commit hook 和同步 skills 到用户目录",
 	RunE:  runInstall,
 }
 
@@ -38,6 +38,9 @@ func runInstall(cmd *cobra.Command, args []string) error {
 			return err
 		}
 		if err := installPreCommitHook(repoRoot); err != nil {
+			return err
+		}
+		if err := installPostCommitHook(repoRoot); err != nil {
 			return err
 		}
 	}
@@ -65,8 +68,7 @@ func installGitHook(repoRoot string) error {
 	hookContent := `#!/bin/bash
 # coco-ext pre-push hook
 # 1. 仅修改 go.mod/go.sum 时跳过所有检查
-# 2. 烂 commit message 时同步优化 message（阻塞），优化后中止本次 push，避免 hook 内二次 push
-# 3. 其他情况异步触发 review
+# 2. 其他情况异步触发 review
 
 BRANCH=$(git rev-parse --abbrev-ref HEAD)
 if [ "$BRANCH" = "HEAD" ]; then
@@ -79,57 +81,6 @@ CHANGES=$(git diff --name-only HEAD~1 HEAD 2>/dev/null | grep -v '^$' | grep -v 
 if [ "$CHANGES" = "0" ]; then
     echo "仅修改 go.mod/go.sum，跳过检查"
     exit 0
-fi
-
-# 获取当前 commit ID 和 message
-ORIGINAL_COMMIT_ID=$(git rev-parse --short HEAD 2>/dev/null)
-COMMIT_MSG=$(git log -1 --pretty=%B 2>/dev/null | head -n 1 | tr -d '[:space:]')
-
-# 烂 message 时：同步阻塞优化
-if [ -z "$COMMIT_MSG" ] || [ ${#COMMIT_MSG} -lt 10 ]; then
-    echo "⚠ commit message 太简短，正在优化..."
-    echo ""
-    echo "📝 优化进度:"
-    echo "   [1/3] 生成规范 commit message..."
-
-    # 检查 changelog 是否有记录（用原始 commit ID 查找）
-    CHANGELOG_PATH=".livecoding/changelog/$BRANCH/${ORIGINAL_COMMIT_ID}.md"
-    if [ -f "$CHANGELOG_PATH" ]; then
-        # 已有优化结果，直接用记录的 message amend
-        OPTIMIZED_MSG=$(grep -A1 "^## optimized" "$CHANGELOG_PATH" 2>/dev/null | tail -n1)
-        PUSH_RESULT=$(grep "^## push_result" "$CHANGELOG_PATH" 2>/dev/null | tail -n1)
-        if [ -n "$OPTIMIZED_MSG" ] && [ "$PUSH_RESULT" != "## push_result error:" ]; then
-            echo "   [2/3] 复用已记录的优化 message ✓"
-            echo "   [3/3] 更新 commit message..."
-            git commit --amend -m "$OPTIMIZED_MSG" --no-edit 2>/dev/null
-            echo "✓ commit message 已优化"
-            echo ""
-            echo "本次 push 已中止，请重新执行 git push"
-            exit 1
-        fi
-    fi
-
-    # 没有记录或 push 失败过，同步执行 gcmsg
-    echo "   [2/3] 调用 AI 生成 message..."
-
-    # 创建 logs 目录
-    mkdir -p .livecoding/logs
-    LOG_FILE=".livecoding/logs/gcmsg-${ORIGINAL_COMMIT_ID}-$(date +%Y%m%d%H%M%S).log"
-
-    # 同步执行（阻塞）
-    coco-ext gcmsg --amend --changelog --commit-id="$ORIGINAL_COMMIT_ID" 2>&1 | tee "$LOG_FILE"
-    EXIT_CODE=${PIPESTATUS[0]}
-
-    if [ $EXIT_CODE -eq 0 ]; then
-        echo "   [3/3] commit message 已更新 ✓"
-        echo ""
-        echo "本次 push 已中止，请重新执行 git push"
-        exit 1
-    else
-        echo ""
-        echo "✗ 优化失败，请检查日志: $LOG_FILE"
-        exit 1
-    fi
 fi
 
 # 执行 review（异步模式，不阻塞 push）
@@ -147,6 +98,74 @@ exit 0
 	}
 
 	color.Green("✓ pre-push hook 已安装")
+	return nil
+}
+
+// installPostCommitHook 安装 post-commit hook
+func installPostCommitHook(repoRoot string) error {
+	color.Cyan("正在安装 post-commit hook...")
+
+	hooksDir := filepath.Join(repoRoot, ".git", "hooks")
+	if err := os.MkdirAll(hooksDir, 0755); err != nil {
+		return fmt.Errorf("创建 hooks 目录失败: %w", err)
+	}
+
+	hookPath := filepath.Join(hooksDir, "post-commit")
+	hookContent := `#!/bin/bash
+# coco-ext post-commit hook
+# 1. 烂 commit message 时同步优化 message
+# 2. 使用环境变量防止 amend 触发递归
+# 3. 输出本次优化耗时
+
+if [ "${COCO_EXT_SKIP_POST_COMMIT:-0}" = "1" ]; then
+    exit 0
+fi
+
+BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)
+if [ "$BRANCH" = "HEAD" ]; then
+    exit 0
+fi
+
+COMMIT_MSG=$(git log -1 --pretty=%B 2>/dev/null | head -n 1 | tr -d '[:space:]')
+if [ -n "$COMMIT_MSG" ] && [ ${#COMMIT_MSG} -ge 10 ]; then
+    exit 0
+fi
+
+ORIGINAL_COMMIT_ID=$(git rev-parse --short HEAD 2>/dev/null)
+START_TIME=$(date +%s)
+
+echo "⚠ commit message 太简短，正在优化..."
+echo ""
+echo "📝 优化进度:"
+echo "   [1/3] 生成规范 commit message..."
+echo "   [2/3] 调用 AI 生成 message..."
+
+mkdir -p .livecoding/logs
+LOG_FILE=".livecoding/logs/gcmsg-${ORIGINAL_COMMIT_ID}-$(date +%Y%m%d%H%M%S).log"
+
+COCO_EXT_SKIP_POST_COMMIT=1 coco-ext gcmsg --amend --changelog --commit-id="$ORIGINAL_COMMIT_ID" 2>&1 | tee "$LOG_FILE"
+EXIT_CODE=${PIPESTATUS[0]}
+END_TIME=$(date +%s)
+ELAPSED_SECONDS=$((END_TIME - START_TIME))
+
+if [ $EXIT_CODE -eq 0 ]; then
+    echo "   [3/3] commit message 已更新 ✓"
+    echo ""
+    echo "⏱ 本次优化耗时: ${ELAPSED_SECONDS}s"
+else
+    echo ""
+    echo "✗ 优化失败，请检查日志: $LOG_FILE"
+    echo "⏱ 本次优化耗时: ${ELAPSED_SECONDS}s"
+fi
+
+exit 0
+`
+
+	if err := os.WriteFile(hookPath, []byte(hookContent), 0755); err != nil {
+		return fmt.Errorf("写入 hook 失败: %w", err)
+	}
+
+	color.Green("✓ post-commit hook 已安装")
 	return nil
 }
 
@@ -337,7 +356,7 @@ var uninstallSkills bool
 var uninstallCmd = &cobra.Command{
 	Use:   "uninstall",
 	Short: "卸载 git hooks 和 skills",
-	Long:  "卸载 git pre-push/pre-commit hook 和 skills（仅删除从 coco-ext 安装的部分）",
+	Long:  "卸载 git pre-push/pre-commit/post-commit hook 和 skills（仅删除从 coco-ext 安装的部分）",
 	RunE:  runUninstall,
 }
 
@@ -358,6 +377,9 @@ func runUninstall(cmd *cobra.Command, args []string) error {
 			return err
 		}
 		if err := removePreCommitHook(repoRoot); err != nil {
+			return err
+		}
+		if err := removePostCommitHook(repoRoot); err != nil {
 			return err
 		}
 	}
@@ -398,6 +420,21 @@ func removePreCommitHook(repoRoot string) error {
 		color.Green("✓ pre-commit hook 已卸载")
 	} else {
 		color.Yellow("⚠ pre-commit hook 不存在，跳过")
+	}
+	return nil
+}
+
+func removePostCommitHook(repoRoot string) error {
+	color.Cyan("正在卸载 post-commit hook...")
+	hooksDir := filepath.Join(repoRoot, ".git", "hooks")
+	hookPath := filepath.Join(hooksDir, "post-commit")
+	if _, err := os.Stat(hookPath); err == nil {
+		if err := os.Remove(hookPath); err != nil {
+			return fmt.Errorf("删除 post-commit hook 失败: %w", err)
+		}
+		color.Green("✓ post-commit hook 已卸载")
+	} else {
+		color.Yellow("⚠ post-commit hook 不存在，跳过")
 	}
 	return nil
 }
