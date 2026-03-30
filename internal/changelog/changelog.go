@@ -1,8 +1,6 @@
 package changelog
 
 import (
-	"crypto/sha1"
-	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -18,29 +16,22 @@ type Entry struct {
 	Optimized   string `json:"optimized"`
 	PushResult  string `json:"push_result"` // "success" 或 "error: xxx"
 	CommitID    string `json:"commit_id"`
-	NewCommitID string `json:"new_commit_id"` // amend 后可能变化
+	NewCommitID string `json:"new_commit_id"`
 	Timestamp   string `json:"timestamp"`
 }
 
-// MessageHash 计算 commit message 的 hash（用于查找已有的 changelog）
-func MessageHash(msg string) string {
-	hash := sha1.Sum([]byte(msg))
-	return hex.EncodeToString(hash[:8]) // 只取前 8 字符，足够短
-}
-
-// GetChangelogPathByHash 用 message hash 获取 changelog 路径
-func GetChangelogPathByHash(repoRoot, branch, msgHash string) string {
+// GetChangelogPath 用 commit ID 获取 changelog 路径
+func GetChangelogPath(repoRoot, branch, commitID string) string {
 	branchSlug := filepath.Base(branch)
 	if branchSlug == "" {
 		branchSlug = "unknown"
 	}
-	return filepath.Join(repoRoot, config.ChangelogDir, branchSlug, msgHash+".md")
+	return filepath.Join(repoRoot, config.ChangelogDir, branchSlug, commitID+".md")
 }
 
-// ReadByMessage 用 commit message 查找 changelog
-func ReadByMessage(repoRoot, branch, msg string) (*Entry, error) {
-	hash := MessageHash(msg)
-	path := GetChangelogPathByHash(repoRoot, branch, hash)
+// ReadByCommitID 用 commit ID 查找 changelog
+func ReadByCommitID(repoRoot, branch, commitID string) (*Entry, error) {
+	path := GetChangelogPath(repoRoot, branch, commitID)
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
@@ -48,18 +39,18 @@ func ReadByMessage(repoRoot, branch, msg string) (*Entry, error) {
 	return Parse(string(data))
 }
 
-// HasOptimizedMessageByMessage 用 commit message 检查是否已有优化结果
-func HasOptimizedMessageByMessage(repoRoot, branch, msg string) bool {
-	entry, err := ReadByMessage(repoRoot, branch, msg)
+// HasOptimizedMessageByCommitID 用 commit ID 检查是否已有成功记录
+func HasOptimizedMessageByCommitID(repoRoot, branch, commitID string) bool {
+	entry, err := ReadByCommitID(repoRoot, branch, commitID)
 	if err != nil {
 		return false
 	}
-	return entry.Optimized != "" && strings.HasPrefix(entry.PushResult, "error") == false
+	return entry.Optimized != "" && !strings.HasPrefix(entry.PushResult, "error")
 }
 
-// GetOptimizedMessageByMessage 用 commit message 获取已优化的 message
-func GetOptimizedMessageByMessage(repoRoot, branch, msg string) (string, bool) {
-	entry, err := ReadByMessage(repoRoot, branch, msg)
+// GetOptimizedMessageByCommitID 用 commit ID 获取已优化的 message
+func GetOptimizedMessageByCommitID(repoRoot, branch, commitID string) (string, bool) {
+	entry, err := ReadByCommitID(repoRoot, branch, commitID)
 	if err != nil || entry.Optimized == "" {
 		return "", false
 	}
@@ -70,14 +61,14 @@ func GetOptimizedMessageByMessage(repoRoot, branch, msg string) (string, bool) {
 	return "", false
 }
 
-// WriteByMessageHash 用 message hash 写入 changelog
-func WriteByMessageHash(repoRoot, branch, msgHash string, entry *Entry) error {
-	dir := filepath.Dir(GetChangelogPathByHash(repoRoot, branch, msgHash))
+// WriteByCommitID 用 commit ID 写入 changelog
+func WriteByCommitID(repoRoot, branch, commitID string, entry *Entry) error {
+	dir := filepath.Dir(GetChangelogPath(repoRoot, branch, commitID))
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return fmt.Errorf("创建目录失败: %w", err)
 	}
 
-	path := GetChangelogPathByHash(repoRoot, branch, msgHash)
+	path := GetChangelogPath(repoRoot, branch, commitID)
 	content := Format(entry)
 	if err := os.WriteFile(path, []byte(content), 0600); err != nil {
 		return fmt.Errorf("写入 changelog 失败: %w", err)
@@ -85,24 +76,14 @@ func WriteByMessageHash(repoRoot, branch, msgHash string, entry *Entry) error {
 	return nil
 }
 
-// Read 读取指定分支和 commitID 的 changelog（兼容旧接口）
+// Read 读取指定分支和 commitID 的 changelog
 func Read(repoRoot, branch, commitID string) (*Entry, error) {
-	path := GetChangelogPathByHash(repoRoot, branch, commitID)
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-	return Parse(string(data))
+	return ReadByCommitID(repoRoot, branch, commitID)
 }
 
-// Write 写入 changelog（兼容旧接口）
+// Write 写入 changelog
 func Write(repoRoot, branch, commitID string, entry *Entry) error {
-	return WriteByMessageHash(repoRoot, branch, commitID, entry)
-}
-
-// GetChangelogPath 获取 changelog 文件路径
-func GetChangelogPath(repoRoot, branch, commitID string) string {
-	return GetChangelogPathByHash(repoRoot, branch, commitID)
+	return WriteByCommitID(repoRoot, branch, commitID, entry)
 }
 
 // Parse 解析 changelog 内容

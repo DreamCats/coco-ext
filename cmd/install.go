@@ -81,7 +81,8 @@ if [ "$CHANGES" = "0" ]; then
     exit 0
 fi
 
-# 获取当前 commit 的 message
+# 获取当前 commit ID 和 message
+ORIGINAL_COMMIT_ID=$(git rev-parse --short HEAD 2>/dev/null)
 COMMIT_MSG=$(git log -1 --pretty=%B 2>/dev/null | head -n 1 | tr -d '[:space:]')
 
 # 烂 message 时：异步优化，不阻塞 push
@@ -89,9 +90,22 @@ if [ -z "$COMMIT_MSG" ] || [ ${#COMMIT_MSG} -lt 10 ]; then
     echo "⚠ commit message 太简短，将在后台优化..."
     echo "✓ push 已完成，请在后台任务完成后检查 changelog"
 
-    # 后台执行 gcmsg --amend --changelog --push
-    # gcmsg 内部会检查 changelog 是否有记录，有则复用，无则调用 acp
-    (coco-ext gcmsg --amend --changelog --push) 2>&1 &
+    # 检查 changelog 是否有记录（用原始 commit ID 查找）
+    CHANGELOG_PATH=".livecoding/changelog/$BRANCH/${ORIGINAL_COMMIT_ID}.md"
+    if [ -f "$CHANGELOG_PATH" ]; then
+        # 已有优化结果，直接用记录的 message amend
+        OPTIMIZED_MSG=$(grep -A1 "^## optimized" "$CHANGELOG_PATH" 2>/dev/null | tail -n1)
+        PUSH_RESULT=$(grep "^## push_result" "$CHANGELOG_PATH" 2>/dev/null | tail -n1)
+        if [ -n "$OPTIMIZED_MSG" ] && [ "$PUSH_RESULT" != "## push_result error:" ]; then
+            echo "使用已记录的优化 message: $OPTIMIZED_MSG"
+            git commit --amend -m "$OPTIMIZED_MSG" --no-edit 2>/dev/null
+            git push 2>/dev/null &
+            exit 0
+        fi
+    fi
+
+    # 没有记录或 push 失败过，后台执行 gcmsg --amend --changelog --push --commit-id
+    (coco-ext gcmsg --amend --changelog --push --commit-id="$ORIGINAL_COMMIT_ID") 2>&1 &
     exit 0
 fi
 

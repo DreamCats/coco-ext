@@ -17,6 +17,7 @@ var gcmsgAmend bool
 var gcmsgChangelog bool
 var gcmsgOriginal string
 var gcmsgPush bool
+var gcmsgCommitID string // hook 传入的原始 commit ID，用于 changelog key
 
 var gcmsgCmd = &cobra.Command{
 	Use:   "gcmsg",
@@ -31,6 +32,7 @@ func init() {
 	gcmsgCmd.Flags().BoolVarP(&gcmsgChangelog, "changelog", "", false, "写入 changelog")
 	gcmsgCmd.Flags().StringVarP(&gcmsgOriginal, "original", "", "", "原始 commit message")
 	gcmsgCmd.Flags().BoolVarP(&gcmsgPush, "push", "", false, "amend 成功后执行 push")
+	gcmsgCmd.Flags().StringVarP(&gcmsgCommitID, "commit-id", "", "", "原始 commit ID（用于 changelog key）")
 }
 
 func runGcmsg(cmd *cobra.Command, args []string) error {
@@ -61,9 +63,9 @@ func runGcmsg(cmd *cobra.Command, args []string) error {
 	var newMsg string
 	var usedCache bool
 
-	// 检查 changelog 是否有当前 message 的记录
-	if gcmsgChangelog && originalMsg != "" {
-		if optimizedMsg, ok := changelog.GetOptimizedMessageByMessage(repoRoot, branch, originalMsg); ok {
+	// 用原始 commit ID 检查 changelog（由 hook 传入）
+	if gcmsgChangelog && gcmsgCommitID != "" {
+		if optimizedMsg, ok := changelog.GetOptimizedMessageByCommitID(repoRoot, branch, gcmsgCommitID); ok {
 			color.Cyan("找到已记录的优化 message，复用...")
 			newMsg = optimizedMsg
 			usedCache = true
@@ -91,7 +93,7 @@ func runGcmsg(cmd *cobra.Command, args []string) error {
 		if err := amendCommit(repoRoot, newMsg); err != nil {
 			color.Red("Amend 失败: %v", err)
 			if gcmsgChangelog {
-				writeChangelogError(repoRoot, branch, changelog.MessageHash(originalMsg), originalMsg, newMsg, err.Error())
+				writeChangelogError(repoRoot, branch, gcmsgCommitID, originalMsg, newMsg, err.Error())
 			}
 			return err
 		}
@@ -110,7 +112,7 @@ func runGcmsg(cmd *cobra.Command, args []string) error {
 			if err := pushGit(repoRoot); err != nil {
 				color.Red("✗ push 失败: %v", err)
 				if gcmsgChangelog {
-					writeChangelogError(repoRoot, branch, changelog.MessageHash(originalMsg), originalMsg, newMsg, "push failed: "+err.Error())
+					writeChangelogError(repoRoot, branch, gcmsgCommitID, originalMsg, newMsg, "push failed: "+err.Error())
 				}
 				return err
 			}
@@ -119,7 +121,7 @@ func runGcmsg(cmd *cobra.Command, args []string) error {
 
 		// 写入 changelog
 		if gcmsgChangelog {
-			if err := writeChangelogSuccess(repoRoot, branch, changelog.MessageHash(originalMsg), originalMsg, newMsg, newCommitID); err != nil {
+			if err := writeChangelogSuccess(repoRoot, branch, gcmsgCommitID, originalMsg, newMsg, newCommitID); err != nil {
 				color.Yellow("⚠ 写入 changelog 失败: %v", err)
 			}
 		}
@@ -219,24 +221,24 @@ func getCurrentCommitMessage(repoRoot string) (string, error) {
 }
 
 // writeChangelogSuccess 写入成功的 changelog
-func writeChangelogSuccess(repoRoot, branch, msgHash, original, optimized, newCommitID string) error {
+func writeChangelogSuccess(repoRoot, branch, commitID, original, optimized, newCommitID string) error {
 	entry := &changelog.Entry{
 		Original:    original,
 		Optimized:   optimized,
 		PushResult:  "success",
-		CommitID:    msgHash,
+		CommitID:    commitID,
 		NewCommitID: newCommitID,
 	}
-	return changelog.WriteByMessageHash(repoRoot, branch, msgHash, entry)
+	return changelog.WriteByCommitID(repoRoot, branch, commitID, entry)
 }
 
 // writeChangelogError 写入失败的 changelog
-func writeChangelogError(repoRoot, branch, msgHash, original, optimized, errMsg string) error {
+func writeChangelogError(repoRoot, branch, commitID, original, optimized, errMsg string) error {
 	entry := &changelog.Entry{
 		Original:   original,
 		Optimized:  optimized,
 		PushResult: "error: " + errMsg,
-		CommitID:   msgHash,
+		CommitID:   commitID,
 	}
-	return changelog.WriteByMessageHash(repoRoot, branch, msgHash, entry)
+	return changelog.WriteByCommitID(repoRoot, branch, commitID, entry)
 }
