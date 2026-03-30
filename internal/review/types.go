@@ -41,6 +41,7 @@ type FileChange struct {
 type Facts struct {
 	DiffInfo              *git.DiffInfo
 	Files                 []FileChange
+	GoFileCount           int
 	TODOCount             int
 	FIXMECount            int
 	HACKCount             int

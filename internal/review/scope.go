@@ -87,8 +87,45 @@ func relationScore(left, right FileChange) float64 {
 	sizeLeft := left.Additions + left.Deletions
 	sizeRight := right.Additions + right.Deletions
 	score += sizeSimilarity(sizeLeft, sizeRight) * 0.10
+	score += docAffinityScore(left, right)
 
 	return math.Min(score, 1.0)
+}
+
+func docAffinityScore(left, right FileChange) float64 {
+	if !(left.IsDocLike && right.IsDocLike) {
+		return 0
+	}
+
+	score := 0.0
+	leftBase := strings.ToLower(filepath.Base(left.Path))
+	rightBase := strings.ToLower(filepath.Base(right.Path))
+
+	if leftBase == "readme.md" || rightBase == "readme.md" {
+		score += 0.12
+	}
+
+	if strings.Contains(left.Path, "/skills/") || strings.Contains(right.Path, "/skills/") {
+		score += 0.10
+	}
+
+	if sharedDocStem(left.Path, right.Path) {
+		score += 0.08
+	}
+
+	return score
+}
+
+func sharedDocStem(left, right string) bool {
+	leftName := strings.ToLower(strings.TrimSuffix(filepath.Base(left), filepath.Ext(left)))
+	rightName := strings.ToLower(strings.TrimSuffix(filepath.Base(right), filepath.Ext(right)))
+	if leftName == "" || rightName == "" {
+		return false
+	}
+	if leftName == rightName {
+		return true
+	}
+	return strings.Contains(leftName, rightName) || strings.Contains(rightName, leftName)
 }
 
 func sharedTokenScore(left, right string) float64 {

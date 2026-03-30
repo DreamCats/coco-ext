@@ -29,6 +29,9 @@ func CollectFacts(repoRoot string, diffInfo *git.DiffInfo) Facts {
 
 	for _, file := range files {
 		facts.TotalChangedLines += file.Additions + file.Deletions
+		if file.IsGoLike {
+			facts.GoFileCount++
+		}
 		if file.IsConfigLike {
 			facts.ConfigFiles = appendIfMissing(facts.ConfigFiles, file.Path)
 		}
@@ -59,10 +62,16 @@ func CollectFacts(repoRoot string, diffInfo *git.DiffInfo) Facts {
 			facts.DDLFindings = append(facts.DDLFindings, fmt.Sprintf("%s: %s", file.Path, item))
 		}
 		for _, sig := range file.PublicSigAdded {
-			facts.PublicSignatureChange = append(facts.PublicSignatureChange, fmt.Sprintf("%s: %s", file.Path, sig))
+			facts.PublicSignatureChange = appendIfMissing(
+				facts.PublicSignatureChange,
+				fmt.Sprintf("%s: %s", file.Path, sig),
+			)
 		}
 		for _, sig := range file.PublicSigRemoved {
-			facts.PublicSignatureChange = append(facts.PublicSignatureChange, fmt.Sprintf("%s: %s", file.Path, sig))
+			facts.PublicSignatureChange = appendIfMissing(
+				facts.PublicSignatureChange,
+				fmt.Sprintf("%s: %s", file.Path, sig),
+			)
 		}
 	}
 
@@ -141,7 +150,7 @@ func processAddedLine(file *FileChange, line string) {
 	if looksLikeDDL(trimmed) {
 		file.AddedDDL = append(file.AddedDDL, trimmed)
 	}
-	if exportedFuncPattern.MatchString(trimmed) {
+	if file.IsGoLike && exportedFuncPattern.MatchString(trimmed) {
 		file.PublicSigAdded = append(file.PublicSigAdded, trimmed)
 	}
 }
@@ -154,7 +163,7 @@ func processRemovedLine(file *FileChange, line string) {
 	if looksLikeDDL(trimmed) {
 		file.AddedDDL = append(file.AddedDDL, "removed: "+trimmed)
 	}
-	if exportedFuncPattern.MatchString(trimmed) {
+	if file.IsGoLike && exportedFuncPattern.MatchString(trimmed) {
 		file.PublicSigRemoved = append(file.PublicSigRemoved, trimmed)
 	}
 	if file.IsIDLLike && strings.Contains(trimmed, "required") {

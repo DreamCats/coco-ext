@@ -110,6 +110,12 @@ func AnalyzeRelease(facts Facts) ReleaseResult {
 }
 
 func AnalyzeImpact(facts Facts) ImpactResult {
+	if facts.GoFileCount == 0 {
+		return ImpactResult{
+			Skipped: true,
+			Reason:  "未检测到 Go 代码变更，跳过影响面分析。",
+		}
+	}
 	if len(facts.PublicSignatureChange) == 0 {
 		return ImpactResult{
 			Skipped: true,
