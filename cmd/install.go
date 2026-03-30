@@ -101,7 +101,7 @@ mkdir -p .livecoding/logs
     sleep 1
 done
 nohup coco-ext review --async --low-priority > "$LOG_FILE" 2>&1 < /dev/null &
-) >/dev/null 2>&1 &
+) </dev/null >/dev/null 2>&1 &
 echo "Review 已排队: $REVIEW_LAUNCHED_AT"
 echo "Review 将在 push 结束后后台启动"
 echo "Review 日志: $LOG_FILE"
