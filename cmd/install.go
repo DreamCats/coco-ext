@@ -115,8 +115,11 @@ if [ -z "$COMMIT_MSG" ] || [ ${#COMMIT_MSG} -lt 10 ]; then
 fi
 
 # 执行 review（异步模式，不阻塞 push）
-coco-ext review --async 2>/dev/null &
-echo "Review 已触发，请在 .livecoding/review/ 目录查看报告"
+# 输出重定向到 log 文件
+LOG_FILE=".livecoding/logs/review-${COMMIT_ID:-$(git rev-parse --short HEAD 2>/dev/null)}-${BRANCH}-$(date +%Y%m%d%H%M%S).log"
+mkdir -p .livecoding/logs
+(coco-ext review --async > "$LOG_FILE" 2>&1) &
+echo "Review 已触发，请在 .livecoding/review/ 和 .livecoding/logs/ 目录查看报告"
 
 exit 0
 `
