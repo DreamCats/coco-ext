@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -23,6 +24,8 @@ var reviewOutputDir string
 var reviewFull bool
 var reviewDelaySeconds int
 var reviewLowPriority bool
+var reviewJSON bool
+var reviewJSONOnly bool
 
 var reviewCmd = &cobra.Command{
 	Use:   "review",
@@ -37,6 +40,8 @@ func init() {
 	reviewCmd.Flags().BoolVarP(&reviewAsync, "async", "", false, "异步模式，不等待结果立即返回")
 	reviewCmd.Flags().StringVarP(&reviewOutputDir, "output", "", "", "自定义输出目录")
 	reviewCmd.Flags().BoolVarP(&reviewFull, "full", "", false, "分析分支整体 diff（默认只分析最后一个 commit）")
+	reviewCmd.Flags().BoolVarP(&reviewJSON, "json", "", false, "输出结构化 JSON 结果")
+	reviewCmd.Flags().BoolVarP(&reviewJSONOnly, "json-only", "", false, "仅输出结构化 JSON，不打印过程日志")
 	reviewCmd.Flags().IntVarP(&reviewDelaySeconds, "defer-seconds", "", 0, "延迟启动后台 review 的秒数")
 	reviewCmd.Flags().BoolVarP(&reviewLowPriority, "low-priority", "", false, "降低后台 review 的进程优先级")
 	_ = reviewCmd.Flags().MarkHidden("defer-seconds")
@@ -44,6 +49,13 @@ func init() {
 }
 
 func runReview(cmd *cobra.Command, args []string) error {
+	if reviewJSONOnly {
+		reviewJSON = true
+	}
+	if reviewAsync && reviewJSONOnly {
+		return fmt.Errorf("--json-only 不能与 --async 同时使用")
+	}
+
 	repoRoot, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("获取当前目录失败: %w", err)
@@ -56,20 +68,20 @@ func runReview(cmd *cobra.Command, args []string) error {
 	startedAt := time.Now()
 
 	if reviewDelaySeconds > 0 {
-		color.Cyan("后台 review 延迟启动 %ds，避免与 git push 竞争资源...", reviewDelaySeconds)
+		printReviewInfo("后台 review 延迟启动 %ds，避免与 git push 竞争资源...", reviewDelaySeconds)
 		time.Sleep(time.Duration(reviewDelaySeconds) * time.Second)
 	}
 
 	if reviewLowPriority {
 		if err := lowerProcessPriority(config.ReviewBackgroundPriority); err != nil {
-			color.Yellow("⚠ 降低后台 review 优先级失败: %v", err)
+			printReviewWarn("⚠ 降低后台 review 优先级失败: %v", err)
 		} else {
-			color.Cyan("后台 review 已降低进程优先级: nice=%d", config.ReviewBackgroundPriority)
+			printReviewInfo("后台 review 已降低进程优先级: nice=%d", config.ReviewBackgroundPriority)
 		}
 	}
 
 	// 获取 git diff 信息
-	color.Cyan("正在获取代码变更信息...")
+	printReviewInfo("正在获取代码变更信息...")
 
 	diffInfo, err := git.GetDiffInfo(repoRoot, reviewBase, reviewFull)
 	if err != nil {
@@ -77,14 +89,18 @@ func runReview(cmd *cobra.Command, args []string) error {
 	}
 
 	if diffInfo.IsEmpty() {
-		color.Yellow("没有检测到代码变更，无需 review")
+		if reviewJSONOnly {
+			fmt.Println(`{"empty":true,"message":"没有检测到代码变更，无需 review"}`)
+			return nil
+		}
+		printReviewWarn("没有检测到代码变更，无需 review")
 		return nil
 	}
 
-	color.Cyan("分支: %s → %s", diffInfo.SourceBranch, diffInfo.TargetBranch)
-	color.Cyan("提交: %s", diffInfo.CommitMessage)
-	color.Cyan("作者: %s", diffInfo.Author)
-	color.Cyan("文件变更: +%d -%d，%d 个文件", diffInfo.Additions, diffInfo.Deletions, diffInfo.FileCount)
+	printReviewInfo("分支: %s → %s", diffInfo.SourceBranch, diffInfo.TargetBranch)
+	printReviewInfo("提交: %s", diffInfo.CommitMessage)
+	printReviewInfo("作者: %s", diffInfo.Author)
+	printReviewInfo("文件变更: +%d -%d，%d 个文件", diffInfo.Additions, diffInfo.Deletions, diffInfo.FileCount)
 
 	// 确定输出目录
 	branchSlug := filepath.Base(diffInfo.SourceBranch)
@@ -98,7 +114,7 @@ func runReview(cmd *cobra.Command, args []string) error {
 		outputDir = filepath.Join(repoRoot, config.ReviewOutputDir, dirName)
 	}
 
-	color.Cyan("Review started at: %s", startedAt.Format("2006-01-02 15:04:05"))
+	printReviewInfo("Review started at: %s", startedAt.Format("2006-01-02 15:04:05"))
 
 	if err := os.MkdirAll(outputDir, 0755); err != nil {
 		return fmt.Errorf("创建输出目录失败: %w", err)
@@ -117,7 +133,7 @@ func runReview(cmd *cobra.Command, args []string) error {
 	}
 
 	// 连接 coco daemon 执行 review
-	color.Cyan("正在连接 coco daemon 进行 Code Review...")
+	printReviewInfo("正在连接 coco daemon 进行 Code Review...")
 
 	gen, err := generator.New(repoRoot)
 	if err != nil {
@@ -127,19 +143,36 @@ func runReview(cmd *cobra.Command, args []string) error {
 
 	// 生成 review 报告
 	reportPath := filepath.Join(outputDir, "report.md")
-	reportContent, err := review.GenerateReport(gen, repoRoot, diffInfo, func(chunk string) {
-		fmt.Print(chunk)
+	pipeline, err := review.GeneratePipeline(gen, repoRoot, diffInfo, func(chunk string) {
+		if !reviewJSONOnly {
+			fmt.Print(chunk)
+		}
 	})
 	if err != nil {
-		color.Red("Review 生成失败: %v", err)
+		if !reviewJSONOnly {
+			color.Red("Review 生成失败: %v", err)
+		}
 		return err
 	}
 
 	// 保存报告
-	if err := os.WriteFile(reportPath, []byte(reportContent), 0600); err != nil {
+	if err := os.WriteFile(reportPath, []byte(pipeline.ReportMD), 0600); err != nil {
 		return fmt.Errorf("保存报告失败: %w", err)
 	}
+	if err := writeReviewStructuredFiles(outputDir, pipeline); err != nil {
+		return fmt.Errorf("保存结构化 review 产物失败: %w", err)
+	}
 
+	if reviewJSON {
+		data, err := json.MarshalIndent(pipeline, "", "  ")
+		if err != nil {
+			return fmt.Errorf("序列化 review JSON 失败: %w", err)
+		}
+		fmt.Println(string(data))
+		if reviewJSONOnly {
+			return nil
+		}
+	}
 	color.Green("\n✓ Review 完成!")
 	color.Green("报告已生成: %s", reportPath)
 	color.Green("Review finished at: %s", time.Now().Format("2006-01-02 15:04:05"))
@@ -213,4 +246,42 @@ func lowerProcessPriority(priority int) error {
 		return fmt.Errorf("setpriority 失败: %w", err)
 	}
 	return nil
+}
+
+func writeReviewStructuredFiles(outputDir string, pipeline review.PipelineResult) error {
+	files := map[string]any{
+		"facts.json":   pipeline.Facts,
+		"scope.json":   pipeline.Scope,
+		"release.json": pipeline.Release,
+		"impact.json":  pipeline.Impact,
+		"quality.json": pipeline.Quality,
+		"summary.json": pipeline.Summary,
+		"report.json":  pipeline,
+	}
+
+	for name, payload := range files {
+		path := filepath.Join(outputDir, name)
+		data, err := json.MarshalIndent(payload, "", "  ")
+		if err != nil {
+			return fmt.Errorf("序列化 %s 失败: %w", name, err)
+		}
+		if err := os.WriteFile(path, data, 0600); err != nil {
+			return fmt.Errorf("写入 %s 失败: %w", name, err)
+		}
+	}
+	return nil
+}
+
+func printReviewInfo(format string, args ...any) {
+	if reviewJSONOnly {
+		return
+	}
+	color.Cyan(format, args...)
+}
+
+func printReviewWarn(format string, args ...any) {
+	if reviewJSONOnly {
+		return
+	}
+	color.Yellow(format, args...)
 }

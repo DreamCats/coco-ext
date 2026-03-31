@@ -6,12 +6,14 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 
 	"github.com/DreamCats/coco-ext/internal/changelog"
 	"github.com/DreamCats/coco-ext/internal/gcmsg"
+	internalmetrics "github.com/DreamCats/coco-ext/internal/metrics"
 )
 
 var gcmsgAmend bool
@@ -41,10 +43,29 @@ func init() {
 }
 
 func runGcmsg(cmd *cobra.Command, args []string) error {
+	startedAt := time.Now()
+	success := false
+	messageSource := ""
+	failureStage := ""
 	repoRoot, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("获取当前目录失败: %w", err)
 	}
+	defer func() {
+		_ = internalmetrics.AppendEvent(repoRoot, internalmetrics.Event{
+			Type:    "gcmsg",
+			Success: success,
+			Fields: map[string]any{
+				"message_source":   messageSource,
+				"staged":           gcmsgStaged,
+				"amend":            gcmsgAmend,
+				"write_file":       gcmsgCommitMsgFile != "",
+				"push_after_amend": gcmsgPush,
+				"duration_ms":      time.Since(startedAt).Milliseconds(),
+				"failure_stage":    failureStage,
+			},
+		})
+	}()
 
 	// 获取当前分支
 	branch, err := getCurrentBranch(repoRoot)
@@ -60,6 +81,7 @@ func runGcmsg(cmd *cobra.Command, args []string) error {
 	color.Cyan("正在获取代码变更...")
 	diff, err := getCommitDiff(repoRoot)
 	if err != nil {
+		failureStage = "get_diff"
 		return fmt.Errorf("获取 diff 失败: %w", err)
 	}
 
@@ -72,6 +94,7 @@ func runGcmsg(cmd *cobra.Command, args []string) error {
 			color.Cyan("找到已记录的优化 message，复用...")
 			newMsg = optimizedMsg
 			usedCache = true
+			messageSource = "cache"
 		}
 	}
 
@@ -81,11 +104,15 @@ func runGcmsg(cmd *cobra.Command, args []string) error {
 		newMsg, err = gcmsg.GenerateCommitMsg(repoRoot, diff)
 		if err != nil {
 			color.Yellow("⚠ AI 生成失败，使用本地兜底 message: %v", err)
+			messageSource = "fallback"
 			newMsg, err = buildFallbackCommitMsg(repoRoot)
 			if err != nil {
+				failureStage = "fallback_message"
 				color.Red("生成失败: %v", err)
 				return err
 			}
+		} else {
+			messageSource = "ai"
 		}
 	}
 
@@ -98,15 +125,18 @@ func runGcmsg(cmd *cobra.Command, args []string) error {
 	if gcmsgCommitMsgFile != "" {
 		color.Cyan("正在写入 commit message 文件...")
 		if err := writeCommitMessageFile(gcmsgCommitMsgFile, newMsg); err != nil {
+			failureStage = "write_commit_msg_file"
 			return err
 		}
 		color.Green("✓ commit message 已写入")
+		success = true
 		return nil
 	}
 
 	if gcmsgAmend {
 		color.Cyan("正在执行 amend...")
 		if err := amendCommit(repoRoot, newMsg); err != nil {
+			failureStage = "amend"
 			color.Red("Amend 失败: %v", err)
 			if gcmsgChangelog {
 				writeChangelogError(repoRoot, branch, gcmsgCommitID, originalMsg, newMsg, err.Error())
@@ -126,6 +156,7 @@ func runGcmsg(cmd *cobra.Command, args []string) error {
 		if gcmsgPush {
 			color.Cyan("正在执行 push...")
 			if err := pushGit(repoRoot); err != nil {
+				failureStage = "push"
 				color.Red("✗ push 失败: %v", err)
 				if gcmsgChangelog {
 					writeChangelogError(repoRoot, branch, gcmsgCommitID, originalMsg, newMsg, "push failed: "+err.Error())
@@ -143,6 +174,7 @@ func runGcmsg(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	success = true
 	return nil
 }
 

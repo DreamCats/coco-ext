@@ -12,6 +12,7 @@ import (
 
 	internalgcmsg "github.com/DreamCats/coco-ext/internal/gcmsg"
 	"github.com/DreamCats/coco-ext/internal/git"
+	internalmetrics "github.com/DreamCats/coco-ext/internal/metrics"
 )
 
 var submitCmd = &cobra.Command{
@@ -28,19 +29,37 @@ func init() {
 
 func runSubmit(cmd *cobra.Command, args []string) error {
 	startedAt := time.Now()
+	success := false
+	messageSource := ""
+	commitID := ""
+	failureStage := ""
 	repoRoot, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("获取当前目录失败: %w", err)
 	}
+	defer func() {
+		_ = internalmetrics.AppendEvent(repoRoot, internalmetrics.Event{
+			Type:    "submit",
+			Success: success,
+			Fields: map[string]any{
+				"message_source": messageSource,
+				"commit_id":      commitID,
+				"duration_ms":    time.Since(startedAt).Milliseconds(),
+				"failure_stage":  failureStage,
+			},
+		})
+	}()
 	if !git.IsGitRepo(repoRoot) {
 		return fmt.Errorf("当前目录不是 git 仓库")
 	}
 
 	hasStaged, err := hasStagedChanges(repoRoot)
 	if err != nil {
+		failureStage = "check_staged"
 		return fmt.Errorf("检查暂存区失败: %w", err)
 	}
 	if !hasStaged {
+		failureStage = "check_staged"
 		return fmt.Errorf("未检测到 staged 变更，请先执行 git add")
 	}
 
@@ -49,18 +68,21 @@ func runSubmit(cmd *cobra.Command, args []string) error {
 
 	message, source, messageElapsed, err := resolveSubmitMessage(repoRoot, args)
 	if err != nil {
+		failureStage = "resolve_message"
 		return err
 	}
+	messageSource = source
 	color.Green("   [1/3] commit message 已生成 ✓")
 	color.Cyan("⏱ commit message 生成耗时: %s", formatDurationSeconds(messageElapsed))
 
 	color.Cyan("   [2/3] 执行 commit...")
 	color.Cyan("正在执行 commit...")
 	if err := commitWithMessage(repoRoot, message); err != nil {
+		failureStage = "commit"
 		return fmt.Errorf("git commit 失败: %w", err)
 	}
 
-	commitID, err := getShortCommitID(repoRoot)
+	commitID, err = getShortCommitID(repoRoot)
 	if err != nil {
 		commitID = "unknown"
 	}
@@ -70,9 +92,11 @@ func runSubmit(cmd *cobra.Command, args []string) error {
 
 	color.Cyan("   [3/3] 执行 push 并在成功后后台触发 review...")
 	if err := triggerPushFlow(repoRoot, nil); err != nil {
+		failureStage = "push"
 		return err
 	}
 
+	success = true
 	color.Green("⏱ 本次 submit 总耗时: %s", formatDurationSeconds(time.Since(startedAt)))
 	return nil
 }

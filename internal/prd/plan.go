@@ -68,6 +68,25 @@ type PlanArtifacts struct {
 	UsedAI     bool
 }
 
+type PlanTask struct {
+	ID        string
+	Title     string
+	Goal      string
+	DependsOn []string
+	Files     []string
+	Input     []string
+	Output    []string
+	Actions   []string
+	Done      []string
+}
+
+type PlanAISections struct {
+	Summary         string
+	Steps           string
+	Risks           string
+	ValidationExtra string
+}
+
 type PlanBuild struct {
 	Task       *TaskStatusReport
 	Context    *ContextSnapshot
@@ -127,6 +146,7 @@ func GeneratePlanWithAI(gen *generator.Generator, repoRoot, taskID string, now t
 
 	localDesign := BuildDesignContent(build.Task, build.Context, build.Sections, build.Findings, build.Assessment)
 	localPlan := BuildPlanContent(build.Task, build.Sections, build.Findings, build.Assessment)
+	planHeader := BuildPlanHeader(build.Task)
 
 	if gen == nil {
 		return writePlanArtifacts(build.Task, localDesign, localPlan, now, false)
@@ -138,15 +158,15 @@ func GeneratePlanWithAI(gen *generator.Generator, repoRoot, taskID string, now t
 		return writePlanArtifacts(build.Task, localDesign, localPlan, now, false)
 	}
 
-	aiPlan, ok := ExtractPlanOutputs(raw)
+	aiSections, ok := ExtractPlanOutputs(raw)
 	if !ok {
 		return writePlanArtifacts(build.Task, localDesign, localPlan, now, false)
 	}
-	if err := ValidatePlanOutputs(build, aiPlan); err != nil {
+	if err := ValidatePlanOutputs(build, aiSections); err != nil {
 		return writePlanArtifacts(build.Task, localDesign, localPlan, now, false)
 	}
 
-	return writePlanArtifacts(build.Task, localDesign, aiPlan, now, true)
+	return writePlanArtifacts(build.Task, localDesign, planHeader+BuildPlanBody(build.Sections, build.Findings, build.Assessment, &aiSections), now, true)
 }
 
 func LoadContextSnapshot(repoRoot string) (*ContextSnapshot, error) {
@@ -376,10 +396,33 @@ func ScoreComplexity(sections RefinedSections, findings ResearchFinding) Complex
 
 func BuildPlanContent(task *TaskStatusReport, sections RefinedSections, findings ResearchFinding, assessment ComplexityAssessment) string {
 	var b strings.Builder
+	b.WriteString(BuildPlanHeader(task))
+	b.WriteString(BuildPlanBody(sections, findings, assessment, nil))
+	return b.String()
+}
+
+func BuildPlanHeader(task *TaskStatusReport) string {
+	var b strings.Builder
 	b.WriteString("# Plan\n\n")
 	b.WriteString(fmt.Sprintf("- task_id: %s\n", task.TaskID))
 	b.WriteString(fmt.Sprintf("- title: %s\n", task.Metadata.Title))
-	b.WriteString(fmt.Sprintf("- complexity: %s (%d)\n\n", assessment.Level, assessment.Total))
+	b.WriteString("\n")
+	return b.String()
+}
+
+func BuildPlanBody(sections RefinedSections, findings ResearchFinding, assessment ComplexityAssessment, ai *PlanAISections) string {
+	var b strings.Builder
+	tasks := BuildPlanTasks(sections, findings)
+	b.WriteString("## 复杂度评估\n\n")
+	b.WriteString(fmt.Sprintf("- complexity: %s (%d)\n", assessment.Level, assessment.Total))
+	b.WriteString(fmt.Sprintf("- 结论: %s\n\n", assessment.Conclusion))
+	b.WriteString("## 实现概要\n\n")
+	if ai != nil && strings.TrimSpace(ai.Summary) != "" {
+		b.WriteString(strings.TrimSpace(ai.Summary) + "\n\n")
+	} else {
+		b.WriteString("- 基于 refined PRD、context 和本地调研结果收敛改动范围。\n")
+		b.WriteString("- 优先复用现有 prd workflow 命令与 task 产物，不引入额外状态机。\n\n")
+	}
 
 	if assessment.Total > 6 {
 		b.WriteString("## 结论\n\n")
@@ -394,16 +437,86 @@ func BuildPlanContent(task *TaskStatusReport, sections RefinedSections, findings
 			b.WriteString("- 基于 refined PRD 补全实现目标。\n")
 		}
 		b.WriteString("\n")
+	}
 
-		b.WriteString("## 拟改文件\n\n")
-		if len(findings.CandidateFiles) == 0 {
-			b.WriteString("- 暂未命中候选文件，需要补充 context 或人工指定模块。\n")
-		} else {
-			for _, file := range findings.CandidateFiles {
-				b.WriteString(fmt.Sprintf("- %s：%s\n", file, suggestFileAction(file)))
+	b.WriteString("## 拟改文件\n\n")
+	if len(findings.CandidateFiles) == 0 {
+		b.WriteString("- 暂未命中候选文件，需要补充 context 或人工指定模块。\n")
+	} else {
+		for _, file := range findings.CandidateFiles {
+			b.WriteString(fmt.Sprintf("- %s：%s\n", file, describePlannedFileChange(file)))
+		}
+	}
+	b.WriteString("\n")
+
+	b.WriteString("## 任务列表\n\n")
+	if len(tasks) == 0 {
+		b.WriteString("- 暂未生成任务列表，需要先收敛候选文件后再继续。\n\n")
+	} else {
+		for _, task := range tasks {
+			b.WriteString(fmt.Sprintf("### %s %s\n\n", task.ID, task.Title))
+			b.WriteString(fmt.Sprintf("- 目标：%s\n", task.Goal))
+			if len(task.DependsOn) > 0 {
+				b.WriteString(fmt.Sprintf("- 依赖任务：%s\n", strings.Join(task.DependsOn, ", ")))
 			}
+			if len(task.Files) > 0 {
+				b.WriteString("- 涉及文件：\n")
+				for _, file := range task.Files {
+					b.WriteString(fmt.Sprintf("  - %s\n", file))
+				}
+			}
+			if len(task.Input) > 0 {
+				b.WriteString("- 输入：\n")
+				for _, item := range task.Input {
+					b.WriteString(fmt.Sprintf("  - %s\n", item))
+				}
+			}
+			if len(task.Output) > 0 {
+				b.WriteString("- 输出：\n")
+				for _, item := range task.Output {
+					b.WriteString(fmt.Sprintf("  - %s\n", item))
+				}
+			}
+			if len(task.Actions) > 0 {
+				b.WriteString("- 具体动作：\n")
+				for _, action := range task.Actions {
+					b.WriteString(fmt.Sprintf("  - %s\n", action))
+				}
+			}
+			if len(task.Done) > 0 {
+				b.WriteString("- 完成标志：\n")
+				for _, item := range task.Done {
+					b.WriteString(fmt.Sprintf("  - %s\n", item))
+				}
+			}
+			b.WriteString("\n")
+		}
+	}
+
+	b.WriteString("## 实施步骤\n\n")
+	if ai != nil && strings.TrimSpace(ai.Steps) != "" {
+		b.WriteString(strings.TrimSpace(ai.Steps) + "\n\n")
+	} else {
+		if len(tasks) == 0 {
+			b.WriteString("- 先补充 context 或人工确认目标模块，再继续细化实施步骤。\n\n")
+		} else {
+			for _, task := range tasks {
+				b.WriteString(fmt.Sprintf("- %s：先完成「%s」，再根据完成标志逐项自检。\n", task.ID, task.Title))
+			}
+			b.WriteString("\n")
+		}
+	}
+
+	b.WriteString("## 风险补充\n\n")
+	if ai != nil && strings.TrimSpace(ai.Risks) != "" {
+		b.WriteString(strings.TrimSpace(ai.Risks) + "\n\n")
+	} else if len(findings.Notes) > 0 {
+		for _, note := range findings.Notes {
+			b.WriteString(fmt.Sprintf("- %s\n", note))
 		}
 		b.WriteString("\n")
+	} else {
+		b.WriteString("- 当前未发现额外风险补充。\n\n")
 	}
 
 	b.WriteString("## 待确认项\n\n")
@@ -419,19 +532,28 @@ func BuildPlanContent(task *TaskStatusReport, sections RefinedSections, findings
 	b.WriteString("## 验证建议\n\n")
 	b.WriteString("- 仅编译涉及的 package，不执行全仓 build/test。\n")
 	b.WriteString("- 完成实现后建议运行 `coco-ext review` 或 `/livecoding:auto-review`。\n")
+	if ai != nil && strings.TrimSpace(ai.ValidationExtra) != "" {
+		b.WriteString(strings.TrimSpace(ai.ValidationExtra) + "\n")
+	}
 	return b.String()
 }
 
 func BuildPlanPrompt(build *PlanBuild) string {
 	var b strings.Builder
-	b.WriteString("你是一名资深技术方案与研发计划助手。系统已经根据固定模板生成 design.md，你只需要基于提供的 PRD refined 内容、本地 context 事实和代码调研结果，输出更完善的 plan.md。\n\n")
+	b.WriteString("你是一名资深技术方案与研发计划助手。系统会自行写入 plan.md 的固定头部、复杂度骨架、拟改文件、任务列表和待确认项。你只需要基于提供的 PRD refined 内容、本地 context 事实和代码调研结果，补充 plan.md 的可变 section。\n\n")
 	b.WriteString("要求：\n")
 	b.WriteString("1. 只能基于提供的信息工作，不要编造未出现的模块、文件或接口。\n")
-	b.WriteString("2. 你需要重新进行复杂度打分，并给出简单/中等/复杂结论。\n")
-	b.WriteString("3. 如果总分 > 6，plan 中明确写出“不建议自动实现”。\n")
+	b.WriteString("2. 不要输出 task_id、title、复杂度总分、拟改文件清单、待确认项这些固定字段。\n")
+	b.WriteString("3. 如果需求复杂，仍然要在总结或风险里明确写出“不建议自动实现”。\n")
 	b.WriteString("4. 输出必须严格使用下面的标记格式：\n")
-	b.WriteString("=== PLAN ===\n")
-	b.WriteString("# Plan ...\n")
+	b.WriteString("=== IMPLEMENTATION SUMMARY ===\n")
+	b.WriteString("- ...\n")
+	b.WriteString("=== IMPLEMENTATION STEPS ===\n")
+	b.WriteString("- ...\n")
+	b.WriteString("=== RISK NOTES ===\n")
+	b.WriteString("- ...\n")
+	b.WriteString("=== VALIDATION EXTRA ===\n")
+	b.WriteString("- ...\n")
 	b.WriteString("5. 不要输出其它前言或解释。\n\n")
 
 	b.WriteString("## PRD Refined\n")
@@ -481,23 +603,47 @@ func BuildPlanPrompt(build *PlanBuild) string {
 	return b.String()
 }
 
-func ExtractPlanOutputs(raw string) (plan string, ok bool) {
+func ExtractPlanOutputs(raw string) (sections PlanAISections, ok bool) {
 	normalized := strings.ReplaceAll(raw, "\r\n", "\n")
-	planMarker := "=== PLAN ==="
-	planIndex := strings.Index(normalized, planMarker)
-	if planIndex == -1 {
-		return "", false
+	sectionMarkers := []struct {
+		marker string
+		target *string
+	}{
+		{marker: "=== IMPLEMENTATION SUMMARY ===", target: &sections.Summary},
+		{marker: "=== IMPLEMENTATION STEPS ===", target: &sections.Steps},
+		{marker: "=== RISK NOTES ===", target: &sections.Risks},
+		{marker: "=== VALIDATION EXTRA ===", target: &sections.ValidationExtra},
 	}
-	plan = strings.TrimSpace(normalized[planIndex+len(planMarker):])
-	if !strings.HasPrefix(plan, "# Plan") {
-		return "", false
+
+	indexes := make([]int, len(sectionMarkers))
+	for i, item := range sectionMarkers {
+		indexes[i] = strings.Index(normalized, item.marker)
 	}
-	return plan + "\n", true
+	if indexes[0] == -1 {
+		return PlanAISections{}, false
+	}
+
+	for i := range sectionMarkers {
+		start := indexes[i]
+		if start == -1 {
+			continue
+		}
+		contentStart := start + len(sectionMarkers[i].marker)
+		end := len(normalized)
+		for j := i + 1; j < len(sectionMarkers); j++ {
+			if indexes[j] != -1 && indexes[j] > start {
+				end = indexes[j]
+				break
+			}
+		}
+		*sectionMarkers[i].target = normalizeAISection(normalized[contentStart:end])
+	}
+	return sections, true
 }
 
 func ExtractPlanStream(raw string) string {
 	normalized := strings.ReplaceAll(raw, "\r\n", "\n")
-	planMarker := "=== PLAN ==="
+	planMarker := "=== IMPLEMENTATION SUMMARY ==="
 	index := strings.Index(normalized, planMarker)
 	if index == -1 {
 		return ""
@@ -505,18 +651,189 @@ func ExtractPlanStream(raw string) string {
 	return strings.TrimSpace(normalized[index:])
 }
 
-func ValidatePlanOutputs(build *PlanBuild, plan string) error {
-	combined := plan
+func ValidatePlanOutputs(build *PlanBuild, ai PlanAISections) error {
+	combined := strings.Join([]string{ai.Summary, ai.Steps, ai.Risks, ai.ValidationExtra}, "\n")
 	for _, marker := range []string{"(待生成)", "(待确认)", "未初始化"} {
 		if strings.Contains(combined, marker) {
 			return fmt.Errorf("AI 输出包含无效占位符: %s", marker)
 		}
 	}
-
-	if !strings.Contains(plan, build.Task.TaskID) {
-		return fmt.Errorf("AI plan 缺少正确 task_id")
+	if strings.TrimSpace(ai.Summary) == "" {
+		return fmt.Errorf("AI plan 缺少实现概要")
+	}
+	if build.Assessment.Total <= 6 && strings.TrimSpace(ai.Steps) == "" {
+		return fmt.Errorf("AI plan 缺少实施步骤")
+	}
+	for _, bad := range []string{"/livecoding:prd-refine", "/livecoding:prd-plan"} {
+		if strings.Contains(combined, bad) {
+			return fmt.Errorf("AI plan 包含错误命令示例: %s", bad)
+		}
 	}
 	return nil
+}
+
+func normalizeAISection(body string) string {
+	body = strings.TrimSpace(body)
+	if body == "" {
+		return ""
+	}
+	lines := strings.Split(body, "\n")
+	result := make([]string, 0, len(lines))
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		result = append(result, line)
+	}
+	return strings.Join(result, "\n")
+}
+
+func BuildPlanTasks(sections RefinedSections, findings ResearchFinding) []PlanTask {
+	if len(findings.CandidateFiles) == 0 {
+		return nil
+	}
+
+	refineFiles := filterFiles(findings.CandidateFiles, "prd_refine.go", "internal/prd/refine.go")
+	statusFiles := filterFiles(findings.CandidateFiles, "prd_status.go", "internal/prd/status.go")
+	planFiles := filterFiles(findings.CandidateFiles, "prd_plan.go", "internal/prd/plan.go")
+
+	tasks := make([]PlanTask, 0, 3)
+	if len(refineFiles) > 0 {
+		tasks = append(tasks, PlanTask{
+			ID:    "T1",
+			Title: "补齐 PRD 来源识别与来源落盘",
+			Goal:  "让飞书链接/文本来源在 refine 阶段就具备清晰、可追溯的来源信息和下一步提示。",
+			Files: refineFiles,
+			Input: []string{
+				"用户输入的 PRD 文本 / 本地文件 / 飞书链接",
+				"当前 task 的 source 元信息",
+			},
+			Output: []string{
+				"清晰的 source.json / prd.source.md",
+				"可靠的 prd-refined.md 或 fallback refined",
+			},
+			Actions: []string{
+				"统一 refine 阶段的 source 识别、标题处理和来源元信息落盘。",
+				"补齐飞书链接场景下的文档标识、来源信息和后续指引文案。",
+				"保证 refined 失败或 fallback 时，用户仍能拿到可继续推进的 task 产物。",
+			},
+			Done: []string{
+				"source.json / prd.source.md 能清晰体现来源类型和来源值。",
+				"飞书链接场景下用户能明确知道来源文档信息和下一步操作。",
+			},
+		})
+	}
+	if len(statusFiles) > 0 {
+		tasks = append(tasks, PlanTask{
+			ID:        "T2",
+			Title:     "完善 task 状态页与下一步提示",
+			Goal:      "让 status 输出能准确反映来源、当前状态和下一步动作，减少用户猜测。",
+			DependsOn: []string{"T1"},
+			Files:     statusFiles,
+			Input: []string{
+				"task.json / source.json / prd.source.md / prd-refined.md",
+				"当前 task 产物缺失情况",
+			},
+			Output: []string{
+				"更清晰的 status 展示",
+				"准确的 next command / 下一步提示",
+			},
+			Actions: []string{
+				"补齐 task status 对 source 类型、来源路径/链接和产物状态的展示。",
+				"根据当前 task 阶段输出更明确的 next command 或人工确认指引。",
+			},
+			Done: []string{
+				"`coco-ext prd status` 能清晰展示来源信息、产物缺失情况和下一步命令。",
+				"用户无需阅读源码即可判断当前 task 应继续 refine、plan 还是人工 review。",
+			},
+		})
+	}
+	if len(planFiles) > 0 {
+		tasks = append(tasks, PlanTask{
+			ID:        "T3",
+			Title:     "同步设计模板、计划结构与 codegen 输入",
+			Goal:      "让 plan 阶段产出可直接复用到 design、plan 和后续 codegen 的结构化结果。",
+			DependsOn: []string{"T1", "T2"},
+			Files:     planFiles,
+			Input: []string{
+				"refined PRD",
+				"context 调研结果",
+				"候选文件与复杂度评估",
+			},
+			Output: []string{
+				"统一模板的 design.md",
+				"带任务列表的 plan.md",
+				"可供后续 codegen 消费的任务拆分结果",
+			},
+			Actions: []string{
+				"将 design/plan 产物中的固定字段与动态内容进一步解耦。",
+				"在 plan.md 中生成结构化任务列表，明确后续 codegen 的执行单元。",
+				"保证 AI 只补充可变 section，不破坏程序控制的骨架和任务拆分。",
+			},
+			Done: []string{
+				"design.md 使用统一模板输出，plan.md 包含可执行任务列表。",
+				"后续 codegen 可以直接消费任务列表而不需要再次人工拆解需求。",
+			},
+		})
+	}
+
+	if len(tasks) == 0 {
+		tasks = append(tasks, PlanTask{
+			ID:    "T1",
+			Title: "收敛实现范围并细化任务",
+			Goal:  "在当前候选文件基础上收敛改动范围，为后续 codegen 提供可执行任务。",
+			Files: findings.CandidateFiles,
+			Input: []string{
+				"候选文件列表",
+				"refined PRD 与 context",
+			},
+			Output: []string{
+				"更明确的任务拆分结果",
+			},
+			Actions: []string{
+				"结合 refined PRD 和 context，继续人工确认候选文件的必要性。",
+				"将文件级动作拆成更细粒度的实现任务。",
+			},
+			Done: []string{
+				"每个候选文件都能归属到明确的实现任务中。",
+			},
+		})
+	}
+
+	return tasks
+}
+
+func filterFiles(files []string, keywords ...string) []string {
+	result := make([]string, 0, len(files))
+	for _, file := range files {
+		for _, keyword := range keywords {
+			if strings.Contains(file, keyword) {
+				result = append(result, file)
+				break
+			}
+		}
+	}
+	return result
+}
+
+func describePlannedFileChange(file string) string {
+	switch {
+	case strings.Contains(file, "cmd/prd_refine.go"):
+		return "调整 refine 命令的用户交互、来源提示和 fallback 提示。"
+	case strings.Contains(file, "internal/prd/refine.go"):
+		return "修改来源解析、task 元信息写入和 refined 内容校验逻辑。"
+	case strings.Contains(file, "cmd/prd_status.go"):
+		return "调整 status 命令输出，补充来源展示与下一步提示。"
+	case strings.Contains(file, "internal/prd/status.go"):
+		return "补充 task 状态计算、产物检查和 next command 生成逻辑。"
+	case strings.Contains(file, "cmd/prd_plan.go"):
+		return "调整 plan 命令交互输出、AI 阶段展示和 fallback 行为。"
+	case strings.Contains(file, "internal/prd/plan.go"):
+		return "完善 research、评分、模板渲染和后续 codegen 可消费的任务列表。"
+	default:
+		return suggestFileAction(file)
+	}
 }
 
 func writePlanArtifacts(task *TaskStatusReport, designContent, planContent string, now time.Time, usedAI bool) (*PlanArtifacts, error) {

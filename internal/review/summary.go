@@ -7,12 +7,11 @@ import (
 )
 
 func BuildReport(inputs ReportInputs) string {
+	summary := BuildSummary(inputs)
 	allFindings := mergeFindings(inputs.Scope.Findings, inputs.Release.Findings, inputs.Impact.Findings, inputs.Quality.Findings)
 	p0 := filterFindings(allFindings, SeverityP0)
 	p1 := filterFindings(allFindings, SeverityP1)
 	p2 := filterFindings(allFindings, SeverityP2)
-
-	rating, advice := classifyReview(p0, p1)
 	var b strings.Builder
 
 	b.WriteString("# Auto Review 综合审查报告\n\n")
@@ -21,7 +20,7 @@ func BuildReport(inputs ReportInputs) string {
 	b.WriteString(fmt.Sprintf("> 审查时间：%s\n\n", time.Now().Format("2006-01-02 15:04:05")))
 	b.WriteString(renderChangeSummary(inputs.Facts))
 
-	b.WriteString(fmt.Sprintf("## 综合评级：%s\n\n", rating))
+	b.WriteString(fmt.Sprintf("## 综合评级：%s\n\n", summary.Rating))
 	if inputs.Quality.Summary != "" {
 		b.WriteString(fmt.Sprintf("> AI 总结：%s\n\n", inputs.Quality.Summary))
 	}
@@ -37,10 +36,27 @@ func BuildReport(inputs ReportInputs) string {
 	b.WriteString(renderQualityDetails(inputs.Quality))
 
 	b.WriteString("## 操作建议\n\n")
-	b.WriteString(advice)
+	b.WriteString(summary.Advice)
 	b.WriteString("\n")
 
 	return strings.TrimSpace(b.String()) + "\n"
+}
+
+func BuildSummary(inputs ReportInputs) ReviewSummary {
+	allFindings := mergeFindings(inputs.Scope.Findings, inputs.Release.Findings, inputs.Impact.Findings, inputs.Quality.Findings)
+	p0 := filterFindings(allFindings, SeverityP0)
+	p1 := filterFindings(allFindings, SeverityP1)
+	p2 := filterFindings(allFindings, SeverityP2)
+	rating, advice := classifyReview(p0, p1)
+	return ReviewSummary{
+		Rating:        rating,
+		Advice:        advice,
+		P0Count:       len(p0),
+		P1Count:       len(p1),
+		P2Count:       len(p2),
+		TotalFindings: len(allFindings),
+		GeneratedAt:   time.Now().Format(time.RFC3339),
+	}
 }
 
 func mergeFindings(groups ...[]Finding) []Finding {

@@ -109,7 +109,7 @@ func runPRDPlan(cmd *cobra.Command, args []string) error {
 		}
 
 		filtered := prd.ExtractPlanStream(streamBuffer.String())
-		if filtered == "" || !strings.HasPrefix(filtered, "=== PLAN ===") {
+		if filtered == "" || !strings.HasPrefix(filtered, "=== PLAN BODY ===") {
 			return
 		}
 

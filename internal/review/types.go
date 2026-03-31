@@ -85,3 +85,23 @@ type ReportInputs struct {
 	Impact  ImpactResult
 	Quality QualityResult
 }
+
+type ReviewSummary struct {
+	Rating       string    `json:"rating"`
+	Advice       string    `json:"advice"`
+	P0Count      int       `json:"p0_count"`
+	P1Count      int       `json:"p1_count"`
+	P2Count      int       `json:"p2_count"`
+	TotalFindings int      `json:"total_findings"`
+	GeneratedAt  string    `json:"generated_at"`
+}
+
+type PipelineResult struct {
+	Facts    Facts         `json:"facts"`
+	Scope    ScopeResult   `json:"scope"`
+	Release  ReleaseResult `json:"release"`
+	Impact   ImpactResult  `json:"impact"`
+	Quality  QualityResult `json:"quality"`
+	Summary  ReviewSummary `json:"summary"`
+	ReportMD string        `json:"report_md"`
+}
