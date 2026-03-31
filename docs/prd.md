@@ -11,12 +11,11 @@
 ```
 .livecoding/
 ├── README.md                    # 使用说明
-└── knowledge/                   # 跨任务复用的知识库
+└── context/                     # 跨任务复用的上下文知识库
     ├── glossary.md              # 业务术语 ↔ 代码标识符映射（核心）
-    ├── idl.md                   # IDL 协议文件说明（proto/thrift 位置、生成流程、改动链路）
-    ├── patterns.md              # 代码模式（Hertz handler / Kitex service 怎么写）
-    ├── conventions.md           # 团队约定（命名、错误处理、日志、IDL 编写规范）
-    └── dependencies.md          # 下游服务 + 接口速查（含 thrift service/method）
+    ├── architecture.md          # 仓库结构与模块概览
+    ├── patterns.md              # 代码模式（Handler/Service/Converter 骨架）
+    └── gotchas.md               # 隐式约定与易错点
 ```
 
 ### glossary.md — 业务术语表（核心）
@@ -57,7 +56,7 @@
 ```markdown
 # 业务术语表
 
-> 由 prd-mr-init 自动生成 + 人工标注
+> 由 context init / update 自动生成 + 人工补充
 > 维护规则：每次做需求发现新术语时追加，保持按模块分组
 > 标记说明：✅ = 已确认 | ❓ = AI 推测，需人工确认
 
@@ -124,7 +123,7 @@ kitex -module xxx rpc_idl/xxx.thrift
 ```markdown
 # 代码模式
 
-> 由 prd-mr-init 自动提取，人工确认后供 prd-assess/prd-codegen 参考
+> 由 context init / update 自动提取，人工确认后供 prd-assess/prd-codegen 参考
 > 技术栈：Go + Hertz（HTTP API）+ Kitex（RPC）
 > 最后更新：YYYY-MM-DD
 
@@ -242,7 +241,7 @@ module/
 ```markdown
 # 团队编码约定
 
-> 由 prd-mr-init 从代码库自动提取，人工确认
+> 由 context init / update 从代码库自动提取，人工确认
 > AI 编码时必须遵守以下约定，保持代码风格一致
 > 技术栈：Go + Hertz（HTTP）+ Kitex（RPC）+ proto（HTTP IDL）+ thrift（RPC IDL）
 > 最后更新：YYYY-MM-DD
@@ -351,7 +350,7 @@ import (
 ```markdown
 # 下游服务与接口速查
 
-> 由 prd-mr-init 从 import + RPC 调用自动提取
+> 由 context init / update 从代码库关系中自动提取
 > 调用方式：通过 Kitex 生成的 client 调用，IDL 为 thrift
 > 最后更新：YYYY-MM-DD
 

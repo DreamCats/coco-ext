@@ -2,7 +2,11 @@ package generator
 
 import (
 	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/DreamCats/coco-acp-sdk/daemon"
@@ -19,18 +23,26 @@ type Generator struct {
 // New 创建生成器，连接 coco daemon
 // 每次调用都会创建新的 session，由上游 agent 决策是否复用
 func New(repoPath string) (*Generator, error) {
+	logPath, err := ensureDaemonStartWithLog(repoPath)
+	if err != nil {
+		return nil, fmt.Errorf("预启动 coco daemon 失败: %w", err)
+	}
+
 	conn, err := daemon.Dial(repoPath, &daemon.DialOption{
 		ConfigDir: config.DefaultConfigDir(),
 	})
 	if err != nil {
-		return nil, fmt.Errorf("连接 coco daemon 失败: %w", err)
+		if logPath != "" {
+			return nil, fmt.Errorf("连接 coco daemon 失败: %w\n建议：先执行 `coco-ext doctor --fix` 或 `coco-ext daemon start -d --cwd .`\ndaemon 启动日志：%s", err, logPath)
+		}
+		return nil, fmt.Errorf("连接 coco daemon 失败: %w\n建议：先执行 `coco-ext doctor --fix` 或 `coco-ext daemon start -d --cwd .`", err)
 	}
 
-	// 创建新 session
-	sess, err := conn.NewSession(repoPath)
+	// 创建新 session；这一层当前在 coco-acp-sdk 中没有超时保护，必须由上层兜住。
+	sess, err := newSessionWithTimeout(conn, repoPath, config.DefaultPromptTimeout)
 	if err != nil {
 		conn.Close()
-		return nil, fmt.Errorf("创建 session 失败: %w", err)
+		return nil, fmt.Errorf("创建 session 失败: %w\n建议：执行 `coco-ext daemon stop` 清理卡住的 daemon，再重试。", err)
 	}
 
 	// 设置当前使用的 session
@@ -41,6 +53,69 @@ func New(repoPath string) (*Generator, error) {
 		sessionID: sess.SessionID,
 		modelID:   config.DefaultModel,
 	}, nil
+}
+
+func newSessionWithTimeout(conn *daemon.Conn, repoPath string, timeout time.Duration) (*daemon.SessionResponse, error) {
+	type sessionResult struct {
+		session *daemon.SessionResponse
+		err     error
+	}
+
+	done := make(chan sessionResult, 1)
+	go func() {
+		session, err := conn.NewSession(repoPath)
+		done <- sessionResult{session: session, err: err}
+	}()
+
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+
+	select {
+	case result := <-done:
+		if result.err != nil {
+			return nil, result.err
+		}
+		return result.session, nil
+	case <-timer.C:
+		return nil, fmt.Errorf("session 创建超时（%s）", timeout)
+	}
+}
+
+func ensureDaemonStartWithLog(repoPath string) (string, error) {
+	configDir := config.DefaultConfigDir()
+	if daemon.IsRunningAt(configDir) {
+		return "", nil
+	}
+
+	exe, err := os.Executable()
+	if err != nil {
+		return "", fmt.Errorf("获取可执行文件路径失败: %w", err)
+	}
+
+	logDir := filepath.Join(configDir, "logs")
+	if err := os.MkdirAll(logDir, 0700); err != nil {
+		return "", fmt.Errorf("创建 daemon 日志目录失败: %w", err)
+	}
+
+	logPath := filepath.Join(logDir, fmt.Sprintf("daemon-start-%s.log", time.Now().Format("20060102150405")))
+	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
+	if err != nil {
+		return "", fmt.Errorf("创建 daemon 启动日志失败: %w", err)
+	}
+	defer logFile.Close()
+
+	startCmd := exec.Command(exe, "daemon", "start", "--cwd", repoPath)
+	startCmd.Dir = repoPath
+	startCmd.Stdin = nil
+	startCmd.Stdout = logFile
+	startCmd.Stderr = logFile
+	startCmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	if err := startCmd.Start(); err != nil {
+		return logPath, fmt.Errorf("启动 daemon 进程失败: %w", err)
+	}
+	_ = startCmd.Process.Release()
+
+	return logPath, nil
 }
 
 // Info 获取 daemon 状态信息（PID、SessionID、ModelID、Uptime）
