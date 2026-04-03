@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -27,6 +28,7 @@ var reviewDelaySeconds int
 var reviewLowPriority bool
 var reviewJSON bool
 var reviewJSONOnly bool
+var reviewStatus bool
 
 var reviewCmd = &cobra.Command{
 	Use:   "review",
@@ -43,6 +45,7 @@ func init() {
 	reviewCmd.Flags().BoolVarP(&reviewFull, "full", "", false, "分析分支整体 diff（默认只分析最后一个 commit）")
 	reviewCmd.Flags().BoolVarP(&reviewJSON, "json", "", false, "输出结构化 JSON 结果")
 	reviewCmd.Flags().BoolVarP(&reviewJSONOnly, "json-only", "", false, "仅输出结构化 JSON，不打印过程日志")
+	reviewCmd.Flags().BoolVarP(&reviewStatus, "status", "", false, "查看最近一次 review 的结果")
 	reviewCmd.Flags().IntVarP(&reviewDelaySeconds, "defer-seconds", "", 0, "延迟启动后台 review 的秒数")
 	reviewCmd.Flags().BoolVarP(&reviewLowPriority, "low-priority", "", false, "降低后台 review 的进程优先级")
 	_ = reviewCmd.Flags().MarkHidden("defer-seconds")
@@ -60,6 +63,10 @@ func runReview(cmd *cobra.Command, args []string) error {
 	repoRoot, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("获取当前目录失败: %w", err)
+	}
+
+	if reviewStatus {
+		return showReviewStatus(repoRoot)
 	}
 
 	if reviewAsync {
@@ -148,6 +155,8 @@ func runReview(cmd *cobra.Command, args []string) error {
 		if !reviewJSONOnly {
 			fmt.Print(chunk)
 		}
+	}, func(stage string, current, total int) {
+		printReviewInfo("[%d/%d] %s...", current, total, reviewStageLabel(stage))
 	})
 	if err != nil {
 		if !reviewJSONOnly {
@@ -293,4 +302,96 @@ func printReviewWarn(format string, args ...any) {
 		return
 	}
 	color.Yellow(format, args...)
+}
+
+func reviewStageLabel(stage string) string {
+	labels := map[string]string{
+		"facts":   "收集变更事实",
+		"scope":   "分析变更范围",
+		"release": "检查发布风险",
+		"impact":  "评估影响面",
+		"quality": "AI 代码审查",
+		"summary": "生成审查报告",
+	}
+	if label, ok := labels[stage]; ok {
+		return label
+	}
+	return stage
+}
+
+func showReviewStatus(repoRoot string) error {
+	reviewDir := filepath.Join(repoRoot, config.ReviewOutputDir)
+	logDir := filepath.Join(repoRoot, ".livecoding", "logs")
+
+	// 查找最新 review 结果目录
+	entries, err := os.ReadDir(reviewDir)
+	if err != nil || len(entries) == 0 {
+		color.Yellow("暂无 review 记录")
+		return nil
+	}
+
+	// 按 mtime 找最新目录
+	var latestDir os.DirEntry
+	var latestTime time.Time
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil {
+			continue
+		}
+		if latestDir == nil || info.ModTime().After(latestTime) {
+			latestDir = entry
+			latestTime = info.ModTime()
+		}
+	}
+
+	if latestDir == nil {
+		color.Yellow("暂无 review 记录")
+		return nil
+	}
+
+	resultDir := filepath.Join(reviewDir, latestDir.Name())
+	color.Cyan("最近一次 Review:")
+	color.Cyan("  目录: %s", resultDir)
+
+	// 读取 summary.json
+	summaryPath := filepath.Join(resultDir, "summary.json")
+	summaryData, err := os.ReadFile(summaryPath)
+	if err == nil {
+		var summary review.ReviewSummary
+		if err := json.Unmarshal(summaryData, &summary); err == nil {
+			color.Green("  评级: %s", summary.Rating)
+			color.Cyan("  P0: %d | P1: %d | P2: %d", summary.P0Count, summary.P1Count, summary.P2Count)
+			color.Cyan("  时间: %s", summary.GeneratedAt)
+		}
+	} else {
+		color.Yellow("  (summary.json 不存在，review 可能仍在运行中)")
+	}
+
+	// 查找最新 review 日志
+	logEntries, err := os.ReadDir(logDir)
+	if err == nil {
+		var latestLog string
+		var latestLogTime time.Time
+		for _, entry := range logEntries {
+			if entry.IsDir() || !strings.HasPrefix(entry.Name(), "review-") {
+				continue
+			}
+			info, err := entry.Info()
+			if err != nil {
+				continue
+			}
+			if latestLog == "" || info.ModTime().After(latestLogTime) {
+				latestLog = entry.Name()
+				latestLogTime = info.ModTime()
+			}
+		}
+		if latestLog != "" {
+			color.Cyan("\n最近后台日志: %s", filepath.Join(logDir, latestLog))
+		}
+	}
+
+	return nil
 }

@@ -23,6 +23,7 @@ var gcmsgPush bool
 var gcmsgCommitID string // hook 传入的原始 commit ID，用于 changelog key
 var gcmsgStaged bool
 var gcmsgCommitMsgFile string
+var gcmsgDryRun bool
 
 var gcmsgCmd = &cobra.Command{
 	Use:   "gcmsg",
@@ -40,6 +41,7 @@ func init() {
 	gcmsgCmd.Flags().StringVarP(&gcmsgCommitID, "commit-id", "", "", "原始 commit ID（用于 changelog key）")
 	gcmsgCmd.Flags().BoolVarP(&gcmsgStaged, "staged", "", false, "基于暂存区 diff 生成 commit message")
 	gcmsgCmd.Flags().StringVarP(&gcmsgCommitMsgFile, "commit-msg-file", "", "", "将生成的 message 写入指定的 commit message 文件")
+	gcmsgCmd.Flags().BoolVarP(&gcmsgDryRun, "dry-run", "", false, "只生成并打印 commit message，不执行 amend/写文件/push")
 }
 
 func runGcmsg(cmd *cobra.Command, args []string) error {
@@ -121,6 +123,12 @@ func runGcmsg(cmd *cobra.Command, args []string) error {
 	color.Green("---")
 	fmt.Println(newMsg)
 	color.Green("---\n")
+
+	if gcmsgDryRun {
+		color.Cyan("[dry-run] 跳过实际执行（amend/写文件/push）")
+		success = true
+		return nil
+	}
 
 	if gcmsgCommitMsgFile != "" {
 		color.Cyan("正在写入 commit message 文件...")

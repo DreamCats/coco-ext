@@ -121,7 +121,7 @@ func detectDefaultBranch(repoRoot string) (string, error) {
 		return "master", nil
 	}
 
-	// 尝试获取 remote origin 的 HEAD
+	// 尝试获取 remote origin 的 HEAD（本地缓存）
 	cmd = exec.Command("git", "symbolic-ref", "refs/remotes/origin/HEAD")
 	cmd.Dir = repoRoot
 	output, err := cmd.Output()
@@ -131,6 +131,26 @@ func detectDefaultBranch(repoRoot string) (string, error) {
 		parts := strings.Split(ref, "/")
 		if len(parts) >= 3 {
 			return parts[len(parts)-1], nil
+		}
+	}
+
+	// 尝试通过 ls-remote 查询远程默认分支
+	cmd = exec.Command("git", "ls-remote", "--symref", "origin", "HEAD")
+	cmd.Dir = repoRoot
+	output, err = cmd.Output()
+	if err == nil {
+		// 解析格式: "ref: refs/heads/main\tHEAD"
+		for _, line := range strings.Split(string(output), "\n") {
+			if strings.HasPrefix(line, "ref:") && strings.Contains(line, "HEAD") {
+				fields := strings.Fields(line)
+				if len(fields) >= 2 {
+					ref := fields[1] // refs/heads/main
+					parts := strings.Split(ref, "/")
+					if len(parts) >= 3 {
+						return parts[len(parts)-1], nil
+					}
+				}
+			}
 		}
 	}
 

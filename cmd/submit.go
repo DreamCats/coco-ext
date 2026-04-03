@@ -15,6 +15,8 @@ import (
 	internalmetrics "github.com/DreamCats/coco-ext/internal/metrics"
 )
 
+var submitDryRun bool
+
 var submitCmd = &cobra.Command{
 	Use:   "submit [message]",
 	Short: "基于 staged 变更自动生成 message、commit 并 push",
@@ -25,6 +27,7 @@ var submitCmd = &cobra.Command{
 
 func init() {
 	rootCmd.AddCommand(submitCmd)
+	submitCmd.Flags().BoolVarP(&submitDryRun, "dry-run", "", false, "只预览 commit message，不执行 commit/push")
 }
 
 func runSubmit(cmd *cobra.Command, args []string) error {
@@ -75,8 +78,17 @@ func runSubmit(cmd *cobra.Command, args []string) error {
 	color.Green("   [1/3] commit message 已生成 ✓")
 	color.Cyan("⏱ commit message 生成耗时: %s", formatDurationSeconds(messageElapsed))
 
+	if submitDryRun {
+		color.Cyan("\n[dry-run] 预览:")
+		color.Green("  commit message: %s", message)
+		color.Green("  来源: %s", source)
+		color.Cyan("  将执行: git commit → git push → 后台 review")
+		color.Cyan("[dry-run] 跳过实际执行")
+		success = true
+		return nil
+	}
+
 	color.Cyan("   [2/3] 执行 commit...")
-	color.Cyan("正在执行 commit...")
 	if err := commitWithMessage(repoRoot, message); err != nil {
 		failureStage = "commit"
 		return fmt.Errorf("git commit 失败: %w", err)
@@ -93,6 +105,7 @@ func runSubmit(cmd *cobra.Command, args []string) error {
 	color.Cyan("   [3/3] 执行 push 并在成功后后台触发 review...")
 	if err := triggerPushFlow(repoRoot, nil); err != nil {
 		failureStage = "push"
+		color.Yellow("💡 commit 已创建 (%s)，你可以手动执行 git push 重试", commitID)
 		return err
 	}
 

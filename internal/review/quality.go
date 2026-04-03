@@ -128,22 +128,39 @@ func parseQualityFinding(severity Severity, line string) (Finding, bool) {
 }
 
 func GenerateReport(gen *generator.Generator, repoRoot string, diffInfo *git.DiffInfo, onChunk func(string)) (string, error) {
-	result, err := GeneratePipeline(gen, repoRoot, diffInfo, onChunk)
+	result, err := GeneratePipeline(gen, repoRoot, diffInfo, onChunk, nil)
 	if err != nil {
 		return "", err
 	}
 	return result.ReportMD, nil
 }
 
-func GeneratePipeline(gen *generator.Generator, repoRoot string, diffInfo *git.DiffInfo, onChunk func(string)) (PipelineResult, error) {
+func GeneratePipeline(gen *generator.Generator, repoRoot string, diffInfo *git.DiffInfo, onChunk func(string), onProgress func(stage string, current, total int)) (PipelineResult, error) {
+	progress := func(stage string, current, total int) {
+		if onProgress != nil {
+			onProgress(stage, current, total)
+		}
+	}
+
+	progress("facts", 1, 6)
 	facts := CollectFacts(repoRoot, diffInfo)
+
+	progress("scope", 2, 6)
 	scope := AnalyzeScope(facts)
+
+	progress("release", 3, 6)
 	release := AnalyzeRelease(facts)
+
+	progress("impact", 4, 6)
 	impact := AnalyzeImpact(facts)
+
+	progress("quality", 5, 6)
 	quality, err := AnalyzeQuality(gen, facts, onChunk)
 	if err != nil {
 		return PipelineResult{}, err
 	}
+
+	progress("summary", 6, 6)
 	inputs := ReportInputs{
 		Facts:   facts,
 		Scope:   scope,
