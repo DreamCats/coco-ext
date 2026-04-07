@@ -88,6 +88,7 @@ type PlanAISections struct {
 }
 
 type PlanBuild struct {
+	RepoRoot   string
 	Task       *TaskStatusReport
 	Context    *ContextSnapshot
 	Sections   RefinedSections
@@ -119,6 +120,7 @@ func PreparePlanBuild(repoRoot, taskID string) (*PlanBuild, error) {
 	assessment := ScoreComplexity(sections, findings)
 
 	return &PlanBuild{
+		RepoRoot:   repoRoot,
 		Task:       task,
 		Context:    context,
 		Sections:   sections,
@@ -133,7 +135,7 @@ func GeneratePlan(repoRoot, taskID string, now time.Time) (*PlanArtifacts, error
 		return nil, err
 	}
 
-	designContent := BuildDesignContent(build.Task, build.Context, build.Sections, build.Findings, build.Assessment)
+	designContent := BuildDesignContent(repoRoot, build.Task, build.Context, build.Sections, build.Findings, build.Assessment)
 	planContent := BuildPlanContent(build.Task, build.Sections, build.Findings, build.Assessment)
 	return writePlanArtifacts(build.Task, designContent, planContent, now, false)
 }
@@ -144,7 +146,7 @@ func GeneratePlanWithAI(gen *generator.Generator, repoRoot, taskID string, now t
 		return nil, err
 	}
 
-	localDesign := BuildDesignContent(build.Task, build.Context, build.Sections, build.Findings, build.Assessment)
+	localDesign := BuildDesignContent(repoRoot, build.Task, build.Context, build.Sections, build.Findings, build.Assessment)
 	localPlan := BuildPlanContent(build.Task, build.Sections, build.Findings, build.Assessment)
 	planHeader := BuildPlanHeader(build.Task)
 
@@ -252,12 +254,7 @@ func ResearchCodebase(repoRoot, title string, sections RefinedSections, context 
 
 	unmatched := inferUnmatchedTerms(searchText, matched)
 	searchTerms := inferSearchTerms(title, sections, matched)
-	candidateFiles := make([]string, 0, 8)
-	if shouldFocusPRDWorkflow(searchTerms) {
-		candidateFiles = preferPRDWorkflowFiles(searchTerms)
-	} else {
-		candidateFiles = findCandidateFiles(repoRoot, matched, searchTerms)
-	}
+	candidateFiles := findCandidateFiles(repoRoot, matched, searchTerms)
 	if len(candidateFiles) == 0 {
 		candidateFiles = heuristicCandidateFiles(repoRoot, searchTerms)
 	}
@@ -281,16 +278,6 @@ func ResearchCodebase(repoRoot, title string, sections RefinedSections, context 
 		CandidateDirs:  candidateDirs,
 		Notes:          notes,
 	}
-}
-
-func shouldFocusPRDWorkflow(searchTerms []string) bool {
-	for _, term := range searchTerms {
-		switch strings.ToLower(term) {
-		case "prd", "plan", "refine", "status", "source", "task", "lark", "feishu", "doc", "docx", "url":
-			return true
-		}
-	}
-	return false
 }
 
 func ScoreComplexity(sections RefinedSections, findings ResearchFinding) ComplexityAssessment {
@@ -421,7 +408,7 @@ func BuildPlanBody(sections RefinedSections, findings ResearchFinding, assessmen
 		b.WriteString(strings.TrimSpace(ai.Summary) + "\n\n")
 	} else {
 		b.WriteString("- 基于 refined PRD、context 和本地调研结果收敛改动范围。\n")
-		b.WriteString("- 优先复用现有 prd workflow 命令与 task 产物，不引入额外状态机。\n\n")
+		b.WriteString("- 优先在已有模块中收敛实现，保持最小改动范围。\n\n")
 	}
 
 	if assessment.Total > 6 {
@@ -694,146 +681,59 @@ func BuildPlanTasks(sections RefinedSections, findings ResearchFinding) []PlanTa
 		return nil
 	}
 
-	refineFiles := filterFiles(findings.CandidateFiles, "prd_refine.go", "internal/prd/refine.go")
-	statusFiles := filterFiles(findings.CandidateFiles, "prd_status.go", "internal/prd/status.go")
-	planFiles := filterFiles(findings.CandidateFiles, "prd_plan.go", "internal/prd/plan.go")
+	// 按目录分组候选文件
+	dirFiles := make(map[string][]string)
+	dirOrder := make([]string, 0, 4)
+	for _, file := range findings.CandidateFiles {
+		dir := filepath.Dir(file)
+		if _, exists := dirFiles[dir]; !exists {
+			dirOrder = append(dirOrder, dir)
+		}
+		dirFiles[dir] = append(dirFiles[dir], file)
+	}
 
-	tasks := make([]PlanTask, 0, 3)
-	if len(refineFiles) > 0 {
-		tasks = append(tasks, PlanTask{
-			ID:    "T1",
-			Title: "补齐 PRD 来源识别与来源落盘",
-			Goal:  "让飞书链接/文本来源在 refine 阶段就具备清晰、可追溯的来源信息和下一步提示。",
-			Files: refineFiles,
+	tasks := make([]PlanTask, 0, len(dirOrder))
+	prevIDs := make([]string, 0, 1)
+	for i, dir := range dirOrder {
+		id := fmt.Sprintf("T%d", i+1)
+		task := PlanTask{
+			ID:        id,
+			Title:     fmt.Sprintf("修改 %s 下相关文件", dir),
+			Goal:      fmt.Sprintf("在 %s 目录中完成需求涉及的改动。", dir),
+			DependsOn: prevIDs,
+			Files:     dirFiles[dir],
 			Input: []string{
-				"用户输入的 PRD 文本 / 本地文件 / 飞书链接",
-				"当前 task 的 source 元信息",
-			},
-			Output: []string{
-				"清晰的 source.json / prd.source.md",
-				"可靠的 prd-refined.md 或 fallback refined",
-			},
-			Actions: []string{
-				"统一 refine 阶段的 source 识别、标题处理和来源元信息落盘。",
-				"补齐飞书链接场景下的文档标识、来源信息和后续指引文案。",
-				"保证 refined 失败或 fallback 时，用户仍能拿到可继续推进的 task 产物。",
-			},
-			Done: []string{
-				"source.json / prd.source.md 能清晰体现来源类型和来源值。",
-				"飞书链接场景下用户能明确知道来源文档信息和下一步操作。",
-			},
-		})
-	}
-	if len(statusFiles) > 0 {
-		tasks = append(tasks, PlanTask{
-			ID:        "T2",
-			Title:     "完善 task 状态页与下一步提示",
-			Goal:      "让 status 输出能准确反映来源、当前状态和下一步动作，减少用户猜测。",
-			DependsOn: []string{"T1"},
-			Files:     statusFiles,
-			Input: []string{
-				"task.json / source.json / prd.source.md / prd-refined.md",
-				"当前 task 产物缺失情况",
-			},
-			Output: []string{
-				"更清晰的 status 展示",
-				"准确的 next command / 下一步提示",
-			},
-			Actions: []string{
-				"补齐 task status 对 source 类型、来源路径/链接和产物状态的展示。",
-				"根据当前 task 阶段输出更明确的 next command 或人工确认指引。",
-			},
-			Done: []string{
-				"`coco-ext prd status` 能清晰展示来源信息、产物缺失情况和下一步命令。",
-				"用户无需阅读源码即可判断当前 task 应继续 refine、plan 还是人工 review。",
-			},
-		})
-	}
-	if len(planFiles) > 0 {
-		tasks = append(tasks, PlanTask{
-			ID:        "T3",
-			Title:     "同步设计模板、计划结构与 codegen 输入",
-			Goal:      "让 plan 阶段产出可直接复用到 design、plan 和后续 codegen 的结构化结果。",
-			DependsOn: []string{"T1", "T2"},
-			Files:     planFiles,
-			Input: []string{
-				"refined PRD",
+				"refined PRD 中的功能点与边界条件",
 				"context 调研结果",
-				"候选文件与复杂度评估",
 			},
 			Output: []string{
-				"统一模板的 design.md",
-				"带任务列表的 plan.md",
-				"可供后续 codegen 消费的任务拆分结果",
+				fmt.Sprintf("%s 目录下的改动文件通过编译和自测", dir),
 			},
-			Actions: []string{
-				"将 design/plan 产物中的固定字段与动态内容进一步解耦。",
-				"在 plan.md 中生成结构化任务列表，明确后续 codegen 的执行单元。",
-				"保证 AI 只补充可变 section，不破坏程序控制的骨架和任务拆分。",
-			},
+			Actions: buildTaskActions(dirFiles[dir], sections),
 			Done: []string{
-				"design.md 使用统一模板输出，plan.md 包含可执行任务列表。",
-				"后续 codegen 可以直接消费任务列表而不需要再次人工拆解需求。",
+				"涉及文件编译通过，功能符合 PRD 要求。",
 			},
-		})
-	}
-
-	if len(tasks) == 0 {
-		tasks = append(tasks, PlanTask{
-			ID:    "T1",
-			Title: "收敛实现范围并细化任务",
-			Goal:  "在当前候选文件基础上收敛改动范围，为后续 codegen 提供可执行任务。",
-			Files: findings.CandidateFiles,
-			Input: []string{
-				"候选文件列表",
-				"refined PRD 与 context",
-			},
-			Output: []string{
-				"更明确的任务拆分结果",
-			},
-			Actions: []string{
-				"结合 refined PRD 和 context，继续人工确认候选文件的必要性。",
-				"将文件级动作拆成更细粒度的实现任务。",
-			},
-			Done: []string{
-				"每个候选文件都能归属到明确的实现任务中。",
-			},
-		})
+		}
+		tasks = append(tasks, task)
+		prevIDs = []string{id}
 	}
 
 	return tasks
 }
 
-func filterFiles(files []string, keywords ...string) []string {
-	result := make([]string, 0, len(files))
+func buildTaskActions(files []string, sections RefinedSections) []string {
+	actions := make([]string, 0, len(files)+1)
 	for _, file := range files {
-		for _, keyword := range keywords {
-			if strings.Contains(file, keyword) {
-				result = append(result, file)
-				break
-			}
-		}
+		actions = append(actions, fmt.Sprintf("检查并修改 %s。", file))
 	}
-	return result
+	if len(sections.Features) > 0 {
+		actions = append(actions, fmt.Sprintf("确保满足功能点：%s", sections.Features[0]))
+	}
+	return actions
 }
 
 func describePlannedFileChange(file string) string {
-	switch {
-	case strings.Contains(file, "cmd/prd_refine.go"):
-		return "调整 refine 命令的用户交互、来源提示和 fallback 提示。"
-	case strings.Contains(file, "internal/prd/refine.go"):
-		return "修改来源解析、task 元信息写入和 refined 内容校验逻辑。"
-	case strings.Contains(file, "cmd/prd_status.go"):
-		return "调整 status 命令输出，补充来源展示与下一步提示。"
-	case strings.Contains(file, "internal/prd/status.go"):
-		return "补充 task 状态计算、产物检查和 next command 生成逻辑。"
-	case strings.Contains(file, "cmd/prd_plan.go"):
-		return "调整 plan 命令交互输出、AI 阶段展示和 fallback 行为。"
-	case strings.Contains(file, "internal/prd/plan.go"):
-		return "完善 research、评分、模板渲染和后续 codegen 可消费的任务列表。"
-	default:
-		return suggestFileAction(file)
-	}
+	return suggestFileAction(file)
 }
 
 func writePlanArtifacts(task *TaskStatusReport, designContent, planContent string, now time.Time, usedAI bool) (*PlanArtifacts, error) {
@@ -957,18 +857,32 @@ func extractBulletItems(section string) []string {
 }
 
 func inferUnmatchedTerms(searchText string, matched []GlossaryEntry) []string {
+	// 从搜索文本中提取有意义的 ASCII 标识符，检查哪些未被 glossary 覆盖
 	terms := []string{}
-	for _, keyword := range []string{"讲解卡", "倒计时", "拍卖", "隐藏", "已结束"} {
-		if containsAny(searchText, keyword) && !matchedContainsBusiness(matched, keyword) {
-			terms = append(terms, keyword)
+	for _, token := range rePlanASCIIWord.FindAllString(searchText, -1) {
+		token = strings.TrimSpace(token)
+		if len(token) < 3 {
+			continue
 		}
+		lower := strings.ToLower(token)
+		switch lower {
+		case "the", "and", "for", "with", "that", "this", "from", "prd", "refined":
+			continue
+		}
+		if !matchedContainsIdentifier(matched, token) {
+			terms = append(terms, token)
+		}
+	}
+	if len(terms) > 10 {
+		terms = terms[:10]
 	}
 	return dedupeTerms(terms)
 }
 
-func matchedContainsBusiness(entries []GlossaryEntry, keyword string) bool {
+func matchedContainsIdentifier(entries []GlossaryEntry, keyword string) bool {
+	lower := strings.ToLower(keyword)
 	for _, entry := range entries {
-		if entry.Business == keyword {
+		if strings.ToLower(entry.Identifier) == lower || strings.ToLower(entry.Business) == lower {
 			return true
 		}
 	}
@@ -1000,22 +914,6 @@ func containsAny(text string, keywords ...string) bool {
 func findCandidateFiles(repoRoot string, matched []GlossaryEntry, terms []string) []string {
 	result := make([]string, 0, 8)
 	seen := make(map[string]bool)
-	preferred := preferPRDWorkflowFiles(terms)
-
-	for _, path := range preferred {
-		if seen[path] {
-			continue
-		}
-		seen[path] = true
-		result = append(result, path)
-		if len(result) >= 6 {
-			return result
-		}
-	}
-
-	if len(result) >= 4 {
-		return result
-	}
 
 	for _, entry := range matched {
 		for _, term := range []string{entry.Identifier, entry.Business} {
@@ -1026,6 +924,7 @@ func findCandidateFiles(repoRoot string, matched []GlossaryEntry, terms []string
 				seen[file] = true
 				result = append(result, file)
 				if len(result) >= 8 {
+					sort.Strings(result)
 					return result
 				}
 			}
@@ -1094,27 +993,11 @@ func searchFiles(repoRoot, term string) []string {
 }
 
 func heuristicCandidateFiles(repoRoot string, searchTerms []string) []string {
-	preferred := preferPRDWorkflowFiles(searchTerms)
-	if len(preferred) >= 8 {
-		return preferred[:8]
-	}
-
 	fileCmd := exec.Command("rg", "--files", ".", "--glob", "*.go")
 	fileCmd.Dir = repoRoot
 	output, err := fileCmd.Output()
 	if err != nil {
-		return preferred
-	}
-
-	priorityKeywords := make([]string, 0, 12)
-	for _, term := range searchTerms {
-		switch term {
-		case "prd", "plan", "refine", "status", "source", "lark", "feishu", "doc", "docx", "url", "task":
-			priorityKeywords = append(priorityKeywords, term)
-		}
-	}
-	if len(priorityKeywords) == 0 {
-		priorityKeywords = []string{"prd", "plan", "refine", "status", "source"}
+		return nil
 	}
 
 	type scoredFile struct {
@@ -1129,19 +1012,10 @@ func heuristicCandidateFiles(repoRoot string, searchTerms []string) []string {
 		}
 		lower := strings.ToLower(line)
 		score := 0
-		for _, keyword := range priorityKeywords {
-			if strings.Contains(lower, keyword) {
+		for _, term := range searchTerms {
+			if strings.Contains(lower, strings.ToLower(term)) {
 				score++
 			}
-		}
-		if strings.Contains(lower, "cmd/prd_") || strings.Contains(lower, "internal/prd/") {
-			score += 4
-		}
-		if strings.Contains(lower, "refine") || strings.Contains(lower, "status") || strings.Contains(lower, "source") {
-			score += 2
-		}
-		if strings.Contains(lower, "cmd/") {
-			score++
 		}
 		if score > 0 {
 			scored = append(scored, scoredFile{path: line, score: score})
@@ -1155,49 +1029,14 @@ func heuristicCandidateFiles(repoRoot string, searchTerms []string) []string {
 		return scored[i].score > scored[j].score
 	})
 
-	result := make([]string, 0, len(scored))
-	seen := make(map[string]bool, len(scored)+len(preferred))
-	for _, path := range preferred {
-		seen[path] = true
-		result = append(result, path)
-	}
+	result := make([]string, 0, 8)
 	for _, item := range scored {
-		if seen[item.path] {
-			continue
-		}
-		seen[item.path] = true
 		result = append(result, item.path)
 		if len(result) >= 8 {
 			break
 		}
 	}
 	return result
-}
-
-func preferPRDWorkflowFiles(searchTerms []string) []string {
-	candidates := []string{
-		"./cmd/prd_refine.go",
-		"./internal/prd/refine.go",
-		"./cmd/prd_status.go",
-		"./internal/prd/status.go",
-		"./cmd/prd_plan.go",
-		"./internal/prd/plan.go",
-	}
-	if len(searchTerms) == 0 {
-		return candidates
-	}
-
-	matchedWorkflow := false
-	for _, term := range searchTerms {
-		switch strings.ToLower(term) {
-		case "prd", "plan", "refine", "status", "source", "task", "lark", "feishu", "doc", "docx", "url":
-			matchedWorkflow = true
-		}
-	}
-	if matchedWorkflow {
-		return candidates
-	}
-	return nil
 }
 
 func inferSearchTerms(title string, sections RefinedSections, matched []GlossaryEntry) []string {
@@ -1207,7 +1046,6 @@ func inferSearchTerms(title string, sections RefinedSections, matched []Glossary
 		strings.Join(sections.Features, "\n"),
 		strings.Join(sections.Boundaries, "\n"),
 		strings.Join(sections.BusinessRules, "\n"),
-		strings.Join(sections.OpenQuestions, "\n"),
 	}, "\n")
 
 	terms := make([]string, 0, 24)
@@ -1218,33 +1056,11 @@ func inferSearchTerms(title string, sections RefinedSections, matched []Glossary
 	for _, token := range rePlanASCIIWord.FindAllString(sourceText, -1) {
 		token = strings.ToLower(strings.TrimSpace(token))
 		switch token {
-		case "the", "and", "for", "with", "that", "this", "from":
+		case "the", "and", "for", "with", "that", "this", "from",
+			"prd", "refined", "md", "ok", "no", "yes", "na":
 			continue
 		}
 		terms = append(terms, token)
-	}
-
-	for keyword, expansions := range map[string][]string{
-		"飞书":  {"lark", "feishu", "doc", "docx"},
-		"文档":  {"doc", "document", "source"},
-		"链接":  {"link", "url", "source"},
-		"来源":  {"source", "doc_token"},
-		"下一步": {"status", "next", "task"},
-		"任务":  {"task", "status"},
-		"提示":  {"status", "message"},
-		"体验":  {"refine", "status", "source"},
-		"需求":  {"prd", "refine", "plan"},
-	} {
-		if strings.Contains(sourceText, keyword) {
-			terms = append(terms, expansions...)
-		}
-	}
-
-	if strings.Contains(strings.ToLower(sourceText), "prd") {
-		terms = append(terms, "prd", "refine", "plan", "status")
-	}
-	if strings.Contains(strings.ToLower(sourceText), "coco-ext") {
-		terms = append(terms, "prd_refine", "prd_status", "refine", "status", "source")
 	}
 
 	return dedupeAndSort(terms)

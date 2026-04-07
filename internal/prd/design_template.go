@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"embed"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"text/template"
 )
@@ -25,10 +27,10 @@ type DesignRegionMode struct {
 }
 
 type DesignManpowerRow struct {
-	PSM      string
-	Content  string
-	Effort   string
-	Owner    string
+	PSM     string
+	Content string
+	Effort  string
+	Owner   string
 }
 
 type DesignDiagram struct {
@@ -70,8 +72,8 @@ type DesignTemplateData struct {
 	Diagrams            []DesignDiagram
 }
 
-func BuildDesignContent(task *TaskStatusReport, context *ContextSnapshot, sections RefinedSections, findings ResearchFinding, assessment ComplexityAssessment) string {
-	data := BuildDesignTemplateData(task, context, sections, findings, assessment)
+func BuildDesignContent(repoRoot string, task *TaskStatusReport, context *ContextSnapshot, sections RefinedSections, findings ResearchFinding, assessment ComplexityAssessment) string {
+	data := BuildDesignTemplateData(repoRoot, task, context, sections, findings, assessment)
 	content, err := RenderDesignTemplate(defaultDesignTemplateName, data)
 	if err != nil {
 		return BuildFallbackDesignContent(task, context, sections, findings, assessment)
@@ -79,7 +81,9 @@ func BuildDesignContent(task *TaskStatusReport, context *ContextSnapshot, sectio
 	return content
 }
 
-func BuildDesignTemplateData(task *TaskStatusReport, context *ContextSnapshot, sections RefinedSections, findings ResearchFinding, assessment ComplexityAssessment) DesignTemplateData {
+func BuildDesignTemplateData(repoRoot string, task *TaskStatusReport, context *ContextSnapshot, sections RefinedSections, findings ResearchFinding, assessment ComplexityAssessment) DesignTemplateData {
+	projectName := detectProjectName(repoRoot)
+
 	sourceValue := task.Metadata.SourceValue
 	if task.Source != nil {
 		switch {
@@ -105,12 +109,11 @@ func BuildDesignTemplateData(task *TaskStatusReport, context *ContextSnapshot, s
 			break
 		}
 	}
+	if len(changePoints) == 0 && sections.Summary != "" {
+		changePoints = append(changePoints, sections.Summary)
+	}
 	if len(changePoints) == 0 {
-		changePoints = append(changePoints,
-			"补齐飞书 PRD 链接场景下的来源信息展示。",
-			"统一 task 状态页中的下一步操作提示。",
-			"确保 refine / status / plan 链路中的来源体验一致。",
-		)
+		changePoints = append(changePoints, task.Metadata.Title)
 	}
 
 	scopeFiles := findings.CandidateFiles
@@ -118,45 +121,28 @@ func BuildDesignTemplateData(task *TaskStatusReport, context *ContextSnapshot, s
 		scopeFiles = []string{"当前未命中候选文件，需要补充 context 或人工确认模块。"}
 	}
 
-	excludedScope := []string{
-		"不引入新的外部服务依赖或服务端接口。",
-		"不在本次需求中实现飞书正文抓取。",
-		"不调整与当前需求无关的 review / gcmsg 流程。",
-	}
-
+	excludedScope := buildExcludedScope(sections)
 	systemDesign := buildDesignSystemNotes(findings, assessment)
-	idlChanges := []string{"本次需求不涉及 IDL、协议字段或公开 API 变更。"}
-	storageChanges := []string{"本次需求不涉及数据库、持久化模型或配置中心变更。"}
-	dependencyChanges := []string{"不新增下游服务依赖，仅复用现有本地 task/context 产物。"}
+	idlChanges := buildIDLChanges(findings)
+	storageChanges := buildStorageChanges(sections)
+	dependencyChanges := buildDependencyChanges(sections)
 	experimentChanges := []string{"本次需求不涉及实验平台或新增埋点。"}
-	monitoringNotes := []string{
-		"关注 `prd refine` / `prd status` / `prd plan` 在飞书链接场景下的输出是否一致。",
-		"关注 task 目录内 `source.json`、`prd.source.md` 与状态提示是否正确落盘。",
-	}
-	performanceNotes := []string{
-		"本次改动以 CLI 文本处理和本地文件落盘为主，不引入线上流量。",
-		"继续保持最小范围编译和本地搜索，不做全仓构建或全量测试。",
-	}
+	monitoringNotes := buildMonitoringNotes(findings, sections)
+	performanceNotes := buildPerformanceNotes(sections)
 	qaInputs := buildDesignQAInputs(sections, findings)
-	rolloutPlan := []string{
-		"通过发布新的 coco-ext 二进制版本生效，无额外发布顺序依赖。",
-		"上线后重点验证飞书链接输入、任务状态展示和下一步指引三个关键路径。",
-	}
-	rollbackPlan := []string{
-		"如出现问题，直接回滚到上一版本 coco-ext 二进制。",
-		"如 task 产物格式需要回退，仅删除本次新增或变更的 task 目录后重新执行旧版本命令。",
-	}
+	rolloutPlan := buildRolloutPlan(projectName)
+	rollbackPlan := buildRollbackPlan(projectName)
 	manpowerRows := []DesignManpowerRow{
 		{
-			PSM:     "coco-ext.prd",
-			Content: "PRD 来源体验优化、任务状态提示完善、方案模板渲染",
+			PSM:     projectName,
+			Content: summarizeManpowerContent(sections),
 			Effort:  estimateManpower(assessment),
 			Owner:   "待补充",
 		},
 	}
 	postLaunchNotes := []string{
-		"上线后补充真实使用反馈，包括飞书链接场景的命中率与误导提示情况。",
-		"评估是否需要进一步支持飞书正文拉取与模板切换配置。",
+		"上线后补充真实使用反馈与效果验证。",
+		"评估是否需要后续迭代优化。",
 	}
 
 	designNotes := make([]string, 0, len(findings.Notes))
@@ -178,7 +164,7 @@ func BuildDesignTemplateData(task *TaskStatusReport, context *ContextSnapshot, s
 			{Label: "Meego", Value: "N/A"},
 			{Label: "PM", Value: "待补充"},
 			{Label: "Tech Owner", Value: "待补充"},
-			{Label: "Server", Value: "coco-ext"},
+			{Label: "Server", Value: projectName},
 			{Label: "FE", Value: "N/A"},
 			{Label: "Client", Value: "N/A"},
 			{Label: "QA", Value: "待补充"},
@@ -196,30 +182,26 @@ func BuildDesignTemplateData(task *TaskStatusReport, context *ContextSnapshot, s
 		ExperimentChanges: experimentChanges,
 		ShowMultiRegion:   false,
 		RegionModes: []DesignRegionMode{
-			{Region: "US", Mode: "N/A", Note: "本需求为本地 CLI 能力，不区分区域。"},
-			{Region: "UK", Mode: "N/A", Note: "本需求为本地 CLI 能力，不区分区域。"},
-			{Region: "EU", Mode: "N/A", Note: "本需求为本地 CLI 能力，不区分区域。"},
-			{Region: "JP", Mode: "N/A", Note: "本需求为本地 CLI 能力，不区分区域。"},
-			{Region: "SEA", Mode: "N/A", Note: "本需求为本地 CLI 能力，不区分区域。"},
-			{Region: "LATAM", Mode: "N/A", Note: "本需求为本地 CLI 能力，不区分区域。"},
+			{Region: "US", Mode: "N/A", Note: "待评估"},
+			{Region: "UK", Mode: "N/A", Note: "待评估"},
+			{Region: "EU", Mode: "N/A", Note: "待评估"},
+			{Region: "JP", Mode: "N/A", Note: "待评估"},
+			{Region: "SEA", Mode: "N/A", Note: "待评估"},
+			{Region: "LATAM", Mode: "N/A", Note: "待评估"},
 		},
 		ShowRegionIsolation: false,
-		RegionIsolation: []string{
-			"本次需求为本地 CLI 体验优化，不涉及区域隔离逻辑。",
-		},
-		ShowCompliance: false,
-		ComplianceNotes: []string{
-			"本次需求不涉及新增合规逻辑或 EU 特殊链路。",
-		},
-		MonitoringNotes:  monitoringNotes,
-		PerformanceNotes: performanceNotes,
-		QAInputs:         qaInputs,
-		RolloutPlan:      rolloutPlan,
-		RollbackPlan:     rollbackPlan,
-		ManpowerRows:     manpowerRows,
-		PostLaunchNotes:  postLaunchNotes,
-		DesignNotes:      designNotes,
-		Diagrams:         buildDesignDiagrams(task, sections, findings, assessment),
+		RegionIsolation:     []string{"待评估是否涉及区域隔离。"},
+		ShowCompliance:      false,
+		ComplianceNotes:     []string{"本次需求不涉及新增合规逻辑。"},
+		MonitoringNotes:     monitoringNotes,
+		PerformanceNotes:    performanceNotes,
+		QAInputs:            qaInputs,
+		RolloutPlan:         rolloutPlan,
+		RollbackPlan:        rollbackPlan,
+		ManpowerRows:        manpowerRows,
+		PostLaunchNotes:     postLaunchNotes,
+		DesignNotes:         designNotes,
+		Diagrams:            buildDesignDiagrams(task, sections, findings, assessment),
 	}
 }
 
@@ -270,39 +252,174 @@ func BuildFallbackDesignContent(task *TaskStatusReport, context *ContextSnapshot
 	return b.String()
 }
 
+// detectProjectName 从 go.mod 或目录名推断项目名称
+func detectProjectName(repoRoot string) string {
+	goModPath := filepath.Join(repoRoot, "go.mod")
+	if data, err := os.ReadFile(goModPath); err == nil {
+		for _, line := range strings.Split(string(data), "\n") {
+			line = strings.TrimSpace(line)
+			if strings.HasPrefix(line, "module ") {
+				mod := strings.TrimPrefix(line, "module ")
+				mod = strings.TrimSpace(mod)
+				// 取最后一段作为项目名
+				parts := strings.Split(mod, "/")
+				return parts[len(parts)-1]
+			}
+		}
+	}
+	return filepath.Base(repoRoot)
+}
+
 func buildDesignWhy(task *TaskStatusReport, sections RefinedSections) string {
 	if strings.TrimSpace(sections.Summary) != "" {
 		return sections.Summary
 	}
-	return fmt.Sprintf("为 %s 补齐更清晰的任务来源与下一步指引，减少使用者在 PRD 流程中的理解成本和返工。", task.Metadata.Title)
+	return task.Metadata.Title
+}
+
+func buildExcludedScope(sections RefinedSections) []string {
+	excluded := []string{"不在本次范围内的模块和功能保持不变。"}
+	if len(sections.Boundaries) > 0 {
+		for _, boundary := range sections.Boundaries {
+			if strings.Contains(boundary, "不涉及") || strings.Contains(boundary, "不包含") ||
+				strings.Contains(boundary, "不在") || strings.Contains(boundary, "仅") {
+				excluded = append(excluded, boundary)
+			}
+		}
+	}
+	return excluded
 }
 
 func buildDesignSystemNotes(findings ResearchFinding, assessment ComplexityAssessment) []string {
-	notes := make([]string, 0, 6)
+	notes := make([]string, 0, 4)
 	if len(findings.CandidateFiles) > 0 {
-		notes = append(notes, "基于本地调研结果，在 PRD workflow 相关命令和内部实现层补齐飞书来源提示与状态展示能力。")
-		notes = append(notes, fmt.Sprintf("候选实现文件共 %d 个，优先在现有 prd 子命令和 internal/prd 逻辑中收敛实现。", len(findings.CandidateFiles)))
+		notes = append(notes, fmt.Sprintf("基于本地调研结果，候选实现文件共 %d 个。", len(findings.CandidateFiles)))
+		dirs := summarizeDirsForNotes(findings.CandidateDirs)
+		if dirs != "" {
+			notes = append(notes, fmt.Sprintf("改动集中在 %s。", dirs))
+		}
 	} else {
-		notes = append(notes, "当前未命中明确候选文件，优先通过 context 和人工确认收敛实现范围。")
+		notes = append(notes, "当前未命中明确候选文件，建议通过 context 和人工确认收敛实现范围。")
 	}
-	notes = append(notes, fmt.Sprintf("当前复杂度评估为 %s（%d 分），实现时优先保持最小改动范围，避免扩散到无关命令。", assessment.Level, assessment.Total))
-	notes = append(notes, "设计上优先复用现有 task/source/status 产物，不新增额外状态机或跨命令耦合。")
+	notes = append(notes, fmt.Sprintf("当前复杂度评估为 %s（%d 分），实现时优先保持最小改动范围。", assessment.Level, assessment.Total))
 	return notes
 }
 
-func buildDesignQAInputs(sections RefinedSections, findings ResearchFinding) []string {
-	inputs := []string{
-		"验证飞书链接输入场景下，task 是否能清晰展示来源文档信息。",
-		"验证未同步正文时，用户是否能从 status/产物中清楚知道下一步操作。",
-		"验证 text / file / lark_doc 三种 source 类型的表现是否一致且互不回归。",
+func summarizeDirsForNotes(dirs []string) string {
+	if len(dirs) == 0 {
+		return ""
 	}
-	for _, question := range sections.OpenQuestions {
-		inputs = append(inputs, fmt.Sprintf("人工确认并补测待确认项：%s", question))
+	if len(dirs) <= 3 {
+		return strings.Join(dirs, "、")
 	}
+	return strings.Join(dirs[:3], "、") + " 等目录"
+}
+
+func buildIDLChanges(findings ResearchFinding) []string {
+	for _, file := range findings.CandidateFiles {
+		if strings.HasSuffix(file, ".proto") || strings.HasSuffix(file, ".thrift") {
+			return []string{"候选文件中包含 IDL 文件，需评估是否涉及协议变更。"}
+		}
+	}
+	return []string{"本次需求不涉及 IDL、协议字段或公开 API 变更。"}
+}
+
+func buildStorageChanges(sections RefinedSections) []string {
+	joined := strings.Join(append(sections.Features, sections.Boundaries...), "\n")
+	if containsAny(joined, "数据库", "表", "持久化", "存储", "配置中心", "Redis", "MySQL", "MongoDB") {
+		return []string{"需求描述中涉及存储或配置变更，需人工评估具体方案。"}
+	}
+	return []string{"本次需求不涉及数据库、持久化模型或配置中心变更。"}
+}
+
+func buildDependencyChanges(sections RefinedSections) []string {
+	joined := strings.Join(append(sections.Features, sections.Boundaries...), "\n")
+	if containsAny(joined, "下游", "依赖", "第三方", "外部服务", "RPC", "HTTP") {
+		return []string{"需求描述中涉及外部依赖变更，需人工评估影响范围。"}
+	}
+	return []string{"不新增下游服务依赖。"}
+}
+
+func buildMonitoringNotes(findings ResearchFinding, sections RefinedSections) []string {
+	notes := make([]string, 0, 2)
 	if len(findings.CandidateFiles) > 0 {
-		inputs = append(inputs, fmt.Sprintf("重点回归候选实现文件相关路径：%s。", strings.Join(findings.CandidateFiles, "、")))
+		notes = append(notes, fmt.Sprintf("关注候选文件改动后的功能是否正常（共 %d 个文件）。", len(findings.CandidateFiles)))
 	}
+	if len(sections.OpenQuestions) > 0 {
+		notes = append(notes, "存在待确认问题，上线后需重点观察相关场景。")
+	}
+	if len(notes) == 0 {
+		notes = append(notes, "按常规监控关注即可。")
+	}
+	return notes
+}
+
+func buildPerformanceNotes(sections RefinedSections) []string {
+	joined := strings.Join(append(sections.Features, sections.Boundaries...), "\n")
+	if containsAny(joined, "性能", "流量", "QPS", "延迟", "并发", "批量") {
+		return []string{"需求涉及性能相关描述，需人工评估性能影响与流量预估。"}
+	}
+	return []string{"本次改动预计不影响线上性能，无额外流量评估需求。"}
+}
+
+func buildDesignQAInputs(sections RefinedSections, findings ResearchFinding) []string {
+	inputs := make([]string, 0, 8)
+
+	// 从功能点生成验证项
+	for i, feature := range sections.Features {
+		if i >= 3 {
+			break
+		}
+		inputs = append(inputs, fmt.Sprintf("验证功能点：%s", feature))
+	}
+
+	// 从边界条件生成验证项
+	for i, boundary := range sections.Boundaries {
+		if i >= 2 {
+			break
+		}
+		inputs = append(inputs, fmt.Sprintf("验证边界条件：%s", boundary))
+	}
+
+	// 从待确认问题生成验证项
+	for _, question := range sections.OpenQuestions {
+		inputs = append(inputs, fmt.Sprintf("人工确认并补测：%s", question))
+	}
+
+	if len(findings.CandidateFiles) > 0 {
+		inputs = append(inputs, fmt.Sprintf("重点回归候选实现文件：%s。", strings.Join(findings.CandidateFiles, "、")))
+	}
+
+	if len(inputs) == 0 {
+		inputs = append(inputs, "按需求描述验证核心功能是否符合预期。")
+	}
+
 	return inputs
+}
+
+func buildRolloutPlan(projectName string) []string {
+	return []string{
+		fmt.Sprintf("通过 %s 的常规发布流程上线。", projectName),
+		"上线后重点验证需求涉及的核心路径。",
+	}
+}
+
+func buildRollbackPlan(projectName string) []string {
+	return []string{
+		fmt.Sprintf("如出现问题，通过 %s 的常规回滚流程回退到上一版本。", projectName),
+	}
+}
+
+func summarizeManpowerContent(sections RefinedSections) string {
+	if len(sections.Features) > 0 {
+		// 取第一个功能点做摘要
+		summary := sections.Features[0]
+		if len(summary) > 40 {
+			summary = summary[:40] + "..."
+		}
+		return summary
+	}
+	return "需求实现"
 }
 
 func estimateManpower(assessment ComplexityAssessment) string {
@@ -316,137 +433,79 @@ func estimateManpower(assessment ComplexityAssessment) string {
 	}
 }
 
-func buildDesignFlowchartMermaid(task *TaskStatusReport, findings ResearchFinding) string {
+func buildDesignFlowchartMermaid(findings ResearchFinding, sections RefinedSections) string {
 	var b strings.Builder
 	b.WriteString("flowchart TD\n")
-	b.WriteString("  A[用户输入 PRD 文本/文件/飞书链接] --> B[coco-ext prd refine]\n")
-	b.WriteString("  B --> C[落盘 source.json / prd.source.md]\n")
-	b.WriteString("  C --> D{daemon 可用?}\n")
-	b.WriteString("  D -- 是 --> E[生成 prd-refined.md]\n")
-	b.WriteString("  D -- 否 --> F[写入 fallback refined]\n")
-	b.WriteString("  E --> G[coco-ext prd plan]\n")
-	b.WriteString("  F --> G\n")
-	b.WriteString("  G --> H[读取 context 与 prd-refined]\n")
-	b.WriteString("  H --> I[本地调研与复杂度评估]\n")
-	if len(findings.CandidateFiles) > 0 {
-		b.WriteString("  I --> J[候选实现范围收敛到 prd workflow 文件]\n")
-		b.WriteString("  J --> K{AI 方案是否通过校验?}\n")
+
+	if len(sections.Features) > 0 {
+		b.WriteString(fmt.Sprintf("  A[%s] --> B[实现改动]\n", truncateForMermaid(sections.Features[0], 40)))
 	} else {
-		b.WriteString("  I --> K{AI 方案是否通过校验?}\n")
+		b.WriteString("  A[需求输入] --> B[实现改动]\n")
 	}
-	b.WriteString("  K -- 是 --> L[写入 design.md / plan.md]\n")
-	b.WriteString("  K -- 否 --> M[回退到本地 design / plan]\n")
-	b.WriteString("  M --> L\n")
-	b.WriteString(fmt.Sprintf("  L --> N[task %s 状态更新为 planned]\n", task.TaskID))
+
+	if len(findings.CandidateDirs) > 0 {
+		for i, dir := range findings.CandidateDirs {
+			if i >= 3 {
+				break
+			}
+			nodeID := string(rune('C' + i))
+			b.WriteString(fmt.Sprintf("  B --> %s[修改 %s]\n", nodeID, dir))
+		}
+	} else {
+		b.WriteString("  B --> C[待确认改动范围]\n")
+	}
+
 	return b.String()
 }
 
-func buildDesignSequenceMermaid(task *TaskStatusReport) string {
-	return strings.TrimSpace(fmt.Sprintf(`
-sequenceDiagram
-  participant U as User
-  participant C as coco-ext CLI
-  participant T as Task Dir
-  participant D as Coco Daemon
-  participant M as Model
-
-  U->>C: prd refine
-  C->>T: 写 source.json / prd.source.md
-  C->>D: 检查并连接 daemon
-  alt daemon 可用
-    D->>M: prompt refine
-    M-->>D: refined PRD
-    D-->>C: refined result
-    C->>T: 写 prd-refined.md
-  else daemon 不可用或结果无效
-    C->>T: 写 fallback refined
-  end
-
-  U->>C: prd plan --task %s
-  C->>T: 读 prd-refined.md / context
-  C->>C: 本地调研与复杂度评估
-  C->>D: 检查并连接 daemon
-  alt AI plan 通过校验
-    D->>M: prompt plan
-    M-->>D: plan result
-    D-->>C: validated plan
-    C->>T: 写 design.md / plan.md
-  else AI 不可用或结果未通过校验
-    C->>T: 写本地 fallback design / plan
-  end
-  C->>T: 更新 task 状态为 planned
-`, task.TaskID))
+func truncateForMermaid(s string, maxLen int) string {
+	// 移除 mermaid 特殊字符
+	s = strings.NewReplacer("[", "(", "]", ")", "{", "(", "}", ")").Replace(s)
+	if len([]rune(s)) > maxLen {
+		return string([]rune(s)[:maxLen]) + "..."
+	}
+	return s
 }
 
-func buildDesignStateMermaid(task *TaskStatusReport) string {
-	return strings.TrimSpace(fmt.Sprintf(`
-stateDiagram-v2
-  [*] --> task_created: prd refine
-  task_created --> source_recorded: 写 source.json / prd.source.md
-  source_recorded --> refined_ready: refined 成功
-  source_recorded --> refined_fallback: refined 失败，写 fallback
-  refined_ready --> planned: prd plan 成功
-  refined_fallback --> planned: 基于 fallback 继续 plan
-  planned --> [*]: task %s
-`, task.TaskID))
+func buildDesignSequenceMermaid(sections RefinedSections, findings ResearchFinding) string {
+	var b strings.Builder
+	b.WriteString("sequenceDiagram\n")
+	b.WriteString("  participant U as User\n")
+	b.WriteString("  participant S as System\n")
+
+	if len(sections.Features) > 0 {
+		b.WriteString(fmt.Sprintf("  U->>S: %s\n", truncateForMermaid(sections.Features[0], 50)))
+	} else {
+		b.WriteString("  U->>S: 触发需求场景\n")
+	}
+
+	if len(findings.CandidateDirs) > 0 {
+		b.WriteString(fmt.Sprintf("  S->>S: 处理逻辑（涉及 %s）\n", truncateForMermaid(strings.Join(findings.CandidateDirs, ", "), 40)))
+	}
+
+	b.WriteString("  S-->>U: 返回结果\n")
+
+	return strings.TrimSpace(b.String())
 }
 
-func buildDesignDiagrams(task *TaskStatusReport, sections RefinedSections, findings ResearchFinding, assessment ComplexityAssessment) []DesignDiagram {
-	diagrams := make([]DesignDiagram, 0, 3)
+func buildDesignDiagrams(_ *TaskStatusReport, sections RefinedSections, findings ResearchFinding, assessment ComplexityAssessment) []DesignDiagram {
+	diagrams := make([]DesignDiagram, 0, 2)
 
-	if shouldShowWorkflowFlowchart(findings) {
+	if len(findings.CandidateFiles) > 0 {
 		diagrams = append(diagrams, DesignDiagram{
-			Title:   "调用流程图",
+			Title:   "改动流程图",
 			Type:    "mermaid",
-			Content: buildDesignFlowchartMermaid(task, findings),
+			Content: buildDesignFlowchartMermaid(findings, sections),
 		})
 	}
 
-	if shouldShowStateDiagram(task, sections) {
-		diagrams = append(diagrams, DesignDiagram{
-			Title:   "任务状态图",
-			Type:    "mermaid",
-			Content: buildDesignStateMermaid(task),
-		})
-	}
-
-	if shouldShowSequenceDiagram(findings, assessment) {
+	if assessment.Total >= 4 && len(findings.CandidateDirs) > 0 {
 		diagrams = append(diagrams, DesignDiagram{
 			Title:   "时序图",
 			Type:    "mermaid",
-			Content: buildDesignSequenceMermaid(task),
+			Content: buildDesignSequenceMermaid(sections, findings),
 		})
 	}
 
 	return diagrams
-}
-
-func shouldShowWorkflowFlowchart(findings ResearchFinding) bool {
-	return len(findings.CandidateFiles) > 0
-}
-
-func shouldShowStateDiagram(task *TaskStatusReport, sections RefinedSections) bool {
-	if task.Source != nil && task.Source.Type == SourceTypeLarkDoc {
-		return true
-	}
-
-	joined := strings.Join([]string{
-		task.Metadata.Title,
-		sections.Summary,
-		strings.Join(sections.Features, "\n"),
-		strings.Join(sections.OpenQuestions, "\n"),
-	}, "\n")
-	return containsAny(joined, "来源", "状态", "下一步", "提示", "飞书", "链接")
-}
-
-func shouldShowSequenceDiagram(findings ResearchFinding, assessment ComplexityAssessment) bool {
-	if assessment.Total >= 4 {
-		return true
-	}
-	for _, file := range findings.CandidateFiles {
-		if strings.Contains(file, "prd_refine") || strings.Contains(file, "prd_plan") {
-			return true
-		}
-	}
-	return false
 }
