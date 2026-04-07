@@ -1,8 +1,6 @@
 package prd
 
 import (
-	"crypto/sha1"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/url"
@@ -141,12 +139,11 @@ func PrepareRefineTask(repoRoot string, input RefineInput) (*RefineTask, error) 
 	return task, nil
 }
 
-// BuildTaskID 生成任务目录名。
+// BuildTaskID 生成任务目录名。格式：{日期时间}-{slug}，精确到秒以保证按名称排序即为时间序。
 func BuildTaskID(title, sourceKey string, now time.Time) string {
-	datePart := now.Format("20060102")
+	datePart := now.Format("20060102-150405")
 	slug := buildTaskSlug(title)
-	suffix := shortHash(strings.Join([]string{title, sourceKey, now.Format(time.RFC3339Nano)}, "|"), 4)
-	return fmt.Sprintf("%s-%s-%s", datePart, slug, suffix)
+	return fmt.Sprintf("%s-%s", datePart, slug)
 }
 
 // BuildRefinedPrompt 构造 PRD refine 的 AI prompt。
@@ -516,15 +513,6 @@ func trimTaskSlug(slug string) string {
 		return "task"
 	}
 	return slug
-}
-
-func shortHash(raw string, n int) string {
-	sum := sha1.Sum([]byte(raw))
-	encoded := hex.EncodeToString(sum[:])
-	if n <= 0 || n > len(encoded) {
-		return encoded
-	}
-	return encoded[:n]
 }
 
 func inferTitleFromContent(content string) string {
