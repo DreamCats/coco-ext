@@ -367,10 +367,10 @@ func ScoreComplexity(sections RefinedSections, findings ResearchFinding) Complex
 	ruleScore := 0
 	ruleReason := "业务规则相对清晰。"
 	switch {
-	case questionCount > 4:
+	case questionCount > 5:
 		ruleScore = 2
 		ruleReason = "待确认问题较多，业务规则仍不清晰。"
-	case questionCount > 1:
+	case questionCount > 2:
 		ruleScore = 1
 		ruleReason = "存在少量待确认问题，需要人工确认。"
 	}
@@ -390,7 +390,7 @@ func ScoreComplexity(sections RefinedSections, findings ResearchFinding) Complex
 
 	verifyScore := 0
 	verifyReason := "需求较易验证。"
-	if len(findings.UnmatchedTerms) > 0 {
+	if len(findings.UnmatchedTerms) > 2 {
 		verifyScore = 1
 		verifyReason = "存在 glossary 未命中的术语，调研结果需要额外验证。"
 	}
@@ -411,7 +411,7 @@ func ScoreComplexity(sections RefinedSections, findings ResearchFinding) Complex
 	case total > 6:
 		level = "复杂"
 		conclusion = "复杂度超过阈值，建议先人工拆解或补充上下文，不直接进入自动实现。"
-	case total > 3:
+	case total > 4:
 		level = "中等"
 		conclusion = "复杂度中等，可以生成计划，但需重点关注风险与待确认项。"
 	}
@@ -442,7 +442,7 @@ func BuildPlanHeader(task *TaskStatusReport) string {
 
 func BuildPlanBody(sections RefinedSections, findings ResearchFinding, assessment ComplexityAssessment, ai *PlanAISections) string {
 	var b strings.Builder
-	tasks := BuildPlanTasks(sections, findings)
+	tasks := BuildPlanTasks(sections, findings, ai)
 	b.WriteString("## 复杂度评估\n\n")
 	b.WriteString(fmt.Sprintf("- complexity: %s (%d)\n", assessment.Level, assessment.Total))
 	b.WriteString(fmt.Sprintf("- 结论: %s\n\n", assessment.Conclusion))
@@ -473,8 +473,16 @@ func BuildPlanBody(sections RefinedSections, findings ResearchFinding, assessmen
 	if len(findings.CandidateFiles) == 0 {
 		b.WriteString("- 暂未命中候选文件，需要补充 context 或人工指定模块。\n")
 	} else {
+		aiSteps := ""
+		if ai != nil {
+			aiSteps = ai.Steps
+		}
 		for _, file := range findings.CandidateFiles {
-			b.WriteString(fmt.Sprintf("- %s：%s\n", file, describePlannedFileChange(file)))
+			desc := matchAIStepForFile(aiSteps, file)
+			if desc == "" {
+				desc = describePlannedFileChange(file)
+			}
+			b.WriteString(fmt.Sprintf("- %s：%s\n", file, desc))
 		}
 	}
 	b.WriteString("\n")
@@ -724,9 +732,14 @@ func normalizeAISection(body string) string {
 	return strings.Join(result, "\n")
 }
 
-func BuildPlanTasks(sections RefinedSections, findings ResearchFinding) []PlanTask {
+func BuildPlanTasks(sections RefinedSections, findings ResearchFinding, ai *PlanAISections) []PlanTask {
 	if len(findings.CandidateFiles) == 0 {
 		return nil
+	}
+
+	aiSteps := ""
+	if ai != nil {
+		aiSteps = ai.Steps
 	}
 
 	// 按目录分组候选文件
@@ -741,15 +754,13 @@ func BuildPlanTasks(sections RefinedSections, findings ResearchFinding) []PlanTa
 	}
 
 	tasks := make([]PlanTask, 0, len(dirOrder))
-	prevIDs := make([]string, 0, 1)
 	for i, dir := range dirOrder {
 		id := fmt.Sprintf("T%d", i+1)
 		task := PlanTask{
-			ID:        id,
-			Title:     fmt.Sprintf("修改 %s 下相关文件", dir),
-			Goal:      fmt.Sprintf("在 %s 目录中完成需求涉及的改动。", dir),
-			DependsOn: prevIDs,
-			Files:     dirFiles[dir],
+			ID:    id,
+			Title: fmt.Sprintf("修改 %s 下相关文件", dir),
+			Goal:  fmt.Sprintf("在 %s 目录中完成需求涉及的改动。", dir),
+			Files: dirFiles[dir],
 			Input: []string{
 				"refined PRD 中的功能点与边界条件",
 				"context 调研结果",
@@ -757,27 +768,53 @@ func BuildPlanTasks(sections RefinedSections, findings ResearchFinding) []PlanTa
 			Output: []string{
 				fmt.Sprintf("%s 目录下的改动文件通过编译和自测", dir),
 			},
-			Actions: buildTaskActions(dirFiles[dir], sections),
+			Actions: buildTaskActions(dirFiles[dir], sections, aiSteps),
 			Done: []string{
 				"涉及文件编译通过，功能符合 PRD 要求。",
 			},
 		}
 		tasks = append(tasks, task)
-		prevIDs = []string{id}
 	}
 
 	return tasks
 }
 
-func buildTaskActions(files []string, sections RefinedSections) []string {
+func buildTaskActions(files []string, sections RefinedSections, aiSteps string) []string {
 	actions := make([]string, 0, len(files)+1)
+	hasAIMatch := false
 	for _, file := range files {
-		actions = append(actions, fmt.Sprintf("检查并修改 %s。", file))
+		if step := matchAIStepForFile(aiSteps, file); step != "" {
+			actions = append(actions, step)
+			hasAIMatch = true
+		} else {
+			actions = append(actions, fmt.Sprintf("检查并修改 %s。", file))
+		}
 	}
-	if len(sections.Features) > 0 {
+	if !hasAIMatch && len(sections.Features) > 0 {
 		actions = append(actions, fmt.Sprintf("确保满足功能点：%s", sections.Features[0]))
 	}
 	return actions
+}
+
+func matchAIStepForFile(aiSteps, file string) string {
+	if aiSteps == "" {
+		return ""
+	}
+	basename := filepath.Base(file)
+	for _, line := range strings.Split(aiSteps, "\n") {
+		line = strings.TrimSpace(line)
+		line = strings.TrimPrefix(line, "- ")
+		if line == "" {
+			continue
+		}
+		if strings.Contains(line, file) || strings.Contains(line, basename) {
+			if len([]rune(line)) > 100 {
+				return string([]rune(line)[:100]) + "..."
+			}
+			return line
+		}
+	}
+	return ""
 }
 
 func describePlannedFileChange(file string) string {

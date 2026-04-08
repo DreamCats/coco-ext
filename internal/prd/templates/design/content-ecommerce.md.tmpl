@@ -91,10 +91,12 @@
 - {{ . }}
 {{- end }}
 
+{{- if not .IsSimple }}
 ## 3.5 实验&埋点
 
 {{- range .ExperimentChanges }}
 - {{ . }}
+{{- end }}
 {{- end }}
 
 {{- if .ShowMultiRegion }}
@@ -128,10 +130,12 @@
 - {{ . }}
 {{- end }}
 
+{{- if not .IsSimple }}
 ## 3.10 性能&流量评估
 
 {{- range .PerformanceNotes }}
 - {{ . }}
+{{- end }}
 {{- end }}
 
 ## 3.11 给QA的输入
@@ -140,9 +144,11 @@
 - {{ . }}
 {{- end }}
 
+{{- if not .IsSimple }}
 ## 3.12 数据合规
 
 - 本次需求不涉及新增数据合规要求。
+{{- end }}
 
 # 四、上线
 
@@ -166,8 +172,10 @@
 | {{ .PSM }} | {{ .Content }} | {{ .Effort }} | {{ .Owner }} |
 {{- end }}
 
+{{- if not .IsSimple }}
 # 六、项目总结(上线后补充）
 
 {{- range .PostLaunchNotes }}
 - {{ . }}
+{{- end }}
 {{- end }}

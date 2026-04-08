@@ -45,6 +45,7 @@ type DesignTemplateData struct {
 	Status              string
 	ComplexityLevel     string
 	ComplexityTotal     int
+	IsSimple            bool
 	InfoItems           []DesignInfoItem
 	Why                 string
 	ChangePoints        []string
@@ -159,6 +160,7 @@ func BuildDesignTemplateData(repoRoot string, task *TaskStatusReport, context *C
 		Status:          TaskStatusPlanned,
 		ComplexityLevel: assessment.Level,
 		ComplexityTotal: assessment.Total,
+		IsSimple:        assessment.Level == "简单",
 		InfoItems: []DesignInfoItem{
 			{Label: "PRD / Bug单(Hotfix)", Value: sourceValue},
 			{Label: "Meego", Value: "N/A"},
@@ -423,11 +425,13 @@ func summarizeManpowerContent(sections RefinedSections) string {
 }
 
 func estimateManpower(assessment ComplexityAssessment) string {
-	switch assessment.Level {
-	case "简单":
-		return "1-2pd"
-	case "中等":
-		return "3-5pd"
+	switch {
+	case assessment.Total <= 2:
+		return "≤0.5pd"
+	case assessment.Level == "简单":
+		return "0.5-1pd"
+	case assessment.Level == "中等":
+		return "2-3pd"
 	default:
 		return "5pd+"
 	}
@@ -489,6 +493,11 @@ func buildDesignSequenceMermaid(sections RefinedSections, findings ResearchFindi
 }
 
 func buildDesignDiagrams(_ *TaskStatusReport, sections RefinedSections, findings ResearchFinding, assessment ComplexityAssessment) []DesignDiagram {
+	// 简单需求不生成图示
+	if assessment.Level == "简单" {
+		return nil
+	}
+
 	diagrams := make([]DesignDiagram, 0, 2)
 
 	if len(findings.CandidateFiles) > 0 {
@@ -499,7 +508,7 @@ func buildDesignDiagrams(_ *TaskStatusReport, sections RefinedSections, findings
 		})
 	}
 
-	if assessment.Total >= 4 && len(findings.CandidateDirs) > 0 {
+	if assessment.Total >= 6 && len(findings.CandidateDirs) > 0 {
 		diagrams = append(diagrams, DesignDiagram{
 			Title:   "时序图",
 			Type:    "mermaid",
