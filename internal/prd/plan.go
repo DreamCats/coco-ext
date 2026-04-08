@@ -82,6 +82,7 @@ type PlanTask struct {
 
 type PlanAISections struct {
 	Summary         string
+	CandidateFiles  string
 	Steps           string
 	Risks           string
 	ValidationExtra string
@@ -168,7 +169,49 @@ func GeneratePlanWithAI(gen *generator.Generator, repoRoot, taskID string, now t
 		return writePlanArtifacts(build.Task, localDesign, localPlan, now, false)
 	}
 
+	// 当 AI 提供了候选文件时，用 AI 的结果覆盖本地调研，重新生成 design 和 plan 骨架
+	aiFiles := parseAICandidateFiles(aiSections.CandidateFiles)
+	if len(aiFiles) > 0 {
+		build.Findings.CandidateFiles = aiFiles
+		build.Findings.CandidateDirs = summarizeDirs(aiFiles)
+		build.Assessment = ScoreComplexity(build.Sections, build.Findings)
+		localDesign = BuildDesignContent(repoRoot, build.Task, build.Context, build.Sections, build.Findings, build.Assessment)
+	}
+
 	return writePlanArtifacts(build.Task, localDesign, planHeader+BuildPlanBody(build.Sections, build.Findings, build.Assessment, &aiSections), now, true)
+}
+
+// parseAICandidateFiles 从 AI 输出的候选文件文本中提取文件路径
+func parseAICandidateFiles(raw string) []string {
+	if strings.TrimSpace(raw) == "" {
+		return nil
+	}
+	var files []string
+	for _, line := range strings.Split(raw, "\n") {
+		line = strings.TrimSpace(line)
+		line = strings.TrimPrefix(line, "- ")
+		line = strings.TrimPrefix(line, "* ")
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		// 跳过明显不是文件路径的行（中文说明、括号内容等）
+		if !strings.Contains(line, ".") && !strings.Contains(line, "/") {
+			continue
+		}
+		if strings.HasPrefix(line, "（") || strings.HasPrefix(line, "(") {
+			continue
+		}
+		// 去除可能的尾部注释
+		if idx := strings.Index(line, " "); idx > 0 {
+			candidate := line[:idx]
+			if strings.Contains(candidate, ".") || strings.Contains(candidate, "/") {
+				line = candidate
+			}
+		}
+		files = append(files, line)
+	}
+	return files
 }
 
 func LoadContextSnapshot(repoRoot string) (*ContextSnapshot, error) {
@@ -527,14 +570,18 @@ func BuildPlanBody(sections RefinedSections, findings ResearchFinding, assessmen
 
 func BuildPlanPrompt(build *PlanBuild) string {
 	var b strings.Builder
-	b.WriteString("你是一名资深技术方案与研发计划助手。系统会自行写入 plan.md 的固定头部、复杂度骨架、拟改文件、任务列表和待确认项。你只需要基于提供的 PRD refined 内容、本地 context 事实和代码调研结果，补充 plan.md 的可变 section。\n\n")
-	b.WriteString("要求：\n")
-	b.WriteString("1. 只能基于提供的信息工作，不要编造未出现的模块、文件或接口。\n")
-	b.WriteString("2. 不要输出 task_id、title、复杂度总分、拟改文件清单、待确认项这些固定字段。\n")
-	b.WriteString("3. 如果需求复杂，仍然要在总结或风险里明确写出“不建议自动实现”。\n")
-	b.WriteString("4. 输出必须严格使用下面的标记格式：\n")
+	b.WriteString("你是一名资深技术方案与研发计划助手。基于提供的 PRD refined 内容、本地 context 事实和代码调研结果,输出结构化的方案内容。\n\n")
+	b.WriteString("要求:\n")
+	b.WriteString("1. 只能基于提供的信息工作,不要编造未出现的模块、文件或接口。\n")
+	b.WriteString("2. 不要输出 task_id、title、复杂度总分、待确认项这些固定字段。\n")
+	b.WriteString("3. 如果需求复杂,仍然要在总结或风险里明确写出 '不建议自动实现'。\n")
+	b.WriteString("4. 输出必须严格使用下面的标记格式:\n")
 	b.WriteString("=== IMPLEMENTATION SUMMARY ===\n")
 	b.WriteString("- ...\n")
+	b.WriteString("=== CANDIDATE FILES ===\n")
+	b.WriteString("(每行一个文件路径,只输出你认为真正需要改动的文件,不要照搬本地调研的候选文件列表。本地调研结果仅供参考,可能不准确。你需要基于 PRD 内容和 context 独立判断真正需要改动的文件。)\n")
+	b.WriteString("- path/to/file1.go\n")
+	b.WriteString("- path/to/file2.go\n")
 	b.WriteString("=== IMPLEMENTATION STEPS ===\n")
 	b.WriteString("- ...\n")
 	b.WriteString("=== RISK NOTES ===\n")
@@ -597,6 +644,7 @@ func ExtractPlanOutputs(raw string) (sections PlanAISections, ok bool) {
 		target *string
 	}{
 		{marker: "=== IMPLEMENTATION SUMMARY ===", target: &sections.Summary},
+		{marker: "=== CANDIDATE FILES ===", target: &sections.CandidateFiles},
 		{marker: "=== IMPLEMENTATION STEPS ===", target: &sections.Steps},
 		{marker: "=== RISK NOTES ===", target: &sections.Risks},
 		{marker: "=== VALIDATION EXTRA ===", target: &sections.ValidationExtra},
