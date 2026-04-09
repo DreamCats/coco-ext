@@ -299,6 +299,15 @@ func runPRDCodeForeground(repoRoot string, build *prd.CodeBuild, branchName, wor
 	color.Green("   [2/4] coco daemon 已连接 ✓")
 	color.Cyan("      连接耗时: %s", formatDurationSeconds(time.Since(connectStartedAt)))
 
+	// 诊断：输出 prompt 大小和标识符，dump prompt 到文件
+	prompt := prd.BuildCodePrompt(build)
+	promptSize := len([]rune(prompt))
+	color.Cyan("   [debug] prompt 大小: %d 字符 (%.1f KB)", promptSize, float64(len(prompt))/1024)
+	color.Cyan("   [debug] plan 提取标识符: %v", build.PlanIdents)
+	dumpPath := filepath.Join(build.Task.TaskDir, "code-prompt-debug.txt")
+	_ = os.WriteFile(dumpPath, []byte(prompt), 0644)
+	color.Cyan("   [debug] prompt 已写入: %s", dumpPath)
+
 	color.Cyan("   [3/4] 正在生成代码...")
 	generateStartedAt := time.Now()
 	var streamBuffer strings.Builder
