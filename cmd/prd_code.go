@@ -22,6 +22,7 @@ var (
 	prdCodeTaskID   string
 	prdCodeBranch   string
 	prdCodeSync     bool
+	prdCodeDryRun   bool
 	prdCodeBG       bool   // hidden: 后台进程模式
 	prdCodeWTPath   string // hidden: worktree 绝对路径
 	prdCodeRepoRoot string // hidden: 主仓库绝对路径
@@ -39,6 +40,7 @@ func init() {
 	prdCodeCmd.Flags().StringVar(&prdCodeTaskID, "task", "", "指定 task id；默认读取最近一个 task")
 	prdCodeCmd.Flags().StringVar(&prdCodeBranch, "branch", "", "自定义分支名；默认 prd/{task_id}")
 	prdCodeCmd.Flags().BoolVar(&prdCodeSync, "sync", false, "同步执行（阻塞等待完成）")
+	prdCodeCmd.Flags().BoolVar(&prdCodeDryRun, "dry-run", false, "仅输出 prompt，不连接 daemon")
 	// 后台进程专用隐藏 flag
 	prdCodeCmd.Flags().BoolVar(&prdCodeBG, "_bg", false, "")
 	prdCodeCmd.Flags().StringVar(&prdCodeWTPath, "_wt", "", "")
@@ -72,6 +74,18 @@ func runPRDCode(cmd *cobra.Command, args []string) error {
 	build, err := prd.PrepareCodeBuild(repoRoot, taskID)
 	if err != nil {
 		return err
+	}
+
+	// dry-run 模式：只输出 prompt，不连接 daemon
+	if prdCodeDryRun {
+		prompt := prd.BuildCodePrompt(build)
+		dumpPath := filepath.Join(build.Task.TaskDir, "code-prompt-debug.txt")
+		_ = os.WriteFile(dumpPath, []byte(prompt), 0644)
+		fmt.Printf("prompt 大小: %d 字符 (%.1f KB)\n", len([]rune(prompt)), float64(len(prompt))/1024)
+		fmt.Printf("plan 标识符: %v\n", build.PlanIdents)
+		fmt.Printf("候选文件: %v\n", build.CandidateFiles)
+		fmt.Printf("prompt 已写入: %s\n", dumpPath)
+		return nil
 	}
 
 	branchName := prdCodeBranch
@@ -196,15 +210,6 @@ func runPRDCodeBackground() error {
 
 	fmt.Printf("[prd code] task_id=%s, worktree=%s\n", taskID, worktreePath)
 
-	fmt.Println("[prd code] daemon warmup 检查...")
-	if err := prd.WarmupDaemon(gen); err != nil {
-		codeWriteFailResult(build, repoRoot, worktreePath, branchName, taskID, startedAt,
-			fmt.Errorf("daemon 无法响应: %w", err))
-		codeRemoveWorktree(repoRoot, worktreePath, branchName)
-		return fmt.Errorf("daemon 无法响应: %w", err)
-	}
-	fmt.Println("[prd code] daemon warmup 通过 ✓")
-
 	fmt.Println("[prd code] AI 代码生成中...")
 
 	result, err := prd.GenerateCode(gen, build, worktreePath, time.Now(), nil)
@@ -309,24 +314,16 @@ func runPRDCodeForeground(repoRoot string, build *prd.CodeBuild, branchName, wor
 	color.Green("   [2/4] coco daemon 已连接 ✓")
 	color.Cyan("      连接耗时: %s", formatDurationSeconds(time.Since(connectStartedAt)))
 
-	color.Cyan("   [2.5/4] daemon warmup 检查...")
-	warmupStart := time.Now()
-	if err := prd.WarmupDaemon(gen); err != nil {
-		codeRemoveWorktree(repoRoot, worktreePath, branchName)
-		return fmt.Errorf("daemon 无法响应: %w\n建议：执行 coco-ext daemon stop 后重试", err)
-	}
-	color.Green("   [2.5/4] daemon 响应正常 ✓ (%s)", formatDurationSeconds(time.Since(warmupStart)))
-
 	// 诊断：输出 prompt 大小和标识符，dump prompt 到文件
 	prompt := prd.BuildCodePrompt(build)
 	promptSize := len([]rune(prompt))
 	color.Cyan("   [debug] prompt 大小: %d 字符 (%.1f KB)", promptSize, float64(len(prompt))/1024)
-	color.Cyan("   [debug] plan 提取标识符: %v", build.PlanIdents)
+	color.Cyan("   [debug] plan 标识符: %v", build.PlanIdents)
 	dumpPath := filepath.Join(build.Task.TaskDir, "code-prompt-debug.txt")
 	_ = os.WriteFile(dumpPath, []byte(prompt), 0644)
 	color.Cyan("   [debug] prompt 已写入: %s", dumpPath)
 
-	color.Cyan("   [3/4] 正在生成代码...")
+	color.Cyan("   [3/4] 正在生成代码（直接发送，无 warmup）...")
 	generateStartedAt := time.Now()
 	var streamBuffer strings.Builder
 	streamStarted := false
