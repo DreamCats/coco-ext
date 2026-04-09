@@ -837,6 +837,11 @@ func writePlanArtifacts(task *TaskStatusReport, designContent, planContent strin
 	return &PlanArtifacts{DesignPath: designPath, PlanPath: planPath, UsedAI: usedAI}, nil
 }
 
+// ArchiveTask 将 task 状态更新为 archived。
+func ArchiveTask(taskDir string, now time.Time) error {
+	return updateTaskStatus(taskDir, TaskStatusArchived, now)
+}
+
 func updateTaskStatus(taskDir, status string, now time.Time) error {
 	metaPath := filepath.Join(taskDir, "task.json")
 	meta, err := readTaskMetadata(metaPath)

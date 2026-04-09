@@ -16,7 +16,8 @@ const (
 	TaskStatusInitialized = "initialized"
 	TaskStatusRefined     = "refined"
 	TaskStatusPlanned     = "planned"
-	TaskStatusCoded       = "coded"
+	TaskStatusCoded    = "coded"
+	TaskStatusArchived = "archived"
 )
 
 type SourceType string

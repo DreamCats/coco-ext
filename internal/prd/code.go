@@ -1,6 +1,7 @@
 package prd
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -32,9 +33,9 @@ type CodeFile struct {
 
 // CodeFileResult 代表单个文件的写入结果。
 type CodeFileResult struct {
-	Path    string
-	Written bool
-	Error   string
+	Path    string `json:"path"`
+	Written bool   `json:"written"`
+	Error   string `json:"error,omitempty"`
 }
 
 // CodeResult 代表整个代码生成的结果。
@@ -45,6 +46,39 @@ type CodeResult struct {
 	CommitHash  string
 	BuildOK     bool
 	BuildOutput string
+}
+
+// CodeResultReport 是写入 code-result.json 的结构，供 LLM 消费。
+type CodeResultReport struct {
+	Status       string   `json:"status"`
+	TaskID       string   `json:"task_id"`
+	Branch       string   `json:"branch"`
+	Worktree     string   `json:"worktree"`
+	Commit       string   `json:"commit,omitempty"`
+	BuildOK      bool     `json:"build_ok"`
+	FilesWritten []string `json:"files_written,omitempty"`
+	Error        string   `json:"error,omitempty"`
+	Log          string   `json:"log"`
+	StartedAt    string   `json:"started_at"`
+	FinishedAt   string   `json:"finished_at,omitempty"`
+}
+
+// WriteCodeResultReport 将结果写入 task 目录的 code-result.json。
+func WriteCodeResultReport(taskDir string, report CodeResultReport) error {
+	return writeJSONFile(filepath.Join(taskDir, "code-result.json"), report)
+}
+
+// ReadCodeResultReport 读取 code-result.json。
+func ReadCodeResultReport(taskDir string) (*CodeResultReport, error) {
+	data, err := os.ReadFile(filepath.Join(taskDir, "code-result.json"))
+	if err != nil {
+		return nil, err
+	}
+	var report CodeResultReport
+	if err := json.Unmarshal(data, &report); err != nil {
+		return nil, err
+	}
+	return &report, nil
 }
 
 // PrepareCodeBuild 校验 task 状态，读取 plan/design/context/源文件，返回 CodeBuild。
@@ -128,7 +162,6 @@ func extractCandidateFilesFromPlan(planContent string) []string {
 			continue
 		}
 		entry := strings.TrimPrefix(trimmed, "- ")
-		// 格式: "path/to/file.go：描述" 或 "path/to/file.go: 描述"
 		parts := strings.SplitN(entry, "：", 2)
 		if len(parts) < 2 {
 			parts = strings.SplitN(entry, ":", 2)
@@ -243,7 +276,6 @@ func ParseCodeOutput(raw string) ([]CodeFile, error) {
 
 		content := lines[1]
 		content = strings.TrimSpace(content)
-		// 移除可能的 code fence 包裹
 		if strings.HasPrefix(content, "```") {
 			if idx := strings.Index(content, "\n"); idx != -1 {
 				content = content[idx+1:]
@@ -268,11 +300,11 @@ func ParseCodeOutput(raw string) ([]CodeFile, error) {
 	return files, nil
 }
 
-// WriteCodeFiles 将生成的文件写入磁盘。
-func WriteCodeFiles(repoRoot string, files []CodeFile) []CodeFileResult {
+// WriteCodeFiles 将生成的文件写入磁盘。workDir 是写入根目录（主仓库或 worktree）。
+func WriteCodeFiles(workDir string, files []CodeFile) []CodeFileResult {
 	results := make([]CodeFileResult, 0, len(files))
 	for _, file := range files {
-		absPath := filepath.Join(repoRoot, file.Path)
+		absPath := filepath.Join(workDir, file.Path)
 
 		dir := filepath.Dir(absPath)
 		if err := os.MkdirAll(dir, 0755); err != nil {
@@ -299,19 +331,19 @@ func WriteCodeFiles(repoRoot string, files []CodeFile) []CodeFileResult {
 	return results
 }
 
-// CheckGoBuild 对改动涉及的 package 执行编译检查。
-func CheckGoBuild(repoRoot string, files []CodeFile) (bool, string) {
+// CheckGoBuild 对改动涉及的 package 执行编译检查。workDir 是编译目录。
+func CheckGoBuild(workDir string, files []CodeFile) (bool, string) {
 	pkgs := make(map[string]bool)
 	for _, file := range files {
 		dir := filepath.Dir(file.Path)
-		pkgs["./" + dir + "/..."] = true
+		pkgs["./"+dir+"/..."] = true
 	}
 
 	var allOutput strings.Builder
 	allOK := true
 	for pkg := range pkgs {
 		cmd := exec.Command("go", "build", pkg)
-		cmd.Dir = repoRoot
+		cmd.Dir = workDir
 		output, err := cmd.CombinedOutput()
 		if err != nil {
 			allOK = false
@@ -322,8 +354,8 @@ func CheckGoBuild(repoRoot string, files []CodeFile) (bool, string) {
 	return allOK, allOutput.String()
 }
 
-// GenerateCode 是代码生成的主流程：AI 生成 → 解析 → 写文件 → 编译检查 → 更新状态。
-func GenerateCode(gen *generator.Generator, build *CodeBuild, now time.Time, onChunk func(string)) (*CodeResult, error) {
+// GenerateCode 是代码生成的主流程。workDir 为写入和编译的目录（主仓库或 worktree）。
+func GenerateCode(gen *generator.Generator, build *CodeBuild, workDir string, now time.Time, onChunk func(string)) (*CodeResult, error) {
 	prompt := BuildCodePrompt(build)
 	raw, err := gen.PromptWithTimeout(prompt, config.CodePromptTimeout, onChunk)
 	if err != nil {
@@ -335,7 +367,6 @@ func GenerateCode(gen *generator.Generator, build *CodeBuild, now time.Time, onC
 		return nil, fmt.Errorf("解析 AI 输出失败: %w", err)
 	}
 
-	// 只保留在 plan 拟改文件列表中的文件
 	candidateSet := make(map[string]bool, len(build.CandidateFiles))
 	for _, f := range build.CandidateFiles {
 		candidateSet[f] = true
@@ -351,9 +382,9 @@ func GenerateCode(gen *generator.Generator, build *CodeBuild, now time.Time, onC
 		return nil, fmt.Errorf("AI 输出的文件均不在 plan.md 的拟改文件列表中")
 	}
 
-	writeResults := WriteCodeFiles(build.RepoRoot, validFiles)
+	writeResults := WriteCodeFiles(workDir, validFiles)
 
-	buildOK, buildOutput := CheckGoBuild(build.RepoRoot, validFiles)
+	buildOK, buildOutput := CheckGoBuild(workDir, validFiles)
 
 	if buildOK {
 		_ = updateTaskStatus(build.Task.TaskDir, TaskStatusCoded, now)
