@@ -842,6 +842,11 @@ func ArchiveTask(taskDir string, now time.Time) error {
 	return updateTaskStatus(taskDir, TaskStatusArchived, now)
 }
 
+// ResetTaskToPlanned 将 task 状态回退为 planned（用于重新执行 prd code）。
+func ResetTaskToPlanned(taskDir string, now time.Time) error {
+	return updateTaskStatus(taskDir, TaskStatusPlanned, now)
+}
+
 func updateTaskStatus(taskDir, status string, now time.Time) error {
 	metaPath := filepath.Join(taskDir, "task.json")
 	meta, err := readTaskMetadata(metaPath)
