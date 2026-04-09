@@ -241,6 +241,23 @@ func BuildCodePrompt(build *CodeBuild) string {
 	return b.String()
 }
 
+// matchCandidatePath 将 AI 输出的路径（可能是绝对路径）匹配到候选文件的相对路径。
+func matchCandidatePath(outputPath string, candidates []string) string {
+	// 精确匹配
+	for _, c := range candidates {
+		if outputPath == c {
+			return c
+		}
+	}
+	// 后缀匹配：AI 可能输出 /full/path/to/repo/dal/tcc/foo.go，候选是 dal/tcc/foo.go
+	for _, c := range candidates {
+		if strings.HasSuffix(outputPath, "/"+c) {
+			return c
+		}
+	}
+	return ""
+}
+
 // codePromptWithEarlyStop 发送 prompt 并在检测到 === END === 时提前返回。
 func codePromptWithEarlyStop(gen *generator.Generator, prompt string, onChunk func(string)) (string, error) {
 	stop := make(chan struct{}, 1)
@@ -431,19 +448,21 @@ func GenerateCode(gen *generator.Generator, build *CodeBuild, workDir string, no
 		return nil, fmt.Errorf("解析 AI 输出失败: %w", err)
 	}
 
-	candidateSet := make(map[string]bool, len(build.CandidateFiles))
-	for _, f := range build.CandidateFiles {
-		candidateSet[f] = true
-	}
+	// 路径匹配：AI 可能输出绝对路径，需要用后缀匹配归一化为相对路径
 	validFiles := make([]CodeFile, 0, len(files))
 	for _, file := range files {
-		if candidateSet[file.Path] {
-			validFiles = append(validFiles, file)
+		relPath := matchCandidatePath(file.Path, build.CandidateFiles)
+		if relPath != "" {
+			validFiles = append(validFiles, CodeFile{Path: relPath, Content: file.Content})
 		}
 	}
 
 	if len(validFiles) == 0 {
-		return nil, fmt.Errorf("AI 输出的文件均不在 plan.md 的拟改文件列表中")
+		var outputPaths []string
+		for _, f := range files {
+			outputPaths = append(outputPaths, f.Path)
+		}
+		return nil, fmt.Errorf("AI 输出的文件均不在 plan.md 的拟改文件列表中\n  AI 输出: %v\n  候选: %v", outputPaths, build.CandidateFiles)
 	}
 
 	writeResults := WriteCodeFiles(workDir, validFiles)
