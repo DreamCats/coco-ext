@@ -23,6 +23,7 @@ type CodeBuild struct {
 	DesignContent  string
 	CandidateFiles []string
 	FileSources    map[string]string // path -> current content
+	PlanIdents     []string          // 从 plan.md 提取的 Go 标识符
 }
 
 // CodeFile 代表 AI 生成的单个文件内容。
@@ -118,6 +119,8 @@ func PrepareCodeBuild(repoRoot, taskID string) (*CodeBuild, error) {
 		return nil, fmt.Errorf("plan.md 中未找到拟改文件列表")
 	}
 
+	planIdents := ExtractIdentifiersFromPlan(string(planContent))
+
 	fileSources := make(map[string]string, len(candidateFiles))
 	for _, file := range candidateFiles {
 		absPath := filepath.Join(repoRoot, file)
@@ -141,6 +144,7 @@ func PrepareCodeBuild(repoRoot, taskID string) (*CodeBuild, error) {
 		DesignContent:  string(designContent),
 		CandidateFiles: candidateFiles,
 		FileSources:    fileSources,
+		PlanIdents:     planIdents,
 	}, nil
 }
 
@@ -210,16 +214,17 @@ func BuildCodePrompt(build *CodeBuild) string {
 		b.WriteString("\n\n")
 	}
 
-	b.WriteString("## 当前源文件\n\n")
+	b.WriteString("## 当前源文件（仅展示与 plan 相关的函数/类型，省略部分用注释标注行数）\n\n")
 	for _, file := range build.CandidateFiles {
 		content := build.FileSources[file]
 		b.WriteString(fmt.Sprintf("### %s\n\n", file))
 		if content == "" {
 			b.WriteString("（新文件，当前不存在）\n\n")
 		} else {
+			extracted := ExtractRelevantSource(file, content, build.PlanIdents)
 			b.WriteString("```go\n")
-			b.WriteString(content)
-			if !strings.HasSuffix(content, "\n") {
+			b.WriteString(extracted)
+			if !strings.HasSuffix(extracted, "\n") {
 				b.WriteString("\n")
 			}
 			b.WriteString("```\n\n")
@@ -357,7 +362,7 @@ func CheckGoBuild(workDir string, files []CodeFile) (bool, string) {
 // GenerateCode 是代码生成的主流程。workDir 为写入和编译的目录（主仓库或 worktree）。
 func GenerateCode(gen *generator.Generator, build *CodeBuild, workDir string, now time.Time, onChunk func(string)) (*CodeResult, error) {
 	prompt := BuildCodePrompt(build)
-	raw, err := gen.PromptWithTimeout(prompt, config.CodePromptTimeout, onChunk)
+	raw, err := gen.PromptWithIdleTimeout(prompt, config.CodePromptTimeout, config.CodeChunkIdleTimeout, onChunk)
 	if err != nil {
 		return nil, fmt.Errorf("AI 代码生成失败: %w", err)
 	}

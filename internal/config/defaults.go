@@ -30,8 +30,11 @@ const (
 	// ReviewPromptTimeout review 专用超时，允许更长时间生成报告
 	ReviewPromptTimeout = 3 * time.Minute
 
-	// CodePromptTimeout prd code 专用超时，代码生成含完整文件内容，需要更长时间
-	CodePromptTimeout = 5 * time.Minute
+	// CodePromptTimeout prd code 专用总超时上限
+	CodePromptTimeout = 10 * time.Minute
+
+	// CodeChunkIdleTimeout prd code 专用空闲超时，连续无 chunk 输出则判定超时
+	CodeChunkIdleTimeout = 60 * time.Second
 )
 
 const (

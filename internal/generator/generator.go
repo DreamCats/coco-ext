@@ -194,6 +194,88 @@ func (g *Generator) PromptWithTimeout(prompt string, timeout time.Duration, onCh
 	return result, nil
 }
 
+// PromptWithIdleTimeout 发送 prompt，同时支持总超时和空闲超时。
+// totalTimeout 为绝对截止时间；idleTimeout 为连续无 chunk 输出的最大等待时间。
+func (g *Generator) PromptWithIdleTimeout(prompt string, totalTimeout, idleTimeout time.Duration, onChunk func(string)) (string, error) {
+	if g == nil || g.conn == nil {
+		return "", fmt.Errorf("daemon 连接不可用，请重新创建 generator 或重试命令")
+	}
+
+	type promptResult struct {
+		content string
+		err     error
+	}
+
+	var result strings.Builder
+	conn := g.conn
+
+	// 每收到一个 chunk 就向此 channel 发信号
+	chunkSignal := make(chan struct{}, 1)
+
+	done := make(chan promptResult, 1)
+	go func() {
+		_, err := conn.Prompt(
+			prompt,
+			g.modelID,
+			"",
+			func(text string) {
+				result.WriteString(text)
+				if onChunk != nil {
+					onChunk(text)
+				}
+				// 非阻塞发送信号
+				select {
+				case chunkSignal <- struct{}{}:
+				default:
+				}
+			},
+			func(kind, title, status string) {},
+		)
+		if err != nil {
+			done <- promptResult{err: fmt.Errorf("prompt 失败: %w", err)}
+			return
+		}
+		done <- promptResult{content: result.String()}
+	}()
+
+	totalTimer := time.NewTimer(totalTimeout)
+	defer totalTimer.Stop()
+
+	idleTimer := time.NewTimer(idleTimeout)
+	defer idleTimer.Stop()
+
+	for {
+		select {
+		case promptResp := <-done:
+			if promptResp.err != nil {
+				return "", promptResp.err
+			}
+			return promptResp.content, nil
+		case <-chunkSignal:
+			// 收到 chunk，重置 idle 计时器
+			if !idleTimer.Stop() {
+				select {
+				case <-idleTimer.C:
+				default:
+				}
+			}
+			idleTimer.Reset(idleTimeout)
+		case <-idleTimer.C:
+			if g.conn != nil {
+				_ = g.conn.Close()
+				g.conn = nil
+			}
+			return "", fmt.Errorf("prompt 空闲超时（%s 无输出）", idleTimeout)
+		case <-totalTimer.C:
+			if g.conn != nil {
+				_ = g.conn.Close()
+				g.conn = nil
+			}
+			return "", fmt.Errorf("prompt 超时（%s）", totalTimeout)
+		}
+	}
+}
+
 func (g *Generator) executePromptWithTimeout(prompt string, timeout time.Duration, onChunk func(string)) (string, error) {
 	if g == nil || g.conn == nil {
 		return "", fmt.Errorf("daemon 连接不可用，请重新创建 generator 或重试命令")
