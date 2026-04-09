@@ -30,12 +30,13 @@ type RawGenerator struct {
 // 适用于 prd code 等需要结构化文本输出的场景。
 func NewRaw(repoPath string) (*RawGenerator, error) {
 	client := acp.NewClient(repoPath,
-		acp.WithCommandFactory(func(ctx context.Context) *exec.Cmd {
+		acp.WithCommandFactory(func(_ context.Context) *exec.Cmd {
 			args := []string{"acp", "serve"}
 			for _, tool := range disallowedTools {
 				args = append(args, "--disallowed-tool", tool)
 			}
-			return exec.CommandContext(ctx, "coco", args...)
+			// 不用 CommandContext：子进程生命周期由 Close() 管理，不随 context 取消
+			return exec.Command("coco", args...)
 		}),
 	)
 
