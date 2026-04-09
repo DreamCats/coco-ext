@@ -369,6 +369,7 @@ func ParseCodeOutput(raw string) ([]CodeFile, error) {
 }
 
 // parsePatchBlocks 从 PATCH 段落中解析 <<<<<<< SEARCH / ======= REPLACE / >>>>>>> 块。
+// 同时兼容 "======= REPLACE" 和 "======="（无 REPLACE 后缀）两种分隔符风格。
 func parsePatchBlocks(content string) []CodePatch {
 	var patches []CodePatch
 	remaining := content
@@ -382,12 +383,13 @@ func parsePatchBlocks(content string) []CodePatch {
 			remaining = remaining[nl+1:]
 		}
 
-		replaceIdx := strings.Index(remaining, "======= REPLACE")
+		// 兼容 "======= REPLACE" 和 "======="（AI 可能省略 REPLACE）
+		replaceIdx, markerLen := findReplaceMarker(remaining)
 		if replaceIdx == -1 {
 			break
 		}
 		searchContent := strings.TrimRight(remaining[:replaceIdx], "\n")
-		remaining = remaining[replaceIdx+len("======= REPLACE"):]
+		remaining = remaining[replaceIdx+markerLen:]
 		if nl := strings.Index(remaining, "\n"); nl >= 0 {
 			remaining = remaining[nl+1:]
 		}
@@ -402,6 +404,26 @@ func parsePatchBlocks(content string) []CodePatch {
 		patches = append(patches, CodePatch{Search: searchContent, Replace: replaceContent})
 	}
 	return patches
+}
+
+// findReplaceMarker 在 content 中查找 replace 分隔符，优先匹配 "======= REPLACE"，
+// 其次匹配独立行的 "======="。返回 (索引, 标记长度)，未找到返回 (-1, 0)。
+func findReplaceMarker(content string) (int, int) {
+	// 优先匹配完整标记
+	if idx := strings.Index(content, "======= REPLACE"); idx != -1 {
+		return idx, len("======= REPLACE")
+	}
+	// 回退：匹配行首的 "=======" (7个等号，后面是换行或行尾)
+	lines := strings.Split(content, "\n")
+	offset := 0
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "=======" || trimmed == "========" {
+			return offset, len(line)
+		}
+		offset += len(line) + 1 // +1 for \n
+	}
+	return -1, 0
 }
 
 // cleanFullFileContent 清理 FILE 模式的完整文件内容（去除 markdown 代码围栏等）。
