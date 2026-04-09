@@ -371,7 +371,7 @@ func WarmupDaemon(gen *generator.Generator) error {
 // GenerateCode 是代码生成的主流程。workDir 为写入和编译的目录（主仓库或 worktree）。
 func GenerateCode(gen *generator.Generator, build *CodeBuild, workDir string, now time.Time, onChunk func(string)) (*CodeResult, error) {
 	prompt := BuildCodePrompt(build)
-	raw, err := gen.PromptWithIdleTimeout(prompt, config.CodePromptTimeout, config.CodeChunkIdleTimeout, onChunk)
+	raw, err := gen.PromptWithTimeout(prompt, config.CodePromptTimeout, onChunk)
 	if err != nil {
 		return nil, fmt.Errorf("AI 代码生成失败: %w", err)
 	}

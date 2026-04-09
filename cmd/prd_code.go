@@ -345,8 +345,19 @@ func runPRDCodeForeground(repoRoot string, build *prd.CodeBuild, branchName, wor
 	}()
 
 	now := time.Now()
+	chunkCount := 0
 	result, err := prd.GenerateCode(gen, build, worktreePath, now, func(chunk string) {
+		chunkCount++
 		streamBuffer.WriteString(chunk)
+		if chunkCount <= 3 {
+			// 打印前几个 chunk 用于诊断
+			clearCodeProgressLine()
+			preview := chunk
+			if len(preview) > 80 {
+				preview = preview[:80] + "..."
+			}
+			color.Cyan("      [chunk #%d] len=%d: %q", chunkCount, len(chunk), preview)
+		}
 		if streamStarted {
 			return
 		}
@@ -361,6 +372,14 @@ func runPRDCodeForeground(repoRoot string, build *prd.CodeBuild, branchName, wor
 	clearCodeProgressLine()
 
 	if err != nil {
+		color.Yellow("   [debug] 共收到 %d 个 chunk, 总长度 %d 字符", chunkCount, streamBuffer.Len())
+		if streamBuffer.Len() > 0 {
+			preview := streamBuffer.String()
+			if len(preview) > 500 {
+				preview = preview[:500] + "..."
+			}
+			color.Yellow("   [debug] 已收到内容:\n%s", preview)
+		}
 		codeRemoveWorktree(repoRoot, worktreePath, branchName)
 		return err
 	}
