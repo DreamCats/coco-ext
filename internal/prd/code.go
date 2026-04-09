@@ -26,10 +26,18 @@ type CodeBuild struct {
 	PlanIdents     []string          // 从 plan.md 提取的 Go 标识符
 }
 
-// CodeFile 代表 AI 生成的单个文件内容。
+// CodePatch 代表一个 search/replace 补丁块。
+type CodePatch struct {
+	Search  string
+	Replace string
+}
+
+// CodeFile 代表 AI 生成的单个文件变更。
+// Patches 非空时为 PATCH 模式（局部替换），否则为 FILE 模式（完整内容）。
 type CodeFile struct {
 	Path    string
-	Content string
+	Content string      // FILE 模式：完整文件内容
+	Patches []CodePatch // PATCH 模式：search/replace 块列表
 }
 
 // CodeFileResult 代表单个文件的写入结果。
@@ -184,16 +192,26 @@ func BuildCodePrompt(build *CodeBuild) string {
 	var b strings.Builder
 
 	// ===== 头部强指令 =====
-	b.WriteString("[IMPORTANT] 你是一个纯文本代码生成器。禁止使用任何工具，禁止读取文件，禁止创建待办事项。你的唯一任务是：基于下方提供的信息，直接输出 === FILE: ... === 格式的代码。\n\n")
-	b.WriteString("输出格式（严格遵守）：\n")
+	b.WriteString("[IMPORTANT] 你是一个纯文本代码生成器。禁止使用任何工具，禁止读取文件，禁止创建待办事项。你的唯一任务是：基于下方提供的信息，直接输出代码改动。\n\n")
+	b.WriteString("输出格式（严格遵守，二选一）：\n\n")
+	b.WriteString("格式一 — 局部补丁（优先使用，节省输出）：\n")
+	b.WriteString("=== PATCH: path/to/file.go ===\n")
+	b.WriteString("<<<<<<< SEARCH\n")
+	b.WriteString("<要替换的原始代码，必须与源文件完全一致，包括缩进>\n")
+	b.WriteString("======= REPLACE\n")
+	b.WriteString("<替换后的新代码>\n")
+	b.WriteString(">>>>>>>\n")
+	b.WriteString("（同一文件可包含多个 SEARCH/REPLACE 块）\n\n")
+	b.WriteString("格式二 — 完整文件（仅用于新文件或修改超过 50% 的文件）：\n")
 	b.WriteString("=== FILE: path/to/file.go ===\n")
-	b.WriteString("<该文件的完整源代码>\n")
-	b.WriteString("=== END ===\n\n")
+	b.WriteString("<该文件的完整源代码>\n\n")
+	b.WriteString("所有文件输出完毕后以 === END === 结束。\n\n")
 	b.WriteString("规则：\n")
-	b.WriteString("- 第一行必须是 === FILE: ... ===，不允许有任何前言、解释或思考过程\n")
-	b.WriteString("- 每个文件输出完整源代码（不是 diff）\n")
-	b.WriteString("- 不需要修改的文件不要输出\n")
+	b.WriteString("- 第一行必须是 === PATCH: 或 === FILE:，不允许有任何前言、解释或思考过程\n")
+	b.WriteString("- 已有文件的少量修改必须使用 PATCH 格式，禁止输出完整文件浪费 token\n")
+	b.WriteString("- SEARCH 块中的代码必须与源文件中的内容完全一致（包括缩进和空行）\n")
 	b.WriteString("- 保持原有代码风格、import 顺序、注释风格\n")
+	b.WriteString("- 【关键】必须输出所有需要修改的文件，不能遗漏\n")
 	b.WriteString("- 输出 === END === 后立即停止\n\n")
 
 	// ===== 数据部分 =====
@@ -236,7 +254,13 @@ func BuildCodePrompt(build *CodeBuild) string {
 
 	// ===== 尾部强指令 =====
 	b.WriteString("---\n\n")
-	b.WriteString("[FINAL INSTRUCTION] 现在直接输出代码。第一行必须是 === FILE: ... ===，最后一行必须是 === END ===。禁止输出任何其它内容。开始：\n")
+	b.WriteString("[FINAL INSTRUCTION] 现在直接输出代码改动。\n")
+	b.WriteString("你必须输出以下文件（每个都需要修改）：\n")
+	for i, file := range build.CandidateFiles {
+		b.WriteString(fmt.Sprintf("  %d. %s\n", i+1, file))
+	}
+	b.WriteString("\n优先使用 === PATCH: === 格式（局部替换），仅新文件使用 === FILE: === 格式。\n")
+	b.WriteString("第一行必须是 === PATCH: 或 === FILE:，所有文件输出完毕后以 === END === 结束。禁止输出任何其它内容。开始：\n")
 
 	return b.String()
 }
@@ -285,96 +309,194 @@ func truncateForPrompt(content string, maxLen int) string {
 	return string(runes[:maxLen]) + "\n\n... (已截断)"
 }
 
-// ParseCodeOutput 从 AI 输出中解析文件内容。
+// ParseCodeOutput 从 AI 输出中解析文件内容，支持 FILE（完整文件）和 PATCH（search/replace）两种格式。
 func ParseCodeOutput(raw string) ([]CodeFile, error) {
 	normalized := strings.ReplaceAll(raw, "\r\n", "\n")
 
-	const fileMarker = "=== FILE: "
-	const endMarker = "=== END ==="
-
-	idx := strings.Index(normalized, fileMarker)
-	if idx == -1 {
-		return nil, fmt.Errorf("AI 输出中未找到文件标记 '=== FILE: ...'")
-	}
-	normalized = normalized[idx:]
-
-	if endIdx := strings.Index(normalized, endMarker); endIdx != -1 {
+	// 截断到 === END ===
+	if endIdx := strings.Index(normalized, "=== END ==="); endIdx != -1 {
 		normalized = normalized[:endIdx]
 	}
 
-	parts := strings.Split(normalized, fileMarker)
+	// 逐行状态机解析
+	lines := strings.Split(normalized, "\n")
+
+	type block struct {
+		path    string
+		isPatch bool
+		lines   []string
+	}
+	var blocks []block
+	var cur *block
+	started := false
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+
+		if strings.HasPrefix(trimmed, "=== FILE: ") || strings.HasPrefix(trimmed, "=== PATCH: ") {
+			if cur != nil {
+				blocks = append(blocks, *cur)
+			}
+			isPatch := strings.HasPrefix(trimmed, "=== PATCH: ")
+			header := trimmed
+			if isPatch {
+				header = strings.TrimPrefix(header, "=== PATCH: ")
+			} else {
+				header = strings.TrimPrefix(header, "=== FILE: ")
+			}
+			header = strings.TrimSuffix(header, "===")
+			header = strings.TrimSpace(header)
+			cur = &block{path: header, isPatch: isPatch}
+			started = true
+			continue
+		}
+
+		if !started || cur == nil {
+			continue
+		}
+		cur.lines = append(cur.lines, line)
+	}
+	if cur != nil {
+		blocks = append(blocks, *cur)
+	}
+
 	var files []CodeFile
-	for _, part := range parts {
-		part = strings.TrimSpace(part)
-		if part == "" {
+	for _, blk := range blocks {
+		if blk.path == "" {
 			continue
 		}
-
-		lines := strings.SplitN(part, "\n", 2)
-		if len(lines) < 2 {
-			continue
-		}
-
-		header := strings.TrimSpace(lines[0])
-		header = strings.TrimSuffix(header, "===")
-		header = strings.TrimSpace(header)
-		if header == "" {
-			continue
-		}
-
-		content := lines[1]
-		content = strings.TrimSpace(content)
-		if strings.HasPrefix(content, "```") {
-			if idx := strings.Index(content, "\n"); idx != -1 {
-				content = content[idx+1:]
+		if blk.isPatch {
+			patches := parsePatchBlocks(strings.Join(blk.lines, "\n"))
+			if len(patches) > 0 {
+				files = append(files, CodeFile{Path: blk.path, Patches: patches})
 			}
-			if lastIdx := strings.LastIndex(content, "```"); lastIdx != -1 {
-				content = content[:lastIdx]
+		} else {
+			content := cleanFullFileContent(strings.Join(blk.lines, "\n"))
+			if content != "" {
+				files = append(files, CodeFile{Path: blk.path, Content: content})
 			}
 		}
-
-		content = strings.TrimRight(content, "\n") + "\n"
-
-		files = append(files, CodeFile{
-			Path:    header,
-			Content: content,
-		})
 	}
 
 	if len(files) == 0 {
 		return nil, fmt.Errorf("AI 输出中未解析到有效的文件内容")
 	}
-
 	return files, nil
 }
 
+// parsePatchBlocks 从 PATCH 段落中解析 <<<<<<< SEARCH / ======= REPLACE / >>>>>>> 块。
+func parsePatchBlocks(content string) []CodePatch {
+	var patches []CodePatch
+	remaining := content
+	for {
+		searchIdx := strings.Index(remaining, "<<<<<<< SEARCH")
+		if searchIdx == -1 {
+			break
+		}
+		remaining = remaining[searchIdx+len("<<<<<<< SEARCH"):]
+		if nl := strings.Index(remaining, "\n"); nl >= 0 {
+			remaining = remaining[nl+1:]
+		}
+
+		replaceIdx := strings.Index(remaining, "======= REPLACE")
+		if replaceIdx == -1 {
+			break
+		}
+		searchContent := strings.TrimRight(remaining[:replaceIdx], "\n")
+		remaining = remaining[replaceIdx+len("======= REPLACE"):]
+		if nl := strings.Index(remaining, "\n"); nl >= 0 {
+			remaining = remaining[nl+1:]
+		}
+
+		endIdx := strings.Index(remaining, ">>>>>>>")
+		if endIdx == -1 {
+			break
+		}
+		replaceContent := strings.TrimRight(remaining[:endIdx], "\n")
+		remaining = remaining[endIdx+len(">>>>>>>"):]
+
+		patches = append(patches, CodePatch{Search: searchContent, Replace: replaceContent})
+	}
+	return patches
+}
+
+// cleanFullFileContent 清理 FILE 模式的完整文件内容（去除 markdown 代码围栏等）。
+func cleanFullFileContent(content string) string {
+	content = strings.TrimSpace(content)
+	if content == "" {
+		return ""
+	}
+	if strings.HasPrefix(content, "```") {
+		if idx := strings.Index(content, "\n"); idx != -1 {
+			content = content[idx+1:]
+		}
+		if lastIdx := strings.LastIndex(content, "```"); lastIdx != -1 {
+			content = content[:lastIdx]
+		}
+	}
+	return strings.TrimRight(content, "\n") + "\n"
+}
+
 // WriteCodeFiles 将生成的文件写入磁盘。workDir 是写入根目录（主仓库或 worktree）。
+// 支持 FILE 模式（完整覆写）和 PATCH 模式（search/replace 局部替换）。
 func WriteCodeFiles(workDir string, files []CodeFile) []CodeFileResult {
 	results := make([]CodeFileResult, 0, len(files))
 	for _, file := range files {
 		absPath := filepath.Join(workDir, file.Path)
 
-		dir := filepath.Dir(absPath)
-		if err := os.MkdirAll(dir, 0755); err != nil {
-			results = append(results, CodeFileResult{
-				Path:  file.Path,
-				Error: fmt.Sprintf("创建目录失败: %v", err),
-			})
-			continue
+		if len(file.Patches) > 0 {
+			// PATCH 模式：读取已有文件，应用 search/replace
+			existing, err := os.ReadFile(absPath)
+			if err != nil {
+				results = append(results, CodeFileResult{
+					Path:  file.Path,
+					Error: fmt.Sprintf("读取文件失败（PATCH 模式需要文件已存在）: %v", err),
+				})
+				continue
+			}
+			content := string(existing)
+			patchFailed := false
+			for i, patch := range file.Patches {
+				if !strings.Contains(content, patch.Search) {
+					results = append(results, CodeFileResult{
+						Path:  file.Path,
+						Error: fmt.Sprintf("PATCH #%d 匹配失败: 未找到要替换的代码片段", i+1),
+					})
+					patchFailed = true
+					break
+				}
+				content = strings.Replace(content, patch.Search, patch.Replace, 1)
+			}
+			if patchFailed {
+				continue
+			}
+			if err := os.WriteFile(absPath, []byte(content), 0644); err != nil {
+				results = append(results, CodeFileResult{
+					Path:  file.Path,
+					Error: fmt.Sprintf("写入失败: %v", err),
+				})
+				continue
+			}
+			results = append(results, CodeFileResult{Path: file.Path, Written: true})
+		} else {
+			// FILE 模式：完整覆写
+			dir := filepath.Dir(absPath)
+			if err := os.MkdirAll(dir, 0755); err != nil {
+				results = append(results, CodeFileResult{
+					Path:  file.Path,
+					Error: fmt.Sprintf("创建目录失败: %v", err),
+				})
+				continue
+			}
+			if err := os.WriteFile(absPath, []byte(file.Content), 0644); err != nil {
+				results = append(results, CodeFileResult{
+					Path:  file.Path,
+					Error: fmt.Sprintf("写入失败: %v", err),
+				})
+				continue
+			}
+			results = append(results, CodeFileResult{Path: file.Path, Written: true})
 		}
-
-		if err := os.WriteFile(absPath, []byte(file.Content), 0644); err != nil {
-			results = append(results, CodeFileResult{
-				Path:  file.Path,
-				Error: fmt.Sprintf("写入失败: %v", err),
-			})
-			continue
-		}
-
-		results = append(results, CodeFileResult{
-			Path:    file.Path,
-			Written: true,
-		})
 	}
 	return results
 }
@@ -416,9 +538,9 @@ const codeMaxFollowUps = 3
 
 // codeFollowUpPrompts 当 agent 没有直接输出代码时的跟进指令。
 var codeFollowUpPrompts = []string{
-	"确认，请直接输出代码。严格使用 === FILE: path === 格式，最后 === END ===。不要解释。",
-	"直接输出 === FILE: ... === 格式的完整代码，不要再解释。",
-	"=== FILE:",
+	"确认，请直接输出代码。使用 === PATCH: path === 格式（局部修改）或 === FILE: path === 格式（新文件），最后 === END ===。不要解释。",
+	"直接输出 === PATCH: ... === 或 === FILE: ... === 格式的代码，不要再解释。",
+	"=== PATCH:",
 }
 
 // GenerateCode 是代码生成的主流程。workDir 为写入和编译的目录（主仓库或 worktree）。
@@ -430,8 +552,9 @@ func GenerateCode(gen *generator.Generator, build *CodeBuild, workDir string, no
 		return nil, fmt.Errorf("AI 代码生成失败: %w", err)
 	}
 
-	// 如果第一轮没有输出 === FILE: 标记，自动跟进
-	for i := 0; i < codeMaxFollowUps && !strings.Contains(raw, "=== FILE:"); i++ {
+	// 如果第一轮没有输出 FILE/PATCH 标记，自动跟进
+	hasCodeMarker := strings.Contains(raw, "=== FILE:") || strings.Contains(raw, "=== PATCH:")
+	for i := 0; i < codeMaxFollowUps && !hasCodeMarker; i++ {
 		if onChunk != nil {
 			onChunk(fmt.Sprintf("\n[coco-ext] 未检测到代码输出，发送跟进指令 (%d/%d)...\n", i+1, codeMaxFollowUps))
 		}
@@ -441,6 +564,7 @@ func GenerateCode(gen *generator.Generator, build *CodeBuild, workDir string, no
 			break
 		}
 		raw += more
+		hasCodeMarker = strings.Contains(raw, "=== FILE:") || strings.Contains(raw, "=== PATCH:")
 	}
 
 	files, err := ParseCodeOutput(raw)
@@ -453,7 +577,7 @@ func GenerateCode(gen *generator.Generator, build *CodeBuild, workDir string, no
 	for _, file := range files {
 		relPath := matchCandidatePath(file.Path, build.CandidateFiles)
 		if relPath != "" {
-			validFiles = append(validFiles, CodeFile{Path: relPath, Content: file.Content})
+			validFiles = append(validFiles, CodeFile{Path: relPath, Content: file.Content, Patches: file.Patches})
 		}
 	}
 
