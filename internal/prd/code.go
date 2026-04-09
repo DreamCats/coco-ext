@@ -179,44 +179,45 @@ func extractCandidateFilesFromPlan(planContent string) []string {
 }
 
 // BuildCodePrompt 构建代码生成的 AI prompt。
+// 结构：强指令（头）→ 数据 → 强指令（尾），首尾夹击抑制 agent 漂移。
 func BuildCodePrompt(build *CodeBuild) string {
 	var b strings.Builder
-	b.WriteString("你是一名资深 Go 开发工程师。基于提供的技术方案（design.md）、实施计划（plan.md）、代码模式（patterns）和当前源文件，直接输出修改后的完整文件内容。\n\n")
 
-	b.WriteString("要求：\n")
-	b.WriteString("1. 严格按照 plan.md 中的任务列表和具体动作进行修改，不要做额外的改动。\n")
-	b.WriteString("2. 输出每个需要修改的文件的完整内容（不是 diff，是完整文件）。\n")
-	b.WriteString("3. 保持原有代码风格、import 顺序、注释风格不变。\n")
-	b.WriteString("4. 如果某个文件不需要修改，不要输出该文件。\n")
-	b.WriteString("5. 不要输出任何解释、思考过程或前言，直接输出文件内容。\n")
-	b.WriteString("6. 不要使用任何工具（如文件读写、todo 列表等），只输出纯文本。\n")
-	b.WriteString("7. 使用以下标记格式分隔每个文件：\n\n")
+	// ===== 头部强指令 =====
+	b.WriteString("[IMPORTANT] 你是一个纯文本代码生成器。禁止使用任何工具，禁止读取文件，禁止创建待办事项。你的唯一任务是：基于下方提供的信息，直接输出 === FILE: ... === 格式的代码。\n\n")
+	b.WriteString("输出格式（严格遵守）：\n")
 	b.WriteString("=== FILE: path/to/file.go ===\n")
-	b.WriteString("<完整文件内容>\n")
-	b.WriteString("=== FILE: path/to/another.go ===\n")
-	b.WriteString("<完整文件内容>\n")
+	b.WriteString("<该文件的完整源代码>\n")
 	b.WriteString("=== END ===\n\n")
-	b.WriteString("8. 输出 === END === 后立即停止，不要输出任何后续内容。\n\n")
+	b.WriteString("规则：\n")
+	b.WriteString("- 第一行必须是 === FILE: ... ===，不允许有任何前言、解释或思考过程\n")
+	b.WriteString("- 每个文件输出完整源代码（不是 diff）\n")
+	b.WriteString("- 不需要修改的文件不要输出\n")
+	b.WriteString("- 保持原有代码风格、import 顺序、注释风格\n")
+	b.WriteString("- 输出 === END === 后立即停止\n\n")
 
-	b.WriteString("## 技术方案（design.md 摘要）\n\n")
+	// ===== 数据部分 =====
+	b.WriteString("---\n\n")
+
+	b.WriteString("## 技术方案\n\n")
 	b.WriteString(truncateForPrompt(build.DesignContent, 2000))
 	b.WriteString("\n\n")
 
-	b.WriteString("## 实施计划（plan.md）\n\n")
+	b.WriteString("## 实施计划\n\n")
 	b.WriteString(truncateForPrompt(build.PlanContent, 3000))
 	b.WriteString("\n\n")
 
-	b.WriteString("## 代码模式参考（patterns.md）\n\n")
+	b.WriteString("## 代码模式参考\n\n")
 	b.WriteString(truncateForPrompt(build.Context.Patterns, 2000))
 	b.WriteString("\n\n")
 
 	if build.Context.Gotchas != "" {
-		b.WriteString("## 注意事项（gotchas.md）\n\n")
+		b.WriteString("## 注意事项\n\n")
 		b.WriteString(truncateForPrompt(build.Context.Gotchas, 1000))
 		b.WriteString("\n\n")
 	}
 
-	b.WriteString("## 当前源文件（仅展示与 plan 相关的函数/类型，省略部分用注释标注行数）\n\n")
+	b.WriteString("## 当前源文件\n\n")
 	for _, file := range build.CandidateFiles {
 		content := build.FileSources[file]
 		b.WriteString(fmt.Sprintf("### %s\n\n", file))
@@ -232,6 +233,10 @@ func BuildCodePrompt(build *CodeBuild) string {
 			b.WriteString("```\n\n")
 		}
 	}
+
+	// ===== 尾部强指令 =====
+	b.WriteString("---\n\n")
+	b.WriteString("[FINAL INSTRUCTION] 现在直接输出代码。第一行必须是 === FILE: ... ===，最后一行必须是 === END ===。禁止输出任何其它内容。开始：\n")
 
 	return b.String()
 }
