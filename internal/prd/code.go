@@ -241,6 +241,25 @@ func BuildCodePrompt(build *CodeBuild) string {
 	return b.String()
 }
 
+// codePromptWithEarlyStop 发送 prompt 并在检测到 === END === 时提前返回。
+func codePromptWithEarlyStop(gen *generator.Generator, prompt string, onChunk func(string)) (string, error) {
+	stop := make(chan struct{}, 1)
+	var buf strings.Builder
+	raw, err := gen.PromptWithEarlyStop(prompt, config.CodePromptTimeout, func(chunk string) {
+		buf.WriteString(chunk)
+		if onChunk != nil {
+			onChunk(chunk)
+		}
+		if strings.Contains(buf.String(), "=== END ===") {
+			select {
+			case stop <- struct{}{}:
+			default:
+			}
+		}
+	}, stop)
+	return raw, err
+}
+
 func truncateForPrompt(content string, maxLen int) string {
 	runes := []rune(content)
 	if len(runes) <= maxLen {
@@ -375,27 +394,36 @@ func WarmupDaemon(gen *generator.Generator) error {
 	return nil
 }
 
+// codeMaxFollowUps 最多追加几轮跟进 prompt 让 agent 输出代码。
+const codeMaxFollowUps = 3
+
+// codeFollowUpPrompts 当 agent 没有直接输出代码时的跟进指令。
+var codeFollowUpPrompts = []string{
+	"确认，请直接输出代码。严格使用 === FILE: path === 格式，最后 === END ===。不要解释。",
+	"直接输出 === FILE: ... === 格式的完整代码，不要再解释。",
+	"=== FILE:",
+}
+
 // GenerateCode 是代码生成的主流程。workDir 为写入和编译的目录（主仓库或 worktree）。
 func GenerateCode(gen *generator.Generator, build *CodeBuild, workDir string, now time.Time, onChunk func(string)) (*CodeResult, error) {
 	prompt := BuildCodePrompt(build)
 
-	// 检测 === END === 标记，一旦出现立即截断（daemon agent 可能在此之后继续调工具导致卡死）
-	stop := make(chan struct{}, 1)
-	var buf strings.Builder
-	raw, err := gen.PromptWithEarlyStop(prompt, config.CodePromptTimeout, func(chunk string) {
-		buf.WriteString(chunk)
-		if onChunk != nil {
-			onChunk(chunk)
-		}
-		if strings.Contains(buf.String(), "=== END ===") {
-			select {
-			case stop <- struct{}{}:
-			default:
-			}
-		}
-	}, stop)
+	raw, err := codePromptWithEarlyStop(gen, prompt, onChunk)
 	if err != nil {
 		return nil, fmt.Errorf("AI 代码生成失败: %w", err)
+	}
+
+	// 如果第一轮没有输出 === FILE: 标记，自动跟进
+	for i := 0; i < codeMaxFollowUps && !strings.Contains(raw, "=== FILE:"); i++ {
+		if onChunk != nil {
+			onChunk(fmt.Sprintf("\n[coco-ext] 未检测到代码输出，发送跟进指令 (%d/%d)...\n", i+1, codeMaxFollowUps))
+		}
+		followUp := codeFollowUpPrompts[i]
+		more, followErr := codePromptWithEarlyStop(gen, followUp, onChunk)
+		if followErr != nil {
+			break
+		}
+		raw += more
 	}
 
 	files, err := ParseCodeOutput(raw)
