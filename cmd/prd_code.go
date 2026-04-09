@@ -418,6 +418,11 @@ func codeCreateWorktree(repoRoot, worktreePath, branchName string) error {
 		return nil
 	}
 
+	// 清理已删除但未注销的 worktree 记录（手动删目录后残留）
+	pruneCmd := exec.Command("git", "worktree", "prune")
+	pruneCmd.Dir = repoRoot
+	_ = pruneCmd.Run()
+
 	fetchCmd := exec.Command("git", "fetch", "origin")
 	fetchCmd.Dir = repoRoot
 	if output, err := fetchCmd.CombinedOutput(); err != nil {
