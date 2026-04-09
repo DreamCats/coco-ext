@@ -196,6 +196,7 @@ func (g *Generator) PromptWithTimeout(prompt string, timeout time.Duration, onCh
 
 // PromptWithIdleTimeout 发送 prompt，同时支持总超时和空闲超时。
 // totalTimeout 为绝对截止时间；idleTimeout 为连续无 chunk 输出的最大等待时间。
+// idle timer 在收到第一个 chunk 后才启动，避免 time-to-first-token 被误判为超时。
 func (g *Generator) PromptWithIdleTimeout(prompt string, totalTimeout, idleTimeout time.Duration, onChunk func(string)) (string, error) {
 	if g == nil || g.conn == nil {
 		return "", fmt.Errorf("daemon 连接不可用，请重新创建 generator 或重试命令")
@@ -241,6 +242,27 @@ func (g *Generator) PromptWithIdleTimeout(prompt string, totalTimeout, idleTimeo
 	totalTimer := time.NewTimer(totalTimeout)
 	defer totalTimer.Stop()
 
+	// 阶段一：等待第一个 chunk，此阶段只受总超时限制
+	firstChunkReceived := false
+	for !firstChunkReceived {
+		select {
+		case promptResp := <-done:
+			if promptResp.err != nil {
+				return "", promptResp.err
+			}
+			return promptResp.content, nil
+		case <-chunkSignal:
+			firstChunkReceived = true
+		case <-totalTimer.C:
+			if g.conn != nil {
+				_ = g.conn.Close()
+				g.conn = nil
+			}
+			return "", fmt.Errorf("prompt 超时（%s），等待首次输出", totalTimeout)
+		}
+	}
+
+	// 阶段二：已收到第一个 chunk，启动 idle timer
 	idleTimer := time.NewTimer(idleTimeout)
 	defer idleTimer.Stop()
 
@@ -252,7 +274,6 @@ func (g *Generator) PromptWithIdleTimeout(prompt string, totalTimeout, idleTimeo
 			}
 			return promptResp.content, nil
 		case <-chunkSignal:
-			// 收到 chunk，重置 idle 计时器
 			if !idleTimer.Stop() {
 				select {
 				case <-idleTimer.C:
