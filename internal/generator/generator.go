@@ -194,6 +194,67 @@ func (g *Generator) PromptWithTimeout(prompt string, timeout time.Duration, onCh
 	return result, nil
 }
 
+// PromptWithEarlyStop 发送 prompt，支持通过 stop channel 提前终止。
+// 当 stop 收到信号时，立即返回已累积的内容（不视为错误）。
+func (g *Generator) PromptWithEarlyStop(prompt string, timeout time.Duration, onChunk func(string), stop <-chan struct{}) (string, error) {
+	if g == nil || g.conn == nil {
+		return "", fmt.Errorf("daemon 连接不可用，请重新创建 generator 或重试命令")
+	}
+
+	type promptResult struct {
+		content string
+		err     error
+	}
+
+	var result strings.Builder
+	conn := g.conn
+
+	done := make(chan promptResult, 1)
+	go func() {
+		_, err := conn.Prompt(
+			prompt,
+			g.modelID,
+			"",
+			func(text string) {
+				result.WriteString(text)
+				if onChunk != nil {
+					onChunk(text)
+				}
+			},
+			func(kind, title, status string) {},
+		)
+		if err != nil {
+			done <- promptResult{err: fmt.Errorf("prompt 失败: %w", err)}
+			return
+		}
+		done <- promptResult{content: result.String()}
+	}()
+
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+
+	select {
+	case promptResp := <-done:
+		if promptResp.err != nil {
+			return "", promptResp.err
+		}
+		return promptResp.content, nil
+	case <-stop:
+		// 提前终止：关闭连接，返回已累积内容
+		if g.conn != nil {
+			_ = g.conn.Close()
+			g.conn = nil
+		}
+		return result.String(), nil
+	case <-timer.C:
+		if g.conn != nil {
+			_ = g.conn.Close()
+			g.conn = nil
+		}
+		return "", fmt.Errorf("prompt 超时（%s）", timeout)
+	}
+}
+
 // PromptWithIdleTimeout 发送 prompt，同时支持总超时和空闲超时。
 // totalTimeout 为绝对截止时间；idleTimeout 为连续无 chunk 输出的最大等待时间。
 // idle timer 在收到第一个 chunk 后才启动，避免 time-to-first-token 被误判为超时。

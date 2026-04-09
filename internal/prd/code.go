@@ -189,12 +189,14 @@ func BuildCodePrompt(build *CodeBuild) string {
 	b.WriteString("3. 保持原有代码风格、import 顺序、注释风格不变。\n")
 	b.WriteString("4. 如果某个文件不需要修改，不要输出该文件。\n")
 	b.WriteString("5. 不要输出任何解释、思考过程或前言，直接输出文件内容。\n")
-	b.WriteString("6. 使用以下标记格式分隔每个文件：\n\n")
+	b.WriteString("6. 不要使用任何工具（如文件读写、todo 列表等），只输出纯文本。\n")
+	b.WriteString("7. 使用以下标记格式分隔每个文件：\n\n")
 	b.WriteString("=== FILE: path/to/file.go ===\n")
 	b.WriteString("<完整文件内容>\n")
 	b.WriteString("=== FILE: path/to/another.go ===\n")
 	b.WriteString("<完整文件内容>\n")
 	b.WriteString("=== END ===\n\n")
+	b.WriteString("8. 输出 === END === 后立即停止，不要输出任何后续内容。\n\n")
 
 	b.WriteString("## 技术方案（design.md 摘要）\n\n")
 	b.WriteString(truncateForPrompt(build.DesignContent, 2000))
@@ -371,7 +373,22 @@ func WarmupDaemon(gen *generator.Generator) error {
 // GenerateCode 是代码生成的主流程。workDir 为写入和编译的目录（主仓库或 worktree）。
 func GenerateCode(gen *generator.Generator, build *CodeBuild, workDir string, now time.Time, onChunk func(string)) (*CodeResult, error) {
 	prompt := BuildCodePrompt(build)
-	raw, err := gen.PromptWithTimeout(prompt, config.CodePromptTimeout, onChunk)
+
+	// 检测 === END === 标记，一旦出现立即截断（daemon agent 可能在此之后继续调工具导致卡死）
+	stop := make(chan struct{}, 1)
+	var buf strings.Builder
+	raw, err := gen.PromptWithEarlyStop(prompt, config.CodePromptTimeout, func(chunk string) {
+		buf.WriteString(chunk)
+		if onChunk != nil {
+			onChunk(chunk)
+		}
+		if strings.Contains(buf.String(), "=== END ===") {
+			select {
+			case stop <- struct{}{}:
+			default:
+			}
+		}
+	}, stop)
 	if err != nil {
 		return nil, fmt.Errorf("AI 代码生成失败: %w", err)
 	}
