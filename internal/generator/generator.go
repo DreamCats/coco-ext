@@ -14,6 +14,13 @@ import (
 	"github.com/DreamCats/coco-ext/internal/daemonutil"
 )
 
+// CodePrompter 是代码生成所需的最小 prompt 接口。
+// Generator（daemon 模式）和 RawGenerator（直连模式）均实现此接口。
+type CodePrompter interface {
+	PromptWithTimeout(prompt string, timeout time.Duration, onChunk func(string)) (string, error)
+	Close()
+}
+
 // Generator 知识文件生成器
 type Generator struct {
 	conn      *daemon.Conn

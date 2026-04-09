@@ -199,10 +199,10 @@ func runPRDCodeBackground() error {
 	}
 	taskDir := build.Task.TaskDir
 
-	gen, err := generator.New(repoRoot)
+	gen, err := generator.NewRaw(repoRoot)
 	if err != nil {
 		codeWriteFailResult(build, repoRoot, worktreePath, branchName, taskID, startedAt,
-			fmt.Errorf("连接 coco daemon 失败: %w", err))
+			fmt.Errorf("启动 AI 引擎失败: %w", err))
 		codeRemoveWorktree(repoRoot, worktreePath, branchName)
 		return err
 	}
@@ -303,16 +303,16 @@ func runPRDCodeForeground(repoRoot string, build *prd.CodeBuild, branchName, wor
 	color.Cyan("   branch: %s", branchName)
 	color.Green("   [1/4] 校验通过 ✓ (候选文件: %d 个)", len(build.CandidateFiles))
 
-	color.Cyan("   [2/4] 正在连接 coco daemon...")
+	color.Cyan("   [2/4] 正在启动 AI 引擎（工具已禁用）...")
 	connectStartedAt := time.Now()
-	gen, err := generator.New(repoRoot)
+	gen, err := generator.NewRaw(repoRoot)
 	if err != nil {
 		codeRemoveWorktree(repoRoot, worktreePath, branchName)
-		return fmt.Errorf("连接 coco daemon 失败: %w\n建议：先执行 coco-ext doctor --fix", err)
+		return fmt.Errorf("启动 AI 引擎失败: %w", err)
 	}
 	defer gen.Close()
-	color.Green("   [2/4] coco daemon 已连接 ✓")
-	color.Cyan("      连接耗时: %s", formatDurationSeconds(time.Since(connectStartedAt)))
+	color.Green("   [2/4] AI 引擎已就绪 ✓")
+	color.Cyan("      启动耗时: %s", formatDurationSeconds(time.Since(connectStartedAt)))
 
 	color.Cyan("   [3/4] 正在生成代码...")
 	generateStartedAt := time.Now()
@@ -482,8 +482,4 @@ func codeCommitInWorktree(worktreePath, title, taskID string, files []string) (s
 		return "unknown", nil
 	}
 	return strings.TrimSpace(string(hashOutput)), nil
-}
-
-func clearCodeProgressLine() {
-	fmt.Print("\r\033[K")
 }

@@ -192,7 +192,7 @@ func BuildCodePrompt(build *CodeBuild) string {
 	var b strings.Builder
 
 	// ===== 头部强指令 =====
-	b.WriteString("[IMPORTANT] 你是一个纯文本代码生成器。禁止使用任何工具，禁止读取文件，禁止创建待办事项。你的唯一任务是：基于下方提供的信息，直接输出代码改动。\n\n")
+	b.WriteString("你是一个代码生成器。基于下方提供的信息，直接输出代码改动。\n\n")
 	b.WriteString("输出格式（严格遵守，二选一）：\n\n")
 	b.WriteString("格式一 — 局部补丁（优先使用，节省输出）：\n")
 	b.WriteString("=== PATCH: path/to/file.go ===\n")
@@ -282,39 +282,8 @@ func matchCandidatePath(outputPath string, candidates []string) string {
 	return ""
 }
 
-// codePromptWithEarlyStop 发送 prompt 并在检测到 === END === 时提前返回。
-func codePromptWithEarlyStop(gen *generator.Generator, prompt string, onChunk func(string)) (string, error) {
-	stop := make(chan struct{}, 1)
-	var buf strings.Builder
-	raw, err := gen.PromptWithEarlyStop(prompt, config.CodePromptTimeout, func(chunk string) {
-		buf.WriteString(chunk)
-		if onChunk != nil {
-			onChunk(chunk)
-		}
-		if strings.Contains(buf.String(), "=== END ===") {
-			select {
-			case stop <- struct{}{}:
-			default:
-			}
-		}
-	}, stop)
-	return raw, err
-}
-
-// codeFollowUpWithIdleTimeout 发送跟进 prompt，用 idle timeout 防止 agent 工具调用卡死。
-// 检测到 === END === 同样提前返回。idle 超时不视为错误，返回已累积内容。
-func codeFollowUpWithIdleTimeout(gen *generator.Generator, prompt string, onChunk func(string)) (string, error) {
-	raw, err := gen.PromptWithIdleTimeout(prompt, config.CodePromptTimeout, config.CodeChunkIdleTimeout, func(chunk string) {
-		if onChunk != nil {
-			onChunk(chunk)
-		}
-	})
-	if err != nil && strings.Contains(err.Error(), "空闲超时") {
-		// idle timeout 不视为致命错误，返回已有内容
-		return raw, nil
-	}
-	return raw, err
-}
+// codeFollowUpTimeout 跟进 prompt 的超时时间（比初次更短）。
+const codeFollowUpTimeout = 3 * time.Minute
 
 func truncateForPrompt(content string, maxLen int) string {
 	runes := []rune(content)
@@ -539,49 +508,42 @@ func CheckGoBuild(workDir string, files []CodeFile) (bool, string) {
 	return allOK, allOutput.String()
 }
 
-// WarmupDaemon 发送一个极简 prompt 验证 daemon 连通性。
-func WarmupDaemon(gen *generator.Generator) error {
-	_, err := gen.PromptWithTimeout("回复 OK", 30*time.Second, nil)
-	if err != nil {
-		return fmt.Errorf("daemon 连通性检查失败: %w", err)
-	}
-	return nil
-}
-
 // codeMaxFollowUps 最多追加几轮跟进 prompt 让 agent 输出代码。
-const codeMaxFollowUps = 3
+const codeMaxFollowUps = 2
 
 // buildFollowUpPrompts 根据候选文件动态生成跟进指令。
-// 第 3 轮直接喂 PATCH 头部，强制 agent 续写代码而非调用工具。
 func buildFollowUpPrompts(candidateFiles []string) []string {
 	fileList := strings.Join(candidateFiles, "、")
-	// 第 3 轮：直接喂 PATCH 格式头部，让 agent 续写
 	primer := fmt.Sprintf("=== PATCH: %s ===\n<<<<<<< SEARCH", candidateFiles[0])
 	return []string{
-		fmt.Sprintf("确认，请直接输出代码。禁止使用任何工具。需要修改的文件：%s。使用 === PATCH: path === 格式，最后 === END ===。不要解释，直接输出。", fileList),
-		fmt.Sprintf("[IMPORTANT] 禁止调用任何工具。直接输出以下文件的 PATCH：%s。格式：=== PATCH: path ===，然后 <<<<<<< SEARCH / ======= REPLACE / >>>>>>>。现在开始：", fileList),
+		fmt.Sprintf("请直接输出代码。需要修改的文件：%s。使用 === PATCH: path === 格式，最后 === END ===。不要解释，直接输出。", fileList),
 		primer,
 	}
 }
 
-// GenerateCode 是代码生成的主流程。workDir 为写入和编译的目录（主仓库或 worktree）。
-func GenerateCode(gen *generator.Generator, build *CodeBuild, workDir string, now time.Time, onChunk func(string)) (*CodeResult, error) {
+// GenerateCode 是代码生成的主流程。
+// gen 可以是 RawGenerator（工具已禁用的直连模式）或 Generator（daemon 模式）。
+// workDir 为写入和编译的目录（主仓库或 worktree）。
+func GenerateCode(gen generator.CodePrompter, build *CodeBuild, workDir string, now time.Time, onChunk func(string)) (*CodeResult, error) {
 	prompt := BuildCodePrompt(build)
 
-	raw, err := codePromptWithEarlyStop(gen, prompt, onChunk)
+	raw, err := gen.PromptWithTimeout(prompt, config.CodePromptTimeout, onChunk)
 	if err != nil {
-		return nil, fmt.Errorf("AI 代码生成失败: %w", err)
+		// 超时也可能已有部分输出，尝试解析
+		if raw == "" {
+			return nil, fmt.Errorf("AI 代码生成失败: %w", err)
+		}
 	}
 
-	// 如果第一轮没有输出 FILE/PATCH 标记，自动跟进（使用 idle timeout 防卡死）
+	// 如果第一轮没有输出 FILE/PATCH 标记，自动跟进
 	hasCodeMarker := strings.Contains(raw, "=== FILE:") || strings.Contains(raw, "=== PATCH:")
 	followUps := buildFollowUpPrompts(build.CandidateFiles)
 	for i := 0; i < codeMaxFollowUps && !hasCodeMarker; i++ {
 		if onChunk != nil {
 			onChunk(fmt.Sprintf("\n[coco-ext] 未检测到代码输出，发送跟进指令 (%d/%d)...\n", i+1, codeMaxFollowUps))
 		}
-		more, followErr := codeFollowUpWithIdleTimeout(gen, followUps[i], onChunk)
-		if followErr != nil {
+		more, followErr := gen.PromptWithTimeout(followUps[i], codeFollowUpTimeout, onChunk)
+		if followErr != nil && more == "" {
 			break
 		}
 		raw += more
