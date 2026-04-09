@@ -359,6 +359,15 @@ func CheckGoBuild(workDir string, files []CodeFile) (bool, string) {
 	return allOK, allOutput.String()
 }
 
+// WarmupDaemon 发送一个极简 prompt 验证 daemon 连通性。
+func WarmupDaemon(gen *generator.Generator) error {
+	_, err := gen.PromptWithTimeout("回复 OK", 30*time.Second, nil)
+	if err != nil {
+		return fmt.Errorf("daemon 连通性检查失败: %w", err)
+	}
+	return nil
+}
+
 // GenerateCode 是代码生成的主流程。workDir 为写入和编译的目录（主仓库或 worktree）。
 func GenerateCode(gen *generator.Generator, build *CodeBuild, workDir string, now time.Time, onChunk func(string)) (*CodeResult, error) {
 	prompt := BuildCodePrompt(build)

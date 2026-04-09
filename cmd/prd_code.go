@@ -195,6 +195,16 @@ func runPRDCodeBackground() error {
 	defer gen.Close()
 
 	fmt.Printf("[prd code] task_id=%s, worktree=%s\n", taskID, worktreePath)
+
+	fmt.Println("[prd code] daemon warmup 检查...")
+	if err := prd.WarmupDaemon(gen); err != nil {
+		codeWriteFailResult(build, repoRoot, worktreePath, branchName, taskID, startedAt,
+			fmt.Errorf("daemon 无法响应: %w", err))
+		codeRemoveWorktree(repoRoot, worktreePath, branchName)
+		return fmt.Errorf("daemon 无法响应: %w", err)
+	}
+	fmt.Println("[prd code] daemon warmup 通过 ✓")
+
 	fmt.Println("[prd code] AI 代码生成中...")
 
 	result, err := prd.GenerateCode(gen, build, worktreePath, time.Now(), nil)
@@ -298,6 +308,14 @@ func runPRDCodeForeground(repoRoot string, build *prd.CodeBuild, branchName, wor
 	defer gen.Close()
 	color.Green("   [2/4] coco daemon 已连接 ✓")
 	color.Cyan("      连接耗时: %s", formatDurationSeconds(time.Since(connectStartedAt)))
+
+	color.Cyan("   [2.5/4] daemon warmup 检查...")
+	warmupStart := time.Now()
+	if err := prd.WarmupDaemon(gen); err != nil {
+		codeRemoveWorktree(repoRoot, worktreePath, branchName)
+		return fmt.Errorf("daemon 无法响应: %w\n建议：执行 coco-ext daemon stop 后重试", err)
+	}
+	color.Green("   [2.5/4] daemon 响应正常 ✓ (%s)", formatDurationSeconds(time.Since(warmupStart)))
 
 	// 诊断：输出 prompt 大小和标识符，dump prompt 到文件
 	prompt := prd.BuildCodePrompt(build)
