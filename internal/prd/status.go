@@ -173,6 +173,57 @@ func suggestNextCommand(taskID, status string, artifacts []ArtifactStatus) strin
 	}
 }
 
+// TaskSummary 是 list 命令使用的精简 task 信息。
+type TaskSummary struct {
+	TaskID     string     `json:"task_id"`
+	Title      string     `json:"title"`
+	Status     string     `json:"status"`
+	CreatedAt  time.Time  `json:"created_at"`
+	UpdatedAt  time.Time  `json:"updated_at"`
+	SourceType SourceType `json:"source_type"`
+}
+
+// ListTasks 列出所有 task，按目录名排序（时间序）。可选按 status 过滤。
+func ListTasks(repoRoot string, filterStatus string) ([]TaskSummary, error) {
+	tasksRoot := filepath.Join(repoRoot, ".livecoding", "tasks")
+	entries, err := os.ReadDir(tasksRoot)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil // 没有任何 task，返回空列表
+		}
+		return nil, fmt.Errorf("读取 tasks 目录失败: %w", err)
+	}
+
+	var dirs []string
+	for _, entry := range entries {
+		if entry.IsDir() {
+			dirs = append(dirs, entry.Name())
+		}
+	}
+	sort.Strings(dirs) // 目录名以时间戳开头，字符串排序即时间序
+
+	var tasks []TaskSummary
+	for _, name := range dirs {
+		metaPath := filepath.Join(tasksRoot, name, "task.json")
+		meta, err := readTaskMetadata(metaPath)
+		if err != nil {
+			continue // 跳过损坏的 task
+		}
+		if filterStatus != "" && meta.Status != filterStatus {
+			continue
+		}
+		tasks = append(tasks, TaskSummary{
+			TaskID:     meta.TaskID,
+			Title:      meta.Title,
+			Status:     meta.Status,
+			CreatedAt:  meta.CreatedAt,
+			UpdatedAt:  meta.UpdatedAt,
+			SourceType: meta.SourceType,
+		})
+	}
+	return tasks, nil
+}
+
 func hasArtifact(artifacts []ArtifactStatus, name string) bool {
 	for _, artifact := range artifacts {
 		if artifact.Name == name {
