@@ -301,6 +301,21 @@ func codePromptWithEarlyStop(gen *generator.Generator, prompt string, onChunk fu
 	return raw, err
 }
 
+// codeFollowUpWithIdleTimeout 发送跟进 prompt，用 idle timeout 防止 agent 工具调用卡死。
+// 检测到 === END === 同样提前返回。idle 超时不视为错误，返回已累积内容。
+func codeFollowUpWithIdleTimeout(gen *generator.Generator, prompt string, onChunk func(string)) (string, error) {
+	raw, err := gen.PromptWithIdleTimeout(prompt, config.CodePromptTimeout, config.CodeChunkIdleTimeout, func(chunk string) {
+		if onChunk != nil {
+			onChunk(chunk)
+		}
+	})
+	if err != nil && strings.Contains(err.Error(), "空闲超时") {
+		// idle timeout 不视为致命错误，返回已有内容
+		return raw, nil
+	}
+	return raw, err
+}
+
 func truncateForPrompt(content string, maxLen int) string {
 	runes := []rune(content)
 	if len(runes) <= maxLen {
@@ -536,11 +551,17 @@ func WarmupDaemon(gen *generator.Generator) error {
 // codeMaxFollowUps 最多追加几轮跟进 prompt 让 agent 输出代码。
 const codeMaxFollowUps = 3
 
-// codeFollowUpPrompts 当 agent 没有直接输出代码时的跟进指令。
-var codeFollowUpPrompts = []string{
-	"确认，请直接输出代码。使用 === PATCH: path === 格式（局部修改）或 === FILE: path === 格式（新文件），最后 === END ===。不要解释。",
-	"直接输出 === PATCH: ... === 或 === FILE: ... === 格式的代码，不要再解释。",
-	"=== PATCH:",
+// buildFollowUpPrompts 根据候选文件动态生成跟进指令。
+// 第 3 轮直接喂 PATCH 头部，强制 agent 续写代码而非调用工具。
+func buildFollowUpPrompts(candidateFiles []string) []string {
+	fileList := strings.Join(candidateFiles, "、")
+	// 第 3 轮：直接喂 PATCH 格式头部，让 agent 续写
+	primer := fmt.Sprintf("=== PATCH: %s ===\n<<<<<<< SEARCH", candidateFiles[0])
+	return []string{
+		fmt.Sprintf("确认，请直接输出代码。禁止使用任何工具。需要修改的文件：%s。使用 === PATCH: path === 格式，最后 === END ===。不要解释，直接输出。", fileList),
+		fmt.Sprintf("[IMPORTANT] 禁止调用任何工具。直接输出以下文件的 PATCH：%s。格式：=== PATCH: path ===，然后 <<<<<<< SEARCH / ======= REPLACE / >>>>>>>。现在开始：", fileList),
+		primer,
+	}
 }
 
 // GenerateCode 是代码生成的主流程。workDir 为写入和编译的目录（主仓库或 worktree）。
@@ -552,14 +573,14 @@ func GenerateCode(gen *generator.Generator, build *CodeBuild, workDir string, no
 		return nil, fmt.Errorf("AI 代码生成失败: %w", err)
 	}
 
-	// 如果第一轮没有输出 FILE/PATCH 标记，自动跟进
+	// 如果第一轮没有输出 FILE/PATCH 标记，自动跟进（使用 idle timeout 防卡死）
 	hasCodeMarker := strings.Contains(raw, "=== FILE:") || strings.Contains(raw, "=== PATCH:")
+	followUps := buildFollowUpPrompts(build.CandidateFiles)
 	for i := 0; i < codeMaxFollowUps && !hasCodeMarker; i++ {
 		if onChunk != nil {
 			onChunk(fmt.Sprintf("\n[coco-ext] 未检测到代码输出，发送跟进指令 (%d/%d)...\n", i+1, codeMaxFollowUps))
 		}
-		followUp := codeFollowUpPrompts[i]
-		more, followErr := codePromptWithEarlyStop(gen, followUp, onChunk)
+		more, followErr := codeFollowUpWithIdleTimeout(gen, followUps[i], onChunk)
 		if followErr != nil {
 			break
 		}

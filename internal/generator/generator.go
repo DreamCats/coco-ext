@@ -319,7 +319,7 @@ func (g *Generator) PromptWithIdleTimeout(prompt string, totalTimeout, idleTimeo
 				_ = g.conn.Close()
 				g.conn = nil
 			}
-			return "", fmt.Errorf("prompt 超时（%s），等待首次输出", totalTimeout)
+			return result.String(), fmt.Errorf("prompt 超时（%s），等待首次输出", totalTimeout)
 		}
 	}
 
@@ -347,13 +347,13 @@ func (g *Generator) PromptWithIdleTimeout(prompt string, totalTimeout, idleTimeo
 				_ = g.conn.Close()
 				g.conn = nil
 			}
-			return "", fmt.Errorf("prompt 空闲超时（%s 无输出）", idleTimeout)
+			return result.String(), fmt.Errorf("prompt 空闲超时（%s 无输出）", idleTimeout)
 		case <-totalTimer.C:
 			if g.conn != nil {
 				_ = g.conn.Close()
 				g.conn = nil
 			}
-			return "", fmt.Errorf("prompt 超时（%s）", totalTimeout)
+			return result.String(), fmt.Errorf("prompt 超时（%s）", totalTimeout)
 		}
 	}
 }
