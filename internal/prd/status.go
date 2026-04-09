@@ -163,7 +163,9 @@ func suggestNextCommand(taskID, status string, artifacts []ArtifactStatus) strin
 	case !hasDesign || !hasPlan:
 		return fmt.Sprintf("coco-ext prd plan --task %s", taskID)
 	case status == TaskStatusPlanned:
-		return "已完成规划，请人工 review design.md / plan.md。"
+		return fmt.Sprintf("coco-ext prd code --task %s", taskID)
+	case status == TaskStatusCoded:
+		return "代码已生成，请 review 分支改动：git diff main"
 	default:
 		return "当前 task 无明确下一步，建议人工确认状态。"
 	}
