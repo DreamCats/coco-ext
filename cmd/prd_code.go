@@ -323,63 +323,17 @@ func runPRDCodeForeground(repoRoot string, build *prd.CodeBuild, branchName, wor
 	_ = os.WriteFile(dumpPath, []byte(prompt), 0644)
 	color.Cyan("   [debug] prompt 已写入: %s", dumpPath)
 
-	color.Cyan("   [3/4] 正在生成代码（直接发送，无 warmup）...")
+	color.Cyan("   [3/4] 正在生成代码（流式输出）...")
 	generateStartedAt := time.Now()
-	var streamBuffer strings.Builder
-	streamStarted := false
-	firstChunkShown := make(chan struct{})
-	stopTicker := make(chan struct{})
-	go func() {
-		ticker := time.NewTicker(2 * time.Second)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-stopTicker:
-				return
-			case <-firstChunkShown:
-				return
-			case <-ticker.C:
-				fmt.Printf("\r\033[K   生成中，已耗时: %s", formatDurationSeconds(time.Since(generateStartedAt)))
-			}
-		}
-	}()
+	fmt.Println("   --- AI 输出开始 ---")
 
 	now := time.Now()
-	chunkCount := 0
 	result, err := prd.GenerateCode(gen, build, worktreePath, now, func(chunk string) {
-		chunkCount++
-		streamBuffer.WriteString(chunk)
-		if chunkCount <= 3 {
-			// 打印前几个 chunk 用于诊断
-			clearCodeProgressLine()
-			preview := chunk
-			if len(preview) > 80 {
-				preview = preview[:80] + "..."
-			}
-			color.Cyan("      [chunk #%d] len=%d: %q", chunkCount, len(chunk), preview)
-		}
-		if streamStarted {
-			return
-		}
-		if strings.Contains(streamBuffer.String(), "=== FILE:") {
-			streamStarted = true
-			close(firstChunkShown)
-			clearCodeProgressLine()
-			color.Cyan("      AI 正在输出代码...")
-		}
+		fmt.Print(chunk)
 	})
-	close(stopTicker)
-	clearCodeProgressLine()
+	fmt.Println("\n   --- AI 输出结束 ---")
 
 	if err != nil {
-		color.Yellow("   [debug] 共收到 %d 个 chunk, 总长度 %d 字符", chunkCount, streamBuffer.Len())
-		if streamBuffer.Len() > 0 {
-			preview := streamBuffer.String()
-			if len(preview) > 500 {
-				preview = preview[:500] + "..."
-			}
-			color.Yellow("   [debug] 已收到内容:\n%s", preview)
-		}
 		codeRemoveWorktree(repoRoot, worktreePath, branchName)
 		return err
 	}
