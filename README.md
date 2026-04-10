@@ -44,10 +44,14 @@ coco-ext context status
 
 # 2. PRD 工作流
 cd /path/to/your/repo
+coco-ext prd run -i "做一个支持飞书链接导入的 PRD 工作流"   # 一键：refine → plan → code
 coco-ext prd refine --prd "做一个支持飞书链接导入的 PRD 工作流"
 coco-ext prd refine --prd https://bytedance.larkoffice.com/docx/xxx
 coco-ext prd status
 coco-ext prd plan
+coco-ext prd code           # agent 自主实现代码（编译失败自动重试）
+coco-ext prd reset          # 不满意？重置后重新 code
+coco-ext prd list
 
 # 3. Code Review
 coco-ext review              # 审查最后一个 commit
@@ -96,10 +100,38 @@ coco-ext daemon stop        # 停止 daemon
 
 ## PRD 工作流
 
-- `coco-ext prd refine --prd <文本|本地文件|飞书链接>` 会为需求生成 task 目录，并落盘 `task.json`、`source.json`、`prd.source.md`、`prd-refined.md`
-- `coco-ext prd status` 用于查看最近一个 task 的当前状态、缺失产物和下一步命令
-- `coco-ext prd plan` 基于 refined PRD、context 和本地调研结果生成 `design.md` 与 `plan.md`
-- `plan.md` 现在包含复杂度评估、拟改文件、任务列表、实施步骤、风险补充和验证建议，便于后续 codegen 或人工继续推进
+### 一键流水线
+
+```bash
+coco-ext prd run -i "需求描述或飞书链接"
+```
+
+自动执行 refine → plan → code 三步，task-id 自动生成，全流程流式输出，结尾输出汇总表：
+
+```
+━━━ 汇总 ━━━
+   ✓ refine   30s
+   ✓ plan     4m12s
+   ✓ code     8m3s (5 文件, commit abc1234)
+```
+
+### 分步执行
+
+- `coco-ext prd refine --prd <文本|本地文件|飞书链接>` 为需求生成 task 目录，落盘 `task.json`、`source.json`、`prd.source.md`、`prd-refined.md`
+- `coco-ext prd status` 查看最近 task 的当前状态、缺失产物和下一步命令
+- `coco-ext prd plan` 启动只读 explorer agent 调研仓库，生成 `design.md` 与 `plan.md`（失败回退本地模板）
+- `coco-ext prd code` 启动 yolo agent 自主实现代码，编译失败自动重试（按改动 package 定向编译），通过后 auto-commit
+- `coco-ext prd reset` 不满意时重置，删除分支和改动，可重新执行 `prd code`
+- `coco-ext prd list` 列出所有 task
+
+### Agent 模式
+
+`prd plan` 和 `prd code` 基于 coco-acp-sdk 的 agent 能力：
+- **Explorer agent**（只读）：调研仓库代码，生成技术方案和实施计划
+- **Code agent**（yolo）：自主读写文件、编译验证、输出结构化结果（build/files/summary）
+- 渐进式披露：context 文件只展示章节目录，agent 按需读取
+- 结构化输出：code agent 输出 `=== CODE RESULT ===` 块，精确报告编译状态和改动文件
+- 编译失败自动重试：把错误喂给 agent 修复，最多重试 `--max-retries` 轮
 
 ## Review 产物
 

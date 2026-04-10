@@ -41,7 +41,7 @@ cmd/                            # Cobra CLI 命令层
   gcmsg.go                      #   Commit message 生成（--amend / --commit-msg-file）
   submit.go                     #   staged 变更 → commit → push 一键流程
   push.go                       #   git push 包装，成功后后台 review
-  prd.go / prd_refine / prd_status / prd_plan
+  prd.go / prd_refine / prd_status / prd_plan / prd_code / prd_run / prd_reset / prd_archive
   agents.go                     #   生成 AGENTS.md 行为约束文件
   doctor.go                     #   环境诊断（--fix 自动修复）
   metrics.go                    #   本地指标聚合（review/prd/events）
@@ -53,6 +53,8 @@ internal/
   scanner/scanner.go            # 仓库扫描（目录树 + Go AST + IDL）
   generator/
     generator.go                # coco-acp-sdk daemon 连接，流式生成
+    agent.go                    # AgentGenerator（yolo/explorer 模式）
+    raw.go                      # RawGenerator（工具禁用的直连模式）
     prompts.go                  # 中文 prompt 模板
   knowledge/
     reader.go                   # 知识文件读取与状态查询
@@ -66,7 +68,10 @@ internal/
   prd/
     refine.go                   # PRD refine（文本/文件/飞书链接 → task 目录）
     status.go                   # task 状态查询
-    plan.go                     # design.md + plan.md 生成
+    plan.go                     # design.md + plan.md 生成（本地模板）
+    plan_agent.go               # design.md + plan.md 生成（explorer agent）
+    code.go                     # 旧代码生成流程（search/replace patch）
+    code_agent.go               # agent 代码生成（yolo 模式 + 结构化输出）
     design_template.go          # design 模板
   metrics/events.go             # 本地事件采集（JSONL 追加写入）
   changelog/changelog.go        # commit 优化历史
@@ -85,7 +90,7 @@ internal/
 
 **push**：先 `git push`，成功后后台 `coco-ext review --async`。替代了不稳定的 pre-push hook 方案。
 
-**PRD 工作流**：`prd refine` 接受文本/文件/飞书链接，生成 task 目录（task.json + source.json + prd.source.md + prd-refined.md）。`prd plan` 基于 refined PRD + context 生成 design.md 和 plan.md（含复杂度评估、拟改文件、任务列表）。
+**PRD 工作流**：`prd run -i "需求"` 一键流水线（refine → plan → code）。`prd refine` 接受文本/文件/飞书链接，生成 task 目录。`prd plan` 启动只读 explorer agent 调研仓库，生成 design.md 和 plan.md（失败回退本地模板）。`prd code` 启动 yolo agent 自主实现代码，编译失败自动重试，通过后 auto-commit 到 prd/{task_id} 分支。`prd reset` 重置不满意的结果。
 
 **agents**：在仓库根目录生成/更新 AGENTS.md，通过 `<!-- coco-ext-agents:start/end -->` 标记管理 section，支持 `--force` 强制替换。
 
