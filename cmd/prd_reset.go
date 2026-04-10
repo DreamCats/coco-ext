@@ -55,7 +55,7 @@ func runPRDReset(cmd *cobra.Command, args []string) error {
 	color.Cyan("🔄 PRD Reset")
 	color.Cyan("   task_id: %s", taskID)
 
-	branchName := "prd/" + taskID
+	branchName := buildPRDBranchName(taskID)
 	worktreePath := ""
 
 	report, _ := prd.ReadCodeResultReport(task.TaskDir)

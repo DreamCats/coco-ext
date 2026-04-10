@@ -168,7 +168,7 @@ func runPRDRun(cmd *cobra.Command, args []string) error {
 		return printRunSummary(steps, startedAt, false)
 	}
 
-	branchName := "prd/" + task.TaskID
+	branchName := buildPRDBranchName(task.TaskID)
 	report, codeErr := executePRDCode(repoRoot, task.TaskID, branchName, prdCodeMaxRetry, func(chunk string) { fmt.Print(chunk) }, func(event generator.ToolEvent) { renderToolEvent(event) })
 	if codeErr != nil {
 		steps = append(steps, runStep{Name: "code", Duration: time.Since(stepStart), Status: "fail", Detail: codeErr.Error()})
@@ -215,7 +215,7 @@ func printRunSummary(steps []runStep, startedAt time.Time, buildOK bool) error {
 	fmt.Println()
 	if allOK && buildOK {
 		color.Green("✓ prd run 全部通过")
-		color.Green("  分支: prd/<task_id>")
+		color.Green("  分支: prd_<task_id>")
 		color.Green("  next: 确认代码后执行 coco-ext push")
 	} else {
 		color.Yellow("⚠ prd run 部分失败，请检查上方日志")

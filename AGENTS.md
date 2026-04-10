@@ -142,7 +142,7 @@ coco-ext prd list
 - `prd run -i ...` 一键执行 `refine -> plan -> code`
 - `prd refine` 支持文本、本地文件、飞书文档链接；飞书拉取走 [`internal/prd/lark.go`](/Users/bytedance/go/src/coco-ext/internal/prd/lark.go)，依赖 `lark-cli`
 - `prd plan` 默认使用只读 explorer agent 生成 `design.md` 和 `plan.md`
-- `prd code` 会先在主仓库同级目录的 `.coco-ext-worktree/` 下创建隔离 worktree，同步 task/context 产物后再启动 yolo agent；默认分支名是 `prd/{task_id}`
+- `prd code` 会先在主仓库同级目录的 `.coco-ext-worktree/` 下创建隔离 worktree，同步 task/context 产物后再启动 yolo agent；默认分支名是 `prd_<task_id>`
 - `prd code` 编译失败后会按改动 package 自动重试，成功时自动 commit
 - `prd reset` / `prd archive` 需要先删除 code 阶段生成的 worktree，再删除对应分支
 - `prd list` 支持状态过滤，当前 task 状态为 `initialized/refined/planned/coded/archived`
