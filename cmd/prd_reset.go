@@ -57,54 +57,25 @@ func runPRDReset(cmd *cobra.Command, args []string) error {
 
 	branchName := "prd/" + taskID
 
-	// 读取 code-result.json 获取 commit 信息
 	report, _ := prd.ReadCodeResultReport(task.TaskDir)
 	if report != nil && report.Branch != "" {
 		branchName = report.Branch
 	}
 
-	// 回退分支上的 auto-commit
-	commitReverted := false
+	// 直接删除分支（强制，丢弃所有改动）
+	branchDeleted := false
 	checkCmd := exec.Command("git", "rev-parse", "--verify", branchName)
 	checkCmd.Dir = repoRoot
 	if checkCmd.Run() == nil {
-		// 切到分支，回退最后一个 commit（保留改动在工作区）
-		checkoutCmd := exec.Command("git", "checkout", branchName)
-		checkoutCmd.Dir = repoRoot
-		if checkoutCmd.Run() == nil {
-			resetCmd := exec.Command("git", "reset", "--soft", "HEAD~1")
-			resetCmd.Dir = repoRoot
-			if resetCmd.Run() == nil {
-				commitReverted = true
-				color.Green("   ✓ 已回退 auto-commit（改动保留在工作区）")
-			}
-
-			// 切回原分支
-			origBranch := codeCurrentBranch(repoRoot)
-			_ = origBranch // 已经在 branchName 上了
-			// 回退完把改动带回来：先 stash，切回，再 pop
-			stashCmd := exec.Command("git", "stash")
-			stashCmd.Dir = repoRoot
-			_ = stashCmd.Run()
-
-			// 找到主分支
-			mainBranch := "main"
-			if b, err := exec.Command("git", "rev-parse", "--verify", "master").CombinedOutput(); err == nil && len(b) > 0 {
-				mainBranch = "master"
-			}
-			exec.Command("git", "checkout", mainBranch).Dir = repoRoot
-
-			exec.Command("git", "stash", "pop").Dir = repoRoot
+		delCmd := exec.Command("git", "branch", "-D", branchName)
+		delCmd.Dir = repoRoot
+		if delCmd.Run() == nil {
+			branchDeleted = true
+			color.Green("   ✓ 已删除分支 %s（改动已丢弃）", branchName)
 		}
-	}
-
-	// 删除分支
-	branchDeleted := false
-	delCmd := exec.Command("git", "branch", "-D", branchName)
-	delCmd.Dir = repoRoot
-	if delCmd.Run() == nil {
+	} else {
 		branchDeleted = true
-		color.Green("   ✓ 已删除分支 %s", branchName)
+		color.Green("   ✓ 分支 %s 不存在，无需清理", branchName)
 	}
 
 	// 删除 code-result.json
@@ -121,7 +92,6 @@ func runPRDReset(cmd *cobra.Command, args []string) error {
 		"task_id":         taskID,
 		"branch":          branchName,
 		"branch_deleted":  branchDeleted,
-		"commit_reverted": commitReverted,
 		"message":         "task 已重置为 planned 状态，可重新执行 prd code。",
 	}
 	data, _ := json.MarshalIndent(result, "", "  ")
