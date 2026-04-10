@@ -13,12 +13,12 @@ import (
 
 // AgentCodeResult 是 agent 模式代码生成的结果。
 type AgentCodeResult struct {
-	TaskID      string
-	ToolEvents  []generator.ToolEvent
-	AgentReply  string
-	BuildOK     bool
+	TaskID       string
+	ToolEvents   []generator.ToolEvent
+	AgentReply   string
+	BuildOK      bool
 	FilesChanged []string // agent 报告的改动文件列表
-	Summary     string    // agent 报告的改动摘要
+	Summary      string   // agent 报告的改动摘要
 }
 
 // BuildAgentCodePrompt 构建 agent 模式的 prompt。
@@ -61,9 +61,9 @@ func BuildAgentCodePrompt(taskDir string) string {
 }
 
 // GenerateCodeWithAgent 使用 agent 模式生成代码。
-// agent 自主读文件、改代码、跑编译，coco-ext 只做编排。
-func GenerateCodeWithAgent(agent *generator.AgentGenerator, taskDir string, now time.Time, onChunk func(string), onTool func(generator.ToolEvent)) (*AgentCodeResult, error) {
-	prompt := BuildAgentCodePrompt(taskDir)
+// promptTaskDir 指向 agent 实际读取的 task 目录；statusTaskDir 指向主仓库 task 目录，用于更新状态。
+func GenerateCodeWithAgent(agent *generator.AgentGenerator, promptTaskDir, statusTaskDir string, now time.Time, onChunk func(string), onTool func(generator.ToolEvent)) (*AgentCodeResult, error) {
+	prompt := BuildAgentCodePrompt(promptTaskDir)
 
 	var toolEvents []generator.ToolEvent
 	wrappedOnTool := func(event generator.ToolEvent) {
@@ -88,7 +88,7 @@ func GenerateCodeWithAgent(agent *generator.AgentGenerator, taskDir string, now 
 	}
 
 	if cr.BuildOK {
-		_ = updateTaskStatus(taskDir, TaskStatusCoded, now)
+		_ = updateTaskStatus(statusTaskDir, TaskStatusCoded, now)
 	}
 
 	return &AgentCodeResult{

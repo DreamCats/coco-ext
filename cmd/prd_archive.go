@@ -51,10 +51,24 @@ func runPRDArchive(cmd *cobra.Command, args []string) error {
 	color.Cyan("   task_id: %s", taskID)
 
 	branchName := "prd/" + taskID
+	worktreePath := ""
 
 	report, _ := prd.ReadCodeResultReport(task.TaskDir)
 	if report != nil && report.Branch != "" {
 		branchName = report.Branch
+	}
+	if report != nil {
+		worktreePath = report.Worktree
+	}
+
+	worktreeDeleted := false
+	if worktreePath != "" {
+		if err := prd.CleanupCodeWorktree(repoRoot, worktreePath); err != nil {
+			color.Yellow("   ⚠ 删除 worktree 失败: %v", err)
+		} else {
+			worktreeDeleted = true
+			color.Green("   ✓ 已删除 worktree %s", worktreePath)
+		}
 	}
 
 	// 清理分支
@@ -79,11 +93,13 @@ func runPRDArchive(cmd *cobra.Command, args []string) error {
 	color.Green("   ✓ 状态已更新为 archived")
 
 	result := map[string]any{
-		"status":         "archived",
-		"task_id":        taskID,
-		"branch":         branchName,
-		"branch_deleted": branchDeleted,
-		"message":        "task 已归档，分支已清理。",
+		"status":           "archived",
+		"task_id":          taskID,
+		"branch":           branchName,
+		"worktree":         worktreePath,
+		"worktree_deleted": worktreeDeleted,
+		"branch_deleted":   branchDeleted,
+		"message":          "task 已归档，分支已清理。",
 	}
 	data, _ := json.MarshalIndent(result, "", "  ")
 	fmt.Println(string(data))

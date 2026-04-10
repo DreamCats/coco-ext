@@ -56,10 +56,24 @@ func runPRDReset(cmd *cobra.Command, args []string) error {
 	color.Cyan("   task_id: %s", taskID)
 
 	branchName := "prd/" + taskID
+	worktreePath := ""
 
 	report, _ := prd.ReadCodeResultReport(task.TaskDir)
 	if report != nil && report.Branch != "" {
 		branchName = report.Branch
+	}
+	if report != nil {
+		worktreePath = report.Worktree
+	}
+
+	worktreeDeleted := false
+	if worktreePath != "" {
+		if err := prd.CleanupCodeWorktree(repoRoot, worktreePath); err != nil {
+			color.Yellow("   ⚠ 删除 worktree 失败: %v", err)
+		} else {
+			worktreeDeleted = true
+			color.Green("   ✓ 已删除 worktree %s", worktreePath)
+		}
 	}
 
 	// 直接删除分支（强制，丢弃所有改动）
@@ -88,11 +102,13 @@ func runPRDReset(cmd *cobra.Command, args []string) error {
 	color.Green("   ✓ 状态已回退为 planned")
 
 	result := map[string]any{
-		"status":          "reset",
-		"task_id":         taskID,
-		"branch":          branchName,
-		"branch_deleted":  branchDeleted,
-		"message":         "task 已重置为 planned 状态，可重新执行 prd code。",
+		"status":           "reset",
+		"task_id":          taskID,
+		"branch":           branchName,
+		"worktree":         worktreePath,
+		"worktree_deleted": worktreeDeleted,
+		"branch_deleted":   branchDeleted,
+		"message":          "task 已重置为 planned 状态，可重新执行 prd code。",
 	}
 	data, _ := json.MarshalIndent(result, "", "  ")
 	fmt.Println(string(data))

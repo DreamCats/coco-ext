@@ -49,8 +49,8 @@ coco-ext prd refine --prd "做一个支持飞书链接导入的 PRD 工作流"
 coco-ext prd refine --prd https://bytedance.larkoffice.com/docx/xxx
 coco-ext prd status
 coco-ext prd plan
-coco-ext prd code           # agent 自主实现代码（编译失败自动重试）
-coco-ext prd reset          # 不满意？重置后重新 code
+coco-ext prd code           # 在隔离 worktree 中跑 agent，自主实现代码（编译失败自动重试）
+coco-ext prd reset          # 不满意？清理 worktree/分支后重新 code
 coco-ext prd list
 
 # 3. Code Review
@@ -120,9 +120,17 @@ coco-ext prd run -i "需求描述或飞书链接"
 - `coco-ext prd refine --prd <文本|本地文件|飞书链接>` 为需求生成 task 目录，落盘 `task.json`、`source.json`、`prd.source.md`、`prd-refined.md`
 - `coco-ext prd status` 查看最近 task 的当前状态、缺失产物和下一步命令
 - `coco-ext prd plan` 启动只读 explorer agent 调研仓库，生成 `design.md` 与 `plan.md`（失败回退本地模板）
-- `coco-ext prd code` 启动 yolo agent 自主实现代码，编译失败自动重试（按改动 package 定向编译），通过后 auto-commit
-- `coco-ext prd reset` 不满意时重置，删除分支和改动，可重新执行 `prd code`
+- `coco-ext prd code` 会先创建隔离 worktree，同步 task/context 产物后启动 yolo agent 自主实现代码；编译失败自动重试（按改动 package 定向编译），通过后 auto-commit
+- `coco-ext prd reset` 不满意时重置，删除 prd code 生成的 worktree 和分支，可重新执行 `prd code`
 - `coco-ext prd list` 列出所有 task
+
+### Worktree 目录
+
+- `prd code` / `prd run` 的 code 阶段默认会在主仓库同级目录创建隔离 worktree
+- 路径形态：`<repo-parent>/.coco-ext-worktree/<repo-name>-<repo-hash>/<task-id>`
+- 这样可以尽量保留与主仓库相近的目录结构，提高 Go 编译、`replace ../xxx` 和同级依赖场景下的兼容性
+- `.coco-ext-worktree/` 位于仓库外部，不属于当前仓库工作区，所以通常不需要修改当前仓库的 `.gitignore`
+- `coco-ext prd reset` / `coco-ext prd archive` 会清理对应 task 的 worktree
 
 ### Agent 模式
 

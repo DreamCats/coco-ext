@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 )
 
@@ -263,9 +262,11 @@ func IsModSumOnly(repoRoot string) (bool, error) {
 
 // IsGitRepo 检查是否是 git 仓库
 func IsGitRepo(path string) bool {
-	gitPath := filepath.Join(path, ".git")
-	if stat, err := os.Stat(gitPath); err == nil && stat.IsDir() {
-		return true
+	cmd := exec.Command("git", "rev-parse", "--is-inside-work-tree")
+	cmd.Dir = path
+	output, err := cmd.Output()
+	if err != nil {
+		return false
 	}
-	return false
+	return strings.TrimSpace(string(output)) == "true"
 }
