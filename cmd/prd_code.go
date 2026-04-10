@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/fatih/color"
@@ -62,20 +64,66 @@ func runPRDCode(cmd *cobra.Command, args []string) error {
 	startedAt := time.Now()
 	origBranch := codeCurrentBranch(repoRoot)
 
+	// ---- 1. 前置检查：未提交改动时 stash ----
+	stashed := false
+	if codeHasUncommittedChanges(repoRoot) {
+		color.Cyan("   检测到未提交的改动，正在 stash...")
+		if err := codeStash(repoRoot); err != nil {
+			return fmt.Errorf("stash 失败: %w", err)
+		}
+		stashed = true
+		color.Green("   已 stash ✓")
+	}
+
+	// ---- 5. 中断处理：Ctrl+C 时恢复 ----
+	cleanup := func() {
+		agent, _ := cmd.Flags().GetString("_agent_ref")
+		_ = agent // agent cleanup handled by defer
+		codeCheckoutBranchQuiet(repoRoot, origBranch)
+		if stashed {
+			codeStashPop(repoRoot)
+		}
+	}
+
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-sigCh
+		fmt.Println()
+		color.Yellow("⚠ 收到中断信号，正在恢复...")
+		cleanup()
+		os.Exit(130)
+	}()
+	defer signal.Stop(sigCh)
+
 	color.Cyan("🤖 PRD Code")
 	color.Cyan("   task_id: %s", taskID)
 	color.Cyan("   branch: %s", branchName)
 
 	// 创建并切换到工作分支
 	if err := codeCheckoutBranch(repoRoot, branchName); err != nil {
+		if stashed {
+			codeStashPop(repoRoot)
+		}
 		return err
 	}
+
+	// ---- 4. 错误恢复：任何失败都恢复状态 ----
+	restored := false
+	defer func() {
+		if restored {
+			return
+		}
+		codeCheckoutBranchQuiet(repoRoot, origBranch)
+		if stashed {
+			codeStashPop(repoRoot)
+		}
+	}()
 
 	color.Cyan("   [1/3] 正在启动 AI agent（yolo 模式）...")
 	connectStartedAt := time.Now()
 	agent, err := generator.NewAgent(repoRoot)
 	if err != nil {
-		codeCheckoutBranchQuiet(repoRoot, origBranch)
 		return fmt.Errorf("启动 AI agent 失败: %w", err)
 	}
 	defer agent.Close()
@@ -96,7 +144,6 @@ func runPRDCode(cmd *cobra.Command, args []string) error {
 	fmt.Println()
 
 	if err != nil {
-		codeCheckoutBranchQuiet(repoRoot, origBranch)
 		return err
 	}
 	color.Cyan("      生成耗时: %s", formatDurationSeconds(time.Since(generateStartedAt)))
@@ -112,13 +159,17 @@ func runPRDCode(cmd *cobra.Command, args []string) error {
 		color.Cyan("      工具调用: %v", toolCounts)
 	}
 
-	// 收集改动文件
+	// ---- 3. 结果汇总：收集改动 + diff 预览 ----
 	changedFiles := codeCollectChanges(repoRoot)
 
 	color.Cyan("   [3/3] 结果检查...")
 	commitHash := ""
 	if result.BuildOK && len(changedFiles) > 0 {
 		color.Green("   [3/3] 编译通过 ✓")
+
+		// diff 摘要
+		codeShowDiffSummary(repoRoot, changedFiles)
+
 		hash, commitErr := codeCommitOnBranch(repoRoot, taskID, changedFiles)
 		if commitErr != nil {
 			color.Yellow("⚠ auto-commit 失败: %v", commitErr)
@@ -130,6 +181,13 @@ func runPRDCode(cmd *cobra.Command, args []string) error {
 		color.Yellow("⚠ 未检测到文件改动")
 	} else {
 		color.Yellow("⚠ agent 未确认编译通过，改动未 commit")
+		// 即使未通过也展示改动
+		if len(changedFiles) > 0 {
+			color.Cyan("   改动文件（未 commit）:")
+			for _, f := range changedFiles {
+				color.Cyan("      - %s", f)
+			}
+		}
 	}
 
 	// 写入 result file
@@ -149,8 +207,18 @@ func runPRDCode(cmd *cobra.Command, args []string) error {
 	}
 	_ = prd.WriteCodeResultReport(taskDir, report)
 
-	// 切回原分支
+	// 标记已恢复（由后续逻辑完成），防止 defer 重复恢复
+	restored = true
 	codeCheckoutBranchQuiet(repoRoot, origBranch)
+
+	// 恢复 stash
+	if stashed {
+		if popErr := codeStashPop(repoRoot); popErr != nil {
+			color.Yellow("⚠ stash pop 失败（改动可通过 git stash list 找回）: %v", popErr)
+		} else {
+			color.Green("   已恢复 stash ✓")
+		}
+	}
 
 	color.Green("\n✓ prd code 完成")
 	color.Green("  分支: %s", branchName)
@@ -163,7 +231,7 @@ func runPRDCode(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// ---------- Todo 渲染 ----------
+// ---------- 2. 进度渲染 ----------
 
 type todoItem struct {
 	Content string `json:"Content"`
@@ -177,34 +245,112 @@ type todoRawInput struct {
 
 // renderToolEvent 渲染 agent 工具调用事件。
 func renderToolEvent(event generator.ToolEvent) {
-	if event.Status != "in_progress" {
+	// todo_write 特殊渲染
+	if event.Title == "todo_write" && len(event.RawInput) > 0 {
+		if event.Status == "in_progress" {
+			var input todoRawInput
+			if err := json.Unmarshal(event.RawInput, &input); err == nil && len(input.Todos) > 0 {
+				color.Cyan("      📋 待办事项:")
+				for _, item := range input.Todos {
+					icon := "☐"
+					if item.Status == "completed" {
+						icon = "✓"
+					} else if item.Status == "in_progress" {
+						icon = "▶"
+					}
+					color.Cyan("         %s %s", icon, item.Content)
+				}
+			}
+		}
 		return
 	}
 
-	// todo_write 特殊渲染
-	if event.Title == "todo_write" && len(event.RawInput) > 0 {
-		var input todoRawInput
-		if err := json.Unmarshal(event.RawInput, &input); err == nil && len(input.Todos) > 0 {
-			color.Cyan("      📋 待办事项:")
-			for _, item := range input.Todos {
-				icon := "☐"
-				if item.Status == "completed" {
-					icon = "✓"
-				} else if item.Status == "in_progress" {
-					icon = "▶"
-				}
-				color.Cyan("         %s %s", icon, item.Content)
-			}
-			return
-		}
-	}
-
-	// 跳过无 kind 的工具（如未能解析的 todo_write）
+	// 跳过无 kind 的工具
 	if event.Kind == "" {
 		return
 	}
 
-	color.Cyan("      🔧 [%s] %s", event.Kind, event.Title)
+	// done 事件：简洁标记
+	if event.Status == "done" {
+		if event.Kind == "bash" {
+			// bash 完成时只显示 ✓
+			fmt.Println()
+		}
+		return
+	}
+
+	// in_progress 事件：按类型渲染
+	switch event.Kind {
+	case "edit":
+		// 提取文件名
+		file := extractFileFromTitle(event.Title)
+		color.Cyan("      ✏️  编辑 %s", file)
+	case "bash":
+		// 提取命令
+		cmd := extractCmdFromTitle(event.Title)
+		color.Cyan("      ⚡ 执行 %s", cmd)
+	case "read":
+		file := extractFileFromTitle(event.Title)
+		color.Cyan("      📖 读取 %s", file)
+	case "write":
+		file := extractFileFromTitle(event.Title)
+		color.Cyan("      📝 写入 %s", file)
+	default:
+		color.Cyan("      🔧 [%s] %s", event.Kind, event.Title)
+	}
+}
+
+// extractFileFromTitle 从 title 中提取文件路径。
+func extractFileFromTitle(title string) string {
+	// title 格式: "Read /path/to/file" 或 "Edit /path/to/file"
+	parts := strings.SplitN(title, " ", 2)
+	if len(parts) == 2 && strings.HasPrefix(parts[1], "/") {
+		return filepath.Base(parts[1])
+	}
+	return title
+}
+
+// extractCmdFromTitle 从 title 中提取命令。
+func extractCmdFromTitle(title string) string {
+	// title 格式: "Run command: go build ./..."
+	if after, ok := strings.CutPrefix(title, "Run command: "); ok {
+		return after
+	}
+	return title
+}
+
+// ---------- 3. 结果汇总 ----------
+
+// codeShowDiffSummary 展示改动文件的 diff 摘要。
+func codeShowDiffSummary(repoRoot string, files []string) {
+	color.Cyan("   改动内容:")
+	for _, file := range files {
+		// 统计增删行数
+		cmd := exec.Command("git", "diff", "--numstat", "HEAD", "--", file)
+		cmd.Dir = repoRoot
+		output, _ := cmd.Output()
+		added, deleted := parseNumstat(string(output))
+		if added > 0 || deleted > 0 {
+			color.Cyan("      - %s (+%d/-%d)", file, added, deleted)
+		} else {
+			color.Cyan("      - %s (新文件)", file)
+		}
+	}
+}
+
+// parseNumstat 解析 git diff --numstat 输出。
+func parseNumstat(output string) (added, deleted int) {
+	line := strings.TrimSpace(output)
+	if line == "" {
+		return 0, 0
+	}
+	// 格式: "3\t2\tfile.go"
+	parts := strings.Split(line, "\t")
+	if len(parts) >= 2 {
+		fmt.Sscanf(parts[0], "%d", &added)
+		fmt.Sscanf(parts[1], "%d", &deleted)
+	}
+	return added, deleted
 }
 
 // ---------- Git 操作 ----------
@@ -218,6 +364,37 @@ func codeCurrentBranch(repoRoot string) string {
 		return "main"
 	}
 	return strings.TrimSpace(string(output))
+}
+
+// codeHasUncommittedChanges 检查是否有未提交的改动。
+func codeHasUncommittedChanges(repoRoot string) bool {
+	cmd := exec.Command("git", "status", "--porcelain")
+	cmd.Dir = repoRoot
+	output, err := cmd.Output()
+	if err != nil {
+		return false
+	}
+	return strings.TrimSpace(string(output)) != ""
+}
+
+// codeStash 执行 git stash。
+func codeStash(repoRoot string) error {
+	cmd := exec.Command("git", "stash", "push", "-m", "coco-ext prd code auto-stash")
+	cmd.Dir = repoRoot
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("%s: %w", strings.TrimSpace(string(output)), err)
+	}
+	return nil
+}
+
+// codeStashPop 执行 git stash pop。
+func codeStashPop(repoRoot string) error {
+	cmd := exec.Command("git", "stash", "pop")
+	cmd.Dir = repoRoot
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("%s: %w", strings.TrimSpace(string(output)), err)
+	}
+	return nil
 }
 
 // codeCheckoutBranch 创建（如不存在）并切换到分支。
