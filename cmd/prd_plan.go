@@ -3,7 +3,6 @@ package cmd
 import (
 	"fmt"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/fatih/color"
@@ -18,8 +17,8 @@ var prdPlanTaskID string
 
 var prdPlanCmd = &cobra.Command{
 	Use:   "plan",
-	Short: "基于 refined PRD 和 context 生成 design.md 与 plan.md",
-	Long:  "先检查 context，再读取 prd-refined.md 做本地调研、复杂度打分，并生成 design.md 与 plan.md。",
+	Short: "基于 refined PRD 调研代码库，生成 design.md 与 plan.md",
+	Long:  "启动只读 agent 调研仓库代码，基于 PRD 和 context 生成 design.md 与 plan.md。失败时回退到本地模板方案。",
 	RunE:  runPRDPlan,
 }
 
@@ -45,104 +44,44 @@ func runPRDPlan(cmd *cobra.Command, args []string) error {
 
 	color.Cyan("🧭 PRD Plan")
 	color.Cyan("   task_id: %s", taskID)
-	color.Cyan("   [1/4] 正在检查 context...")
-	if _, err := prd.LoadContextSnapshot(repoRoot); err != nil {
+
+	// 校验 context 和 task 状态
+	if err := prd.CheckPlanPrerequisites(repoRoot, taskID); err != nil {
 		return err
 	}
-	color.Green("   [1/4] context 已就绪 ✓")
 
-	color.Cyan("   [2/4] 正在做本地调研...")
-	researchStartedAt := time.Now()
-	if _, err := prd.PreparePlanBuild(repoRoot, taskID); err != nil {
-		return err
-	}
-	color.Green("   [2/4] 本地调研完成 ✓")
-	color.Cyan("      调研耗时: %s", formatDurationSeconds(time.Since(researchStartedAt)))
-
-	color.Cyan("   [3/4] 正在检查并连接 coco daemon...")
+	color.Cyan("   [1/3] 正在启动只读 agent（yolo，禁止写入）...")
 	connectStartedAt := time.Now()
-	gen, err := generator.New(repoRoot)
+	explorer, err := generator.NewExplorer(repoRoot)
 	if err != nil {
-		color.Yellow("⚠ 连接 coco daemon 失败，使用本地 plan: %v", err)
-		artifacts, genErr := prd.GeneratePlan(repoRoot, taskID, time.Now())
-		if genErr != nil {
-			return genErr
-		}
-		clearPlanProgressLine()
-		color.Cyan("   [4/4] 产物已写入 task 目录")
-		color.Green("✓ plan 完成（本地 fallback）")
-		color.Green("  design.md: %s", artifacts.DesignPath)
-		color.Green("  plan.md: %s", artifacts.PlanPath)
-		color.Green("⏱ 本次 plan 总耗时: %s", formatDurationSeconds(time.Since(startedAt)))
-		return nil
+		color.Yellow("⚠ 启动 agent 失败，回退本地模板: %v", err)
+		return runLocalPlan(repoRoot, taskID, startedAt)
 	}
-	defer gen.Close()
-	color.Green("   [3/4] coco daemon 已连接 ✓")
-	color.Cyan("      连接耗时: %s", formatDurationSeconds(time.Since(connectStartedAt)))
+	defer explorer.Close()
+	color.Green("   [1/3] agent 已就绪 ✓")
+	color.Cyan("      启动耗时: %s", formatDurationSeconds(time.Since(connectStartedAt)))
 
-	color.Cyan("   [4/4] 正在生成 AI 方案...")
+	color.Cyan("   [2/3] agent 正在调研代码库...")
 	generateStartedAt := time.Now()
-	streamStarted := false
-	discardedAIOutput := false
-	var streamBuffer strings.Builder
-	firstChunkShown := make(chan struct{})
-	stopTicker := make(chan struct{})
-	go func() {
-		ticker := time.NewTicker(2 * time.Second)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-stopTicker:
-				return
-			case <-firstChunkShown:
-				return
-			case <-ticker.C:
-				fmt.Printf("\r\033[K   AI 生成中，已耗时: %s", formatDurationSeconds(time.Since(generateStartedAt)))
-			}
-		}
-	}()
-	artifacts, err := prd.GeneratePlanWithAI(gen, repoRoot, taskID, time.Now(), func(chunk string) {
-		streamBuffer.WriteString(chunk)
-		if streamStarted {
+
+	artifacts, err := prd.GeneratePlanWithExplorer(explorer, repoRoot, taskID, time.Now(),
+		func(chunk string) {
 			fmt.Print(chunk)
-			return
-		}
+		},
+		func(event generator.ToolEvent) {
+			renderToolEvent(event)
+		},
+	)
+	fmt.Println()
 
-		filtered := prd.ExtractPlanStream(streamBuffer.String())
-		if filtered == "" || !strings.HasPrefix(filtered, "=== PLAN BODY ===") {
-			return
-		}
-
-		streamStarted = true
-		close(firstChunkShown)
-		clearPlanProgressLine()
-		fmt.Println("   AI 输出（流式 plan）:")
-		fmt.Print(filtered)
-	})
-	close(stopTicker)
-	if streamStarted {
-		fmt.Println()
-	} else {
-		fmt.Print("\r")
-	}
 	if err != nil {
-		return err
+		color.Yellow("⚠ agent 调研失败，回退本地模板: %v", err)
+		return runLocalPlan(repoRoot, taskID, startedAt)
 	}
-	clearPlanProgressLine()
-	if !artifacts.UsedAI && streamStarted {
-		discardedAIOutput = true
-	}
-	color.Cyan("      AI 生成耗时: %s", formatDurationSeconds(time.Since(generateStartedAt)))
-	if discardedAIOutput {
-		color.Yellow("      上述 AI 输出未通过校验，已回退为本地 plan。")
-	}
+	color.Cyan("      调研耗时: %s", formatDurationSeconds(time.Since(generateStartedAt)))
 
-	color.Cyan("   [4/4] 产物已写入 task 目录")
-	if artifacts.UsedAI {
-		color.Green("✓ plan 完成（AI）")
-	} else {
-		color.Green("✓ plan 完成（本地 fallback）")
-	}
+	color.Green("   [3/3] 产物已写入 task 目录 ✓")
+	color.Green("✓ plan 完成（agent 调研）")
 	color.Green("  design.md: %s", artifacts.DesignPath)
 	color.Green("  plan.md: %s", artifacts.PlanPath)
 	color.Green("⏱ 本次 plan 总耗时: %s", formatDurationSeconds(time.Since(startedAt)))
@@ -150,6 +89,18 @@ func runPRDPlan(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func clearPlanProgressLine() {
-	fmt.Print("\r\033[K")
+// runLocalPlan 本地模板 fallback（不依赖 agent）。
+func runLocalPlan(repoRoot, taskID string, startedAt time.Time) error {
+	color.Cyan("   [fallback] 使用本地模板生成...")
+
+	artifacts, err := prd.GeneratePlan(repoRoot, taskID, time.Now())
+	if err != nil {
+		return err
+	}
+
+	color.Green("✓ plan 完成（本地模板）")
+	color.Green("  design.md: %s", artifacts.DesignPath)
+	color.Green("  plan.md: %s", artifacts.PlanPath)
+	color.Green("⏱ 本次 plan 总耗时: %s", formatDurationSeconds(time.Since(startedAt)))
+	return nil
 }

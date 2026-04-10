@@ -29,8 +29,21 @@ type AgentGenerator struct {
 // NewAgent 创建 yolo 模式的 AgentGenerator。
 // agent 拥有完整工具能力，可自主读写文件、执行命令。
 func NewAgent(repoPath string) (*AgentGenerator, error) {
+	return newAgentWithFlags(repoPath, &acp.ServeFlags{Yolo: true})
+}
+
+// NewExplorer 创建只读 agent，用于调研和分析。
+// 禁用 Edit/Write/Replace，agent 只能读取文件和搜索代码。
+func NewExplorer(repoPath string) (*AgentGenerator, error) {
+	return newAgentWithFlags(repoPath, &acp.ServeFlags{
+		Yolo:            true,
+		DisallowedTools: []string{"Edit", "Write", "Replace"},
+	})
+}
+
+func newAgentWithFlags(repoPath string, flags *acp.ServeFlags) (*AgentGenerator, error) {
 	client := acp.NewClient(repoPath,
-		acp.WithServeFlags(&acp.ServeFlags{Yolo: true}),
+		acp.WithServeFlags(flags),
 	)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
