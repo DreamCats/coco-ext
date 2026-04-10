@@ -12,8 +12,8 @@ import (
 )
 
 // BuildExplorerPlanPrompt 构建只读 agent 的 plan prompt。
-// PRD 必读，context 文档只给路径让 agent 按需读取，避免无关信息干扰。
-func BuildExplorerPlanPrompt(taskDir string) string {
+// PRD 必读，context 文件只展示章节目录（渐进式披露），agent 按需读取。
+func BuildExplorerPlanPrompt(repoRoot, taskDir string) string {
 	var b strings.Builder
 
 	b.WriteString("你是一名资深技术方案与研发计划助手。请基于需求文档，调研当前仓库，并输出 design.md 和 plan.md 的完整内容。\n\n")
@@ -21,18 +21,37 @@ func BuildExplorerPlanPrompt(taskDir string) string {
 	b.WriteString("## 需求文档（必读）\n\n")
 	b.WriteString(filepath.Join(taskDir, "prd-refined.md") + "\n\n")
 
+	// 渐进式披露：自动提取 context 文件的章节标题作为目录
 	b.WriteString("## 参考文档（按需读取）\n\n")
-	b.WriteString("调研过程中如需了解仓库结构或代码约定，可读取以下文件：\n")
-	b.WriteString("- .livecoding/context/architecture.md — 仓库架构概览\n")
-	b.WriteString("- .livecoding/context/patterns.md — 代码模式与骨架\n")
-	b.WriteString("- .livecoding/context/gotchas.md — 踩坑记录与隐式约定\n\n")
+	b.WriteString("以下是仓库知识库的目录索引，根据需求相关性选择读取：\n\n")
+	contextDir := filepath.Join(repoRoot, ".livecoding", "context")
+	contextFiles := []struct {
+		path        string
+		description string
+	}{
+		{"architecture.md", "仓库架构概览"},
+		{"patterns.md", "代码模式与骨架"},
+		{"gotchas.md", "踩坑记录与隐式约定"},
+	}
+	for _, cf := range contextFiles {
+		fullPath := filepath.Join(contextDir, cf.path)
+		toc := extractMarkdownHeadings(fullPath)
+		b.WriteString(fmt.Sprintf("### %s — %s\n", cf.path, cf.description))
+		if len(toc) > 0 {
+			for _, h := range toc {
+				b.WriteString(fmt.Sprintf("- %s\n", h))
+			}
+		} else {
+			b.WriteString("- （文件不存在或为空）\n")
+		}
+		b.WriteString("\n")
+	}
 
 	b.WriteString("## 工作流程\n\n")
 	b.WriteString("1. 读取需求文档，理解要做什么\n")
-	b.WriteString("2. 在仓库中搜索并读取相关源文件，理解现有代码\n")
-	b.WriteString("3. 如需了解目录结构，读取 architecture.md\n")
-	b.WriteString("4. 如需了解代码约定或陷阱，读取 patterns.md / gotchas.md\n")
-	b.WriteString("5. 理解代码后，输出技术方案和实施计划\n\n")
+	b.WriteString("2. 根据需求相关性，选择读取上方参考文档中可能涉及的章节\n")
+	b.WriteString("3. 在仓库中搜索并读取相关源文件，理解现有代码\n")
+	b.WriteString("4. 理解代码后，输出技术方案和实施计划\n\n")
 
 	b.WriteString("## 输出格式\n\n")
 	b.WriteString("严格按以下标记输出两个文件的完整内容：\n\n")
@@ -63,11 +82,31 @@ type ExplorerPlanResult struct {
 	UsedAI        bool
 }
 
+// extractMarkdownHeadings 从 markdown 文件中提取 ## 级别的标题。
+// 用于渐进式披露：让 agent 看到目录再决定是否读全文。
+func extractMarkdownHeadings(path string) []string {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	var headings []string
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "## ") {
+			h := strings.TrimSpace(strings.TrimPrefix(line, "## "))
+			if h != "" {
+				headings = append(headings, h)
+			}
+		}
+	}
+	return headings
+}
+
 // GeneratePlanWithExplorer 使用只读 agent 调研并生成 design.md + plan.md。
 func GeneratePlanWithExplorer(explorer *generator.AgentGenerator, repoRoot, taskID string, now time.Time, onChunk func(string), onTool func(generator.ToolEvent)) (*PlanArtifacts, error) {
 	taskDir := filepath.Join(repoRoot, ".livecoding", "tasks", taskID)
 
-	prompt := BuildExplorerPlanPrompt(taskDir)
+	prompt := BuildExplorerPlanPrompt(repoRoot, taskDir)
 
 	var toolEvents []generator.ToolEvent
 	wrappedOnTool := func(event generator.ToolEvent) {
