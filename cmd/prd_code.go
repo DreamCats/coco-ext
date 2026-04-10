@@ -27,14 +27,14 @@ var (
 var prdCodeCmd = &cobra.Command{
 	Use:   "code",
 	Short: "基于 plan.md 自动生成实现代码",
-	Long:  "读取 plan.md 和 design.md，创建隔离 worktree，启动 yolo agent 在 worktree 中自主读写文件和编译，成功后自动 commit 到 prd/{task_id} 分支。",
+	Long:  "读取 plan.md 和 design.md，创建隔离 worktree，启动 yolo agent 在 worktree 中自主读写文件和编译，成功后自动 commit 到 prd_<task_id> 分支。",
 	RunE:  runPRDCode,
 }
 
 func init() {
 	prdCmd.AddCommand(prdCodeCmd)
 	prdCodeCmd.Flags().StringVar(&prdCodeTaskID, "task", "", "指定 task id；默认读取最近一个 task")
-	prdCodeCmd.Flags().StringVar(&prdCodeBranch, "branch", "", "自定义分支名；默认 prd/{task_id}")
+	prdCodeCmd.Flags().StringVar(&prdCodeBranch, "branch", "", "自定义分支名；默认 prd_<task_id>")
 	prdCodeCmd.Flags().IntVar(&prdCodeMaxRetry, "max-retries", 2, "编译失败时最大重试次数")
 }
 
@@ -54,7 +54,7 @@ func runPRDCode(cmd *cobra.Command, args []string) error {
 
 	branchName := prdCodeBranch
 	if branchName == "" {
-		branchName = "prd/" + taskID
+		branchName = buildPRDBranchName(taskID)
 	}
 
 	startedAt := time.Now()
@@ -210,6 +210,10 @@ func executePRDCode(repoRoot, taskID, branchName string, maxRetries int, onChunk
 	}
 
 	return report, nil
+}
+
+func buildPRDBranchName(taskID string) string {
+	return "prd_" + taskID
 }
 
 // ---------- 2. 进度渲染 ----------

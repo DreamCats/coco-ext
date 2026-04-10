@@ -120,7 +120,7 @@ coco-ext prd run -i "需求描述或飞书链接"
 - `coco-ext prd refine --prd <文本|本地文件|飞书链接>` 为需求生成 task 目录，落盘 `task.json`、`source.json`、`prd.source.md`、`prd-refined.md`
 - `coco-ext prd status` 查看最近 task 的当前状态、缺失产物和下一步命令
 - `coco-ext prd plan` 启动只读 explorer agent 调研仓库，生成 `design.md` 与 `plan.md`（失败回退本地模板）
-- `coco-ext prd code` 会先创建隔离 worktree，同步 task/context 产物后启动 yolo agent 自主实现代码；编译失败自动重试（按改动 package 定向编译），通过后 auto-commit
+- `coco-ext prd code` 会先创建隔离 worktree，同步 task/context 产物后启动 yolo agent 自主实现代码；默认分支名为 `prd_<task_id>`，编译失败自动重试（按改动 package 定向编译），通过后 auto-commit
 - `coco-ext prd reset` 不满意时重置，删除 prd code 生成的 worktree 和分支，可重新执行 `prd code`
 - `coco-ext prd list` 列出所有 task
 
@@ -194,10 +194,11 @@ coco-ext prd run -i "需求描述或飞书链接"
 
 ## 内置 Skills
 
-`coco-ext` 二进制内置了 skills 资源，执行 `coco-ext install` 时会直接同步到 `~/.trae/skills/`。当前内置 5 个 skill：
+`coco-ext` 二进制内置了 skills 资源，执行 `coco-ext install` 时会直接同步到 `~/.trae/skills/`。当前内置 6 个 skill：
 
 - `coco-repo-context`：初始化、更新、查询 `.livecoding/context/`
 - `coco-repo-setup`：安装/卸载 hooks 与同步 repo 内置 skills
+- `coco-prd`：执行和排查 PRD 工作流，覆盖 refine / plan / code / reset / archive
 - `coco-review`：手动补跑 review、查看异步日志和报告
 - `coco-commit`：生成或排查 commit message，理解 hook 与兜底策略
 - `coco-submit`：基于 staged 变更自动生成 message、commit 并 push
