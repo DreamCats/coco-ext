@@ -178,6 +178,7 @@ PRD 原文：
 }
 
 // ExtractRefinedContent 提取真正的 refined 正文，去掉模型的前言和过程性输出。
+// 优先匹配 "# PRD Refined"，失败则匹配任意 "# " 一级标题，兜底返回原始输出。
 func ExtractRefinedContent(raw string) string {
 	normalized := strings.ReplaceAll(raw, "\r\n", "\n")
 	normalized = strings.TrimSpace(normalized)
@@ -185,36 +186,51 @@ func ExtractRefinedContent(raw string) string {
 		return ""
 	}
 
+	// 精确匹配 "# PRD Refined"
 	if loc := reRefinedH1.FindStringIndex(normalized); loc != nil {
 		return strings.TrimSpace(normalized[loc[0]:])
 	}
-	return ""
+
+	// 宽松匹配：找第一个 "# " 一级标题
+	for i, line := range strings.Split(normalized, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "# ") {
+			return strings.TrimSpace(normalized[i:])
+		}
+	}
+
+	// 兜底：返回原始输出（比本地模板好）
+	return normalized
 }
 
 // ValidateRefinedContent 校验 refined PRD 是否满足最小结构要求。
+// 严格模式：要求 "# PRD Refined" 标题和所有必要章节。
+// 宽松模式：只要求非空且有一定长度。
 func ValidateRefinedContent(content string) error {
 	content = strings.TrimSpace(content)
 	if content == "" {
 		return fmt.Errorf("refined PRD 为空")
 	}
-	if !strings.HasPrefix(content, "# PRD Refined") {
-		return fmt.Errorf("refined PRD 缺少 # PRD Refined 标题")
+
+	// 严格校验：标准格式
+	if strings.HasPrefix(content, "# PRD Refined") {
+		requiredSections := []string{
+			"## 需求概述",
+			"## 功能点",
+			"## 验收标准",
+		}
+		for _, section := range requiredSections {
+			if !strings.Contains(content, section) {
+				return fmt.Errorf("refined PRD 缺少必要章节: %s（宽松模式放行）", section)
+			}
+		}
+		return nil
 	}
 
-	requiredSections := []string{
-		"## 需求概述",
-		"## 功能点",
-		"## 边界条件",
-		"## 交互与展示",
-		"## 验收标准",
-		"## 业务规则",
-		"## 待确认问题",
+	// 宽松校验：有内容就行，至少 50 字符
+	if len(content) < 50 {
+		return fmt.Errorf("refined PRD 内容过短（%d 字符）", len(content))
 	}
-	for _, section := range requiredSections {
-		if !strings.Contains(content, section) {
-			return fmt.Errorf("refined PRD 缺少必要章节: %s", section)
-		}
-	}
+
 	return nil
 }
 
