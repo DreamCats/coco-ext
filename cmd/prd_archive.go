@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"time"
 
+	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 
 	internalgit "github.com/DreamCats/coco-ext/internal/git"
@@ -17,8 +18,8 @@ var prdArchiveTaskID string
 
 var prdArchiveCmd = &cobra.Command{
 	Use:   "archive",
-	Short: "归档已完成的 task：清理 worktree 和分支，更新状态",
-	Long:  "清理 prd code 产生的 worktree 目录和分支，将 task 状态标记为 archived。输出 JSON 供 LLM 消费。",
+	Short: "归档已完成的 task：清理分支，更新状态",
+	Long:  "清理 prd code 产生的分支，将 task 状态标记为 archived。",
 	RunE:  runPRDArchive,
 }
 
@@ -46,59 +47,43 @@ func runPRDArchive(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// 从 code-result.json 读取 worktree 和 branch 信息
-	var worktreePath, branchName string
-	var worktreeRemoved, branchDeleted bool
+	color.Cyan("📦 PRD Archive")
+	color.Cyan("   task_id: %s", taskID)
+
+	branchName := "prd/" + taskID
 
 	report, _ := prd.ReadCodeResultReport(task.TaskDir)
-	if report != nil {
-		worktreePath = report.Worktree
+	if report != nil && report.Branch != "" {
 		branchName = report.Branch
-	}
-	if branchName == "" {
-		branchName = "prd/" + taskID
-	}
-
-	// 清理 worktree
-	if worktreePath != "" {
-		if _, err := os.Stat(worktreePath); err == nil {
-			rmCmd := exec.Command("git", "worktree", "remove", "--force", worktreePath)
-			rmCmd.Dir = repoRoot
-			if err := rmCmd.Run(); err == nil {
-				worktreeRemoved = true
-			}
-		} else {
-			worktreeRemoved = true // 已不存在，视为已清理
-		}
 	}
 
 	// 清理分支
+	branchDeleted := false
 	checkCmd := exec.Command("git", "rev-parse", "--verify", branchName)
 	checkCmd.Dir = repoRoot
-	if err := checkCmd.Run(); err == nil {
+	if checkCmd.Run() == nil {
 		delCmd := exec.Command("git", "branch", "-D", branchName)
 		delCmd.Dir = repoRoot
-		if err := delCmd.Run(); err == nil {
+		if delCmd.Run() == nil {
 			branchDeleted = true
+			color.Green("   ✓ 已删除分支 %s", branchName)
 		}
 	} else {
-		branchDeleted = true // 已不存在，视为已清理
+		branchDeleted = true
 	}
 
 	// 更新状态
 	if err := prd.ArchiveTask(task.TaskDir, time.Now()); err != nil {
 		return err
 	}
+	color.Green("   ✓ 状态已更新为 archived")
 
-	// 输出 JSON
 	result := map[string]any{
-		"status":           "archived",
-		"task_id":          taskID,
-		"branch":           branchName,
-		"branch_deleted":   branchDeleted,
-		"worktree":         worktreePath,
-		"worktree_removed": worktreeRemoved,
-		"message":          "task 已归档，worktree 和分支已清理。",
+		"status":         "archived",
+		"task_id":        taskID,
+		"branch":         branchName,
+		"branch_deleted": branchDeleted,
+		"message":        "task 已归档，分支已清理。",
 	}
 	data, _ := json.MarshalIndent(result, "", "  ")
 	fmt.Println(string(data))
