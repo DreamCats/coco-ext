@@ -12,24 +12,27 @@ import (
 )
 
 // BuildExplorerPlanPrompt 构建只读 agent 的 plan prompt。
-// agent 自主读 PRD + context + 源文件，输出 design.md 和 plan.md。
+// PRD 必读，context 文档只给路径让 agent 按需读取，避免无关信息干扰。
 func BuildExplorerPlanPrompt(taskDir string) string {
 	var b strings.Builder
 
 	b.WriteString("你是一名资深技术方案与研发计划助手。请基于需求文档，调研当前仓库，并输出 design.md 和 plan.md 的完整内容。\n\n")
 
-	b.WriteString("## 输入文档\n\n")
-	b.WriteString("1. 需求文档: " + filepath.Join(taskDir, "prd-refined.md") + "\n")
-	b.WriteString("2. 仓库架构: .livecoding/context/architecture.md\n")
-	b.WriteString("3. 代码模式: .livecoding/context/patterns.md\n")
-	b.WriteString("4. 踩坑记录: .livecoding/context/gotchas.md\n")
-	b.WriteString("5. 术语表: .livecoding/context/glossary.md\n\n")
+	b.WriteString("## 需求文档（必读）\n\n")
+	b.WriteString(filepath.Join(taskDir, "prd-refined.md") + "\n\n")
+
+	b.WriteString("## 参考文档（按需读取）\n\n")
+	b.WriteString("调研过程中如需了解仓库结构或代码约定，可读取以下文件：\n")
+	b.WriteString("- .livecoding/context/architecture.md — 仓库架构概览\n")
+	b.WriteString("- .livecoding/context/patterns.md — 代码模式与骨架\n")
+	b.WriteString("- .livecoding/context/gotchas.md — 踩坑记录与隐式约定\n\n")
 
 	b.WriteString("## 工作流程\n\n")
-	b.WriteString("1. 先读取需求文档，理解要做什么\n")
-	b.WriteString("2. 读取 context 文档（architecture/patterns/gotchas/glossary），了解仓库结构和约定\n")
-	b.WriteString("3. 根据需求和 context，在仓库中搜索并读取相关源文件\n")
-	b.WriteString("4. 理解现有代码后，输出技术方案和实施计划\n\n")
+	b.WriteString("1. 读取需求文档，理解要做什么\n")
+	b.WriteString("2. 在仓库中搜索并读取相关源文件，理解现有代码\n")
+	b.WriteString("3. 如需了解目录结构，读取 architecture.md\n")
+	b.WriteString("4. 如需了解代码约定或陷阱，读取 patterns.md / gotchas.md\n")
+	b.WriteString("5. 理解代码后，输出技术方案和实施计划\n\n")
 
 	b.WriteString("## 输出格式\n\n")
 	b.WriteString("严格按以下标记输出两个文件的完整内容：\n\n")
