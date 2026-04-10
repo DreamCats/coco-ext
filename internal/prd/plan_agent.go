@@ -70,6 +70,7 @@ func BuildExplorerPlanPrompt(repoRoot, taskDir string) string {
 	b.WriteString("- design.md 要包含实质性的技术分析，不要写模板废话\n")
 	b.WriteString("- plan.md 中的拟改文件要说明每个文件需要做什么改动\n")
 	b.WriteString("- 保持输出为纯 Markdown，不要用代码块包裹整个文件\n")
+	b.WriteString("- 任务列表只包含代码实现相关的任务，不要列出提交 PR、代码评审、合并上线等平台/流程操作\n")
 
 	return b.String()
 }
