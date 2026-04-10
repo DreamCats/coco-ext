@@ -2,6 +2,7 @@ package generator
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -12,9 +13,10 @@ import (
 
 // ToolEvent 代表 agent 执行的一次工具调用事件。
 type ToolEvent struct {
-	Kind   string // "read", "edit", "bash", "write", ...
-	Title  string // 人类可读描述
-	Status string // "in_progress", "done"
+	Kind     string          // "read", "edit", "bash", "write", ...
+	Title    string          // 人类可读描述
+	Status   string          // "in_progress", "done"
+	RawInput json.RawMessage // 工具原始输入（如 todo_write 的 Todos）
 }
 
 // AgentGenerator 使用 yolo 模式的完整 agent，让 agent 自主读写文件和编译。
@@ -68,17 +70,19 @@ func (g *AgentGenerator) PromptWithTools(prompt string, timeout time.Duration, o
 		case acp.UpdateToolCall:
 			if onTool != nil {
 				onTool(ToolEvent{
-					Kind:   update.Kind,
-					Title:  update.Title,
-					Status: update.Status,
+					Kind:     update.Kind,
+					Title:    update.Title,
+					Status:   update.Status,
+					RawInput: update.RawInput,
 				})
 			}
 		case acp.UpdateToolCallUpdate:
 			if onTool != nil {
 				onTool(ToolEvent{
-					Kind:   update.Kind,
-					Title:  update.Title,
-					Status: update.Status,
+					Kind:     update.Kind,
+					Title:    update.Title,
+					Status:   update.Status,
+					RawInput: update.RawInput,
 				})
 			}
 		}
