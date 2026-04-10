@@ -100,7 +100,7 @@ func runPRDRun(cmd *cobra.Command, args []string) error {
 		refinedContent, promptErr := gen.PromptWithTimeout(
 			prd.BuildRefinedPrompt(task.Title, task.Source.Content),
 			config.ReviewPromptTimeout,
-			nil,
+			func(chunk string) { fmt.Print(chunk) },
 		)
 		if promptErr != nil {
 			color.Yellow("⚠ AI refine 失败，使用本地兜底: %v", promptErr)
@@ -145,7 +145,7 @@ func runPRDRun(cmd *cobra.Command, args []string) error {
 		color.Green("   ✓ plan 完成（本地模板）(%s)", formatDurationSeconds(time.Since(stepStart)))
 	} else {
 		defer explorer.Close()
-		_, planErr := prd.GeneratePlanWithExplorer(explorer, repoRoot, task.TaskID, time.Now(), nil, nil)
+		_, planErr := prd.GeneratePlanWithExplorer(explorer, repoRoot, task.TaskID, time.Now(), func(chunk string) { fmt.Print(chunk) }, func(event generator.ToolEvent) { renderToolEvent(event) })
 		if planErr != nil {
 			color.Yellow("⚠ agent plan 失败，回退本地模板: %v", planErr)
 			_, fallbackErr := prd.GeneratePlan(repoRoot, task.TaskID, time.Now())
@@ -211,7 +211,7 @@ func runPRDRun(cmd *cobra.Command, args []string) error {
 	}
 	defer agent.Close()
 
-	result, codeErr := prd.GenerateCodeWithAgent(agent, prepareTaskDir, time.Now(), nil, nil)
+	result, codeErr := prd.GenerateCodeWithAgent(agent, prepareTaskDir, time.Now(), func(chunk string) { fmt.Print(chunk) }, func(event generator.ToolEvent) { renderToolEvent(event) })
 	if codeErr != nil {
 		steps = append(steps, runStep{Name: "code", Duration: time.Since(stepStart), Status: "fail", Detail: codeErr.Error()})
 		color.Red("   ✗ code 生成失败: %v", codeErr)
@@ -229,7 +229,7 @@ func runPRDRun(cmd *cobra.Command, args []string) error {
 					break
 				}
 				followUp := fmt.Sprintf("编译失败，请修复以下错误：\n%s\n修复后重新运行 go build 验证，然后输出 === CODE RESULT ===", buildOutput)
-				reply, retryErr := agent.PromptWithTools(followUp, config.CodePromptTimeout, nil, nil)
+				reply, retryErr := agent.PromptWithTools(followUp, config.CodePromptTimeout, func(chunk string) { fmt.Print(chunk) }, func(event generator.ToolEvent) { renderToolEvent(event) })
 				if retryErr != nil && reply == "" {
 					break
 				}
