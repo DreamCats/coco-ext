@@ -73,6 +73,14 @@ func (g *AgentGenerator) PromptWithTools(prompt string, timeout time.Duration, o
 					Status: update.Status,
 				})
 			}
+		case acp.UpdateToolCallUpdate:
+			if onTool != nil {
+				onTool(ToolEvent{
+					Kind:   update.Kind,
+					Title:  update.Title,
+					Status: update.Status,
+				})
+			}
 		}
 	})
 
