@@ -20,35 +20,24 @@ type AgentCodeResult struct {
 }
 
 // BuildAgentCodePrompt 构建 agent 模式的 prompt。
-// 将 plan/design 内容直接嵌入 prompt（而非给文件路径），
-// 避免 agent 通过文件路径锚定到主仓库而非 worktree。
-func BuildAgentCodePrompt(taskDir, workDir string) (string, error) {
-	planContent, err := os.ReadFile(filepath.Join(taskDir, "plan.md"))
-	if err != nil {
-		return "", fmt.Errorf("读取 plan.md 失败: %w", err)
-	}
-	designContent, err := os.ReadFile(filepath.Join(taskDir, "design.md"))
-	if err != nil {
-		return "", fmt.Errorf("读取 design.md 失败: %w", err)
-	}
-
+// 给文件路径让 agent 自己读，不塞内容。
+func BuildAgentCodePrompt(taskDir string) string {
 	var b strings.Builder
 
-	b.WriteString("你是一个代码实现 agent。请基于下方提供的技术方案和实施计划，在当前仓库中完成所有代码改动。\n\n")
+	b.WriteString("你是一个代码实现 agent。请基于需求文档，在当前仓库中完成所有代码改动。\n\n")
 
-	b.WriteString("## 技术方案 (design.md)\n\n")
-	b.WriteString(string(designContent))
-	b.WriteString("\n\n")
-
-	b.WriteString("## 实施计划 (plan.md)\n\n")
-	b.WriteString(string(planContent))
-	b.WriteString("\n\n")
+	b.WriteString("## 输入文档\n\n")
+	b.WriteString(fmt.Sprintf("1. 实施计划: %s\n", filepath.Join(taskDir, "plan.md")))
+	b.WriteString(fmt.Sprintf("2. 技术方案: %s\n", filepath.Join(taskDir, "design.md")))
+	b.WriteString(fmt.Sprintf("3. 需求文档: %s\n\n", filepath.Join(taskDir, "prd-refined.md")))
 
 	b.WriteString("## 工作流程\n\n")
-	b.WriteString("1. 根据上方 plan.md 中「拟改文件」列表，逐个读取需要修改的源文件\n")
-	b.WriteString("2. 使用 Edit 工具逐个修改文件（优先局部修改，不要整文件覆写）\n")
-	b.WriteString("3. 所有文件改完后，执行 `go build ./涉及的包/...` 验证编译\n")
-	b.WriteString("4. 如果编译失败，自行修复直到编译通过\n\n")
+	b.WriteString("1. 先读取 plan.md，了解要改哪些文件、每个文件的改动目标\n")
+	b.WriteString("2. 再读取 design.md，了解技术方案细节\n")
+	b.WriteString("3. 逐个读取需要修改的源文件，理解现有代码\n")
+	b.WriteString("4. 使用 Edit 工具逐个修改文件（优先局部修改，不要整文件覆写）\n")
+	b.WriteString("5. 所有文件改完后，执行 `go build ./涉及的包/...` 验证编译\n")
+	b.WriteString("6. 如果编译失败，自行修复直到编译通过\n\n")
 
 	b.WriteString("## 规则\n\n")
 	b.WriteString("- 严格按照 plan.md 中「拟改文件」列表工作，不要改动计划外的文件\n")
@@ -57,16 +46,13 @@ func BuildAgentCodePrompt(taskDir, workDir string) (string, error) {
 	b.WriteString("- 最终必须确保编译通过\n")
 	b.WriteString("- 完成后输出一行总结：改了哪些文件、编译是否通过\n")
 
-	return b.String(), nil
+	return b.String()
 }
 
 // GenerateCodeWithAgent 使用 agent 模式生成代码。
 // agent 自主读文件、改代码、跑编译，coco-ext 只做编排。
-func GenerateCodeWithAgent(agent *generator.AgentGenerator, taskDir, workDir string, now time.Time, onChunk func(string), onTool func(generator.ToolEvent)) (*AgentCodeResult, error) {
-	prompt, err := BuildAgentCodePrompt(taskDir, workDir)
-	if err != nil {
-		return nil, err
-	}
+func GenerateCodeWithAgent(agent *generator.AgentGenerator, taskDir string, now time.Time, onChunk func(string), onTool func(generator.ToolEvent)) (*AgentCodeResult, error) {
+	prompt := BuildAgentCodePrompt(taskDir)
 
 	var toolEvents []generator.ToolEvent
 	wrappedOnTool := func(event generator.ToolEvent) {

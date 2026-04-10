@@ -81,16 +81,13 @@ func runPRDCode(cmd *cobra.Command, args []string) error {
 	repoName := filepath.Base(repoRoot)
 	worktreePath := filepath.Join(filepath.Dir(repoRoot), repoName+"--prd--"+taskID)
 
-	// agent 模式：轻量校验 + yolo agent 自主工作
+	// agent 模式：直接在主仓库分支上工作（coco acp serve 会解析到主仓库根目录，worktree 无效）
 	if prdCodeAgent {
 		taskDir, err := prd.PrepareAgentCode(repoRoot, taskID)
 		if err != nil {
 			return err
 		}
-		if err := codeCreateWorktree(repoRoot, worktreePath, branchName); err != nil {
-			return err
-		}
-		return runPRDCodeAgent(repoRoot, taskID, taskDir, branchName, worktreePath)
+		return runPRDCodeAgent(repoRoot, taskID, taskDir, branchName)
 	}
 
 	// 旧模式：校验 task 状态和复杂度（在主仓库读取，不依赖 worktree）
@@ -123,20 +120,29 @@ func runPRDCode(cmd *cobra.Command, args []string) error {
 }
 
 // ---------- Agent 模式 ----------
+// agent 模式不用 worktree：coco acp serve 会解析到主仓库根目录，
+// 所以直接在主仓库创建分支，让 agent 在主仓库上工作。
 
-func runPRDCodeAgent(repoRoot, taskID, taskDir, branchName, worktreePath string) error {
+func runPRDCodeAgent(repoRoot, taskID, taskDir, branchName string) error {
 	startedAt := time.Now()
+
+	// 记录当前分支，完成后切回
+	origBranch := codeCurrentBranch(repoRoot)
 
 	color.Cyan("🤖 PRD Code (agent 模式)")
 	color.Cyan("   task_id: %s", taskID)
-	color.Cyan("   worktree: %s", worktreePath)
 	color.Cyan("   branch: %s", branchName)
+
+	// 创建并切换到工作分支
+	if err := codeCheckoutBranch(repoRoot, branchName); err != nil {
+		return err
+	}
 
 	color.Cyan("   [1/3] 正在启动 AI agent（yolo 模式）...")
 	connectStartedAt := time.Now()
-	agent, err := generator.NewAgent(worktreePath)
+	agent, err := generator.NewAgent(repoRoot)
 	if err != nil {
-		codeRemoveWorktree(repoRoot, worktreePath, branchName)
+		codeCheckoutBranchQuiet(repoRoot, origBranch)
 		return fmt.Errorf("启动 AI agent 失败: %w", err)
 	}
 	defer agent.Close()
@@ -146,7 +152,7 @@ func runPRDCodeAgent(repoRoot, taskID, taskDir, branchName, worktreePath string)
 	color.Cyan("   [2/3] agent 正在自主实现代码...")
 	generateStartedAt := time.Now()
 
-	result, err := prd.GenerateCodeWithAgent(agent, taskDir, worktreePath, time.Now(),
+	result, err := prd.GenerateCodeWithAgent(agent, taskDir, time.Now(),
 		func(chunk string) {
 			fmt.Print(chunk)
 		},
@@ -159,7 +165,7 @@ func runPRDCodeAgent(repoRoot, taskID, taskDir, branchName, worktreePath string)
 	fmt.Println()
 
 	if err != nil {
-		codeRemoveWorktree(repoRoot, worktreePath, branchName)
+		codeCheckoutBranchQuiet(repoRoot, origBranch)
 		return err
 	}
 	color.Cyan("      生成耗时: %s", formatDurationSeconds(time.Since(generateStartedAt)))
@@ -171,35 +177,38 @@ func runPRDCodeAgent(repoRoot, taskID, taskDir, branchName, worktreePath string)
 			toolCounts[e.Kind]++
 		}
 	}
-	color.Cyan("      工具调用: %v", toolCounts)
+	if len(toolCounts) > 0 {
+		color.Cyan("      工具调用: %v", toolCounts)
+	}
+
+	// 收集改动文件
+	changedFiles := codeCollectChanges(repoRoot)
 
 	color.Cyan("   [3/3] 结果检查...")
-	if result.BuildOK {
+	commitHash := ""
+	if result.BuildOK && len(changedFiles) > 0 {
 		color.Green("   [3/3] 编译通过 ✓")
-
-		// 收集 agent 改动的文件
-		writtenFiles := collectWorktreeChanges(worktreePath)
-		if len(writtenFiles) > 0 {
-			commitHash, commitErr := codeCommitInWorktree(worktreePath, "", taskID, writtenFiles)
-			if commitErr != nil {
-				color.Yellow("⚠ auto-commit 失败: %v", commitErr)
-			} else {
-				color.Green("   已自动 commit: %s", commitHash)
-			}
+		hash, commitErr := codeCommitInWorktree(repoRoot, "", taskID, changedFiles)
+		if commitErr != nil {
+			color.Yellow("⚠ auto-commit 失败: %v", commitErr)
+		} else {
+			commitHash = hash
+			color.Green("   已自动 commit: %s", commitHash)
 		}
+	} else if len(changedFiles) == 0 {
+		color.Yellow("⚠ 未检测到文件改动")
 	} else {
-		color.Yellow("⚠ agent 未确认编译通过")
+		color.Yellow("⚠ agent 未确认编译通过，改动未 commit")
 	}
 
 	// 写入 result file
-	writtenFiles := collectWorktreeChanges(worktreePath)
 	report := prd.CodeResultReport{
 		Status:       "success",
 		TaskID:       taskID,
 		Branch:       branchName,
-		Worktree:     worktreePath,
+		Commit:       commitHash,
 		BuildOK:      result.BuildOK,
-		FilesWritten: writtenFiles,
+		FilesWritten: changedFiles,
 		Log:          filepath.Join(taskDir, "code.log"),
 		StartedAt:    startedAt.Format(time.RFC3339),
 		FinishedAt:   time.Now().Format(time.RFC3339),
@@ -209,39 +218,83 @@ func runPRDCodeAgent(repoRoot, taskID, taskDir, branchName, worktreePath string)
 	}
 	_ = prd.WriteCodeResultReport(taskDir, report)
 
+	// 切回原分支
+	codeCheckoutBranchQuiet(repoRoot, origBranch)
+
 	color.Green("\n✓ prd code (agent) 完成")
 	color.Green("  分支: %s", branchName)
-	color.Green("  worktree: %s", worktreePath)
-	color.Green("  改动文件: %d 个", len(writtenFiles))
+	if commitHash != "" {
+		color.Green("  commit: %s", commitHash)
+	}
+	color.Green("  改动文件: %d 个", len(changedFiles))
 	color.Green("⏱ 总耗时: %s", formatDurationSeconds(time.Since(startedAt)))
 
 	return nil
 }
 
-// collectWorktreeChanges 获取 worktree 中的改动文件列表。
-func collectWorktreeChanges(worktreePath string) []string {
-	cmd := exec.Command("git", "diff", "--name-only", "HEAD")
-	cmd.Dir = worktreePath
+// codeCurrentBranch 获取当前分支名。
+func codeCurrentBranch(repoRoot string) string {
+	cmd := exec.Command("git", "rev-parse", "--abbrev-ref", "HEAD")
+	cmd.Dir = repoRoot
 	output, err := cmd.Output()
 	if err != nil {
-		// HEAD 不存在时尝试列出所有未跟踪文件
-		cmd = exec.Command("git", "status", "--porcelain")
-		cmd.Dir = worktreePath
-		output, err = cmd.Output()
-		if err != nil {
-			return nil
+		return "main"
+	}
+	return strings.TrimSpace(string(output))
+}
+
+// codeCheckoutBranch 创建（如不存在）并切换到分支。
+func codeCheckoutBranch(repoRoot, branchName string) error {
+	// 检查分支是否已存在
+	checkCmd := exec.Command("git", "rev-parse", "--verify", branchName)
+	checkCmd.Dir = repoRoot
+	if checkCmd.Run() == nil {
+		// 分支存在，直接切换
+		cmd := exec.Command("git", "checkout", branchName)
+		cmd.Dir = repoRoot
+		if output, err := cmd.CombinedOutput(); err != nil {
+			return fmt.Errorf("切换到分支 %s 失败: %s\n%s", branchName, err, string(output))
 		}
+		return nil
+	}
+	// 创建新分支
+	cmd := exec.Command("git", "checkout", "-b", branchName)
+	cmd.Dir = repoRoot
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("创建分支 %s 失败: %s\n%s", branchName, err, string(output))
+	}
+	return nil
+}
+
+// codeCheckoutBranchQuiet 静默切回分支。
+func codeCheckoutBranchQuiet(repoRoot, branchName string) {
+	cmd := exec.Command("git", "checkout", branchName)
+	cmd.Dir = repoRoot
+	_ = cmd.Run()
+}
+
+// codeCollectChanges 获取主仓库中的改动文件列表（已修改 + 未跟踪）。
+func codeCollectChanges(repoRoot string) []string {
+	cmd := exec.Command("git", "status", "--porcelain")
+	cmd.Dir = repoRoot
+	output, err := cmd.Output()
+	if err != nil {
+		return nil
 	}
 
 	var files []string
 	for _, line := range strings.Split(strings.TrimSpace(string(output)), "\n") {
 		line = strings.TrimSpace(line)
-		// git status --porcelain 格式: "XY filename"
-		if len(line) > 3 && (line[0] == 'M' || line[0] == 'A' || line[0] == '?' || line[1] == 'M' || line[1] == 'A') {
-			line = strings.TrimSpace(line[2:])
+		if len(line) < 3 {
+			continue
 		}
-		if line != "" {
-			files = append(files, line)
+		// 跳过 .livecoding/ 目录的变更
+		file := strings.TrimSpace(line[2:])
+		if strings.HasPrefix(file, ".livecoding/") {
+			continue
+		}
+		if file != "" {
+			files = append(files, file)
 		}
 	}
 	return files
