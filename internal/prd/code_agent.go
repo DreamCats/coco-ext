@@ -13,10 +13,12 @@ import (
 
 // AgentCodeResult 是 agent 模式代码生成的结果。
 type AgentCodeResult struct {
-	TaskID     string
-	ToolEvents []generator.ToolEvent
-	AgentReply string
-	BuildOK    bool
+	TaskID      string
+	ToolEvents  []generator.ToolEvent
+	AgentReply  string
+	BuildOK     bool
+	FilesChanged []string // agent 报告的改动文件列表
+	Summary     string    // agent 报告的改动摘要
 }
 
 // BuildAgentCodePrompt 构建 agent 模式的 prompt。
@@ -43,8 +45,17 @@ func BuildAgentCodePrompt(taskDir string) string {
 	b.WriteString("- 严格按照 plan.md 中「拟改文件」列表工作，不要改动计划外的文件\n")
 	b.WriteString("- 保持原有代码风格、import 顺序、注释风格\n")
 	b.WriteString("- 不要添加多余的注释或文档\n")
-	b.WriteString("- 最终必须确保编译通过\n")
-	b.WriteString("- 完成后输出一行总结：改了哪些文件、编译是否通过\n")
+	b.WriteString("- 最终必须确保编译通过\n\n")
+
+	b.WriteString("## 输出要求\n\n")
+	b.WriteString("所有代码改动完成并验证编译后，在最后输出结构化结果：\n\n")
+	b.WriteString("=== CODE RESULT ===\n")
+	b.WriteString("build: passed 或 failed\n")
+	b.WriteString("files:\n")
+	b.WriteString("  - path/to/file1.go\n")
+	b.WriteString("  - path/to/file2.go\n")
+	b.WriteString("summary: 一句话描述做了什么改动\n")
+	b.WriteString("=== END ===\n")
 
 	return b.String()
 }
@@ -70,23 +81,87 @@ func GenerateCodeWithAgent(agent *generator.AgentGenerator, taskDir string, now 
 		// 超时但有部分输出，仍然返回结果
 	}
 
-	// 判断编译是否通过：检查 agent 是否执行了 go build 且成功
-	buildOK := inferBuildResult(toolEvents, reply)
+	// 优先解析结构化结果，失败则 fallback 到启发式
+	cr := parseCodeResult(reply)
+	if cr == nil {
+		cr = inferCodeResult(toolEvents, reply)
+	}
 
-	if buildOK {
-		taskMetaDir := taskDir
-		_ = updateTaskStatus(taskMetaDir, TaskStatusCoded, now)
+	if cr.BuildOK {
+		_ = updateTaskStatus(taskDir, TaskStatusCoded, now)
 	}
 
 	return &AgentCodeResult{
-		ToolEvents: toolEvents,
-		AgentReply: reply,
-		BuildOK:    buildOK,
+		ToolEvents:   toolEvents,
+		AgentReply:   reply,
+		BuildOK:      cr.BuildOK,
+		FilesChanged: cr.Files,
+		Summary:      cr.Summary,
 	}, nil
 }
 
-// inferBuildResult 从 agent 的工具调用和回复中推断编译是否通过。
-func inferBuildResult(events []generator.ToolEvent, reply string) bool {
+// codeResult 是从 agent 输出中解析出的结构化结果。
+type codeResult struct {
+	BuildOK bool
+	Files   []string
+	Summary string
+}
+
+// parseCodeResult 从 agent 输出中解析 === CODE RESULT === 块。
+func parseCodeResult(raw string) *codeResult {
+	const marker = "=== CODE RESULT ==="
+	const endMarker = "=== END ==="
+
+	normalized := strings.ReplaceAll(raw, "\r\n", "\n")
+	start := strings.LastIndex(normalized, marker)
+	if start == -1 {
+		return nil
+	}
+
+	content := normalized[start+len(marker):]
+	if end := strings.Index(content, endMarker); end != -1 {
+		content = content[:end]
+	}
+
+	result := &codeResult{}
+
+	for _, line := range strings.Split(content, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+
+		if strings.HasPrefix(line, "build:") {
+			val := strings.TrimSpace(strings.TrimPrefix(line, "build:"))
+			result.BuildOK = val == "passed" || val == "ok" || val == "true"
+			continue
+		}
+
+		if strings.HasPrefix(line, "summary:") {
+			result.Summary = strings.TrimSpace(strings.TrimPrefix(line, "summary:"))
+			continue
+		}
+
+		// files 列表项
+		if strings.HasPrefix(line, "- ") {
+			file := strings.TrimSpace(strings.TrimPrefix(line, "- "))
+			if file != "" {
+				result.Files = append(result.Files, file)
+			}
+		}
+	}
+
+	// 如果解析到了 build 或 files，认为有效
+	if result.Summary != "" || len(result.Files) > 0 {
+		return result
+	}
+	return nil
+}
+
+// inferCodeResult 是启发式 fallback，当 agent 未输出结构化结果时使用。
+func inferCodeResult(events []generator.ToolEvent, reply string) *codeResult {
+	cr := &codeResult{}
+
 	// 检查是否有 bash 工具调用了 go build
 	hasBuild := false
 	for _, e := range events {
@@ -94,24 +169,42 @@ func inferBuildResult(events []generator.ToolEvent, reply string) bool {
 			hasBuild = true
 		}
 	}
-	if !hasBuild {
-		return false
-	}
 
-	// 从 reply 中推断
+	// 从 reply 推断
 	lower := strings.ToLower(reply)
 	if strings.Contains(lower, "编译通过") || strings.Contains(lower, "build passed") ||
 		strings.Contains(lower, "编译成功") || strings.Contains(lower, "successfully") {
-		return true
-	}
-
-	// 没有明确失败信号也视为通过（agent 会主动报错）
-	if !strings.Contains(lower, "编译失败") && !strings.Contains(lower, "build failed") &&
+		cr.BuildOK = true
+	} else if !strings.Contains(lower, "编译失败") && !strings.Contains(lower, "build failed") &&
 		!strings.Contains(lower, "build error") {
-		return hasBuild
+		cr.BuildOK = hasBuild
 	}
 
-	return false
+	// 从 reply 中提取文件路径作为 fallback
+	cr.Files = extractFilesFromReply(reply)
+
+	return cr
+}
+
+// extractFilesFromReply 从 agent 回复中提取 .go 文件路径。
+func extractFilesFromReply(reply string) []string {
+	var files []string
+	seen := make(map[string]bool)
+	for _, line := range strings.Split(reply, "\n") {
+		line = strings.TrimSpace(line)
+		// 匹配形如 "path/to/file.go" 的行
+		if strings.Contains(line, ".go") && (strings.Contains(line, "/") || strings.Contains(line, ".go:")) {
+			// 提取可能的文件路径
+			for _, token := range strings.Fields(line) {
+				token = strings.TrimRight(token, "：:.,;)")
+				if strings.HasSuffix(token, ".go") && strings.Contains(token, "/") && !seen[token] {
+					seen[token] = true
+					files = append(files, token)
+				}
+			}
+		}
+	}
+	return files
 }
 
 // PrepareAgentCode 校验 task 状态，返回必要信息（不读源文件，让 agent 自己读）。
