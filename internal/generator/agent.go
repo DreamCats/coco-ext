@@ -3,7 +3,6 @@ package generator
 import (
 	"context"
 	"fmt"
-	"os/exec"
 	"strings"
 	"time"
 
@@ -29,11 +28,7 @@ type AgentGenerator struct {
 // agent 拥有完整工具能力，可自主读写文件、执行命令。
 func NewAgent(repoPath string) (*AgentGenerator, error) {
 	client := acp.NewClient(repoPath,
-		acp.WithCommandFactory(func(_ context.Context) *exec.Cmd {
-			// 不用 CommandContext：子进程生命周期由 Close() 管理，不随 context 取消
-			// --yolo：跳过工具权限检查，agent 可自主使用所有工具
-			return exec.Command("coco", "acp", "serve", "--yolo")
-		}),
+		acp.WithServeFlags(&acp.ServeFlags{Yolo: true}),
 	)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
@@ -63,14 +58,14 @@ func (g *AgentGenerator) PromptWithTools(prompt string, timeout time.Duration, o
 			return
 		}
 		switch update.SessionUpdate {
-		case "agent_message_chunk":
+		case acp.UpdateAgentMessageChunk:
 			if update.Content != nil {
 				result.WriteString(update.Content.Text)
 				if onChunk != nil {
 					onChunk(update.Content.Text)
 				}
 			}
-		case "tool_call":
+		case acp.UpdateToolCall:
 			if onTool != nil {
 				onTool(ToolEvent{
 					Kind:   update.Kind,
