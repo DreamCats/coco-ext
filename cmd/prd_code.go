@@ -14,14 +14,16 @@ import (
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 
+	"github.com/DreamCats/coco-ext/internal/config"
 	"github.com/DreamCats/coco-ext/internal/generator"
 	internalgit "github.com/DreamCats/coco-ext/internal/git"
 	"github.com/DreamCats/coco-ext/internal/prd"
 )
 
 var (
-	prdCodeTaskID string
-	prdCodeBranch string
+	prdCodeTaskID   string
+	prdCodeBranch   string
+	prdCodeMaxRetry int
 )
 
 var prdCodeCmd = &cobra.Command{
@@ -35,6 +37,7 @@ func init() {
 	prdCmd.AddCommand(prdCodeCmd)
 	prdCodeCmd.Flags().StringVar(&prdCodeTaskID, "task", "", "指定 task id；默认读取最近一个 task")
 	prdCodeCmd.Flags().StringVar(&prdCodeBranch, "branch", "", "自定义分支名；默认 prd/{task_id}")
+	prdCodeCmd.Flags().IntVar(&prdCodeMaxRetry, "max-retries", 2, "编译失败时最大重试次数")
 }
 
 func runPRDCode(cmd *cobra.Command, args []string) error {
@@ -133,14 +136,10 @@ func runPRDCode(cmd *cobra.Command, args []string) error {
 	color.Cyan("   [2/3] agent 正在自主实现代码...")
 	generateStartedAt := time.Now()
 
-	result, err := prd.GenerateCodeWithAgent(agent, taskDir, time.Now(),
-		func(chunk string) {
-			fmt.Print(chunk)
-		},
-		func(event generator.ToolEvent) {
-			renderToolEvent(event)
-		},
-	)
+	onChunk := func(chunk string) { fmt.Print(chunk) }
+	onToolEvent := func(event generator.ToolEvent) { renderToolEvent(event) }
+
+	result, err := prd.GenerateCodeWithAgent(agent, taskDir, time.Now(), onChunk, onToolEvent)
 	fmt.Println()
 
 	if err != nil {
@@ -157,6 +156,51 @@ func runPRDCode(cmd *cobra.Command, args []string) error {
 	}
 	if len(toolCounts) > 0 {
 		color.Cyan("      工具调用: %v", toolCounts)
+	}
+
+	// ---- 编译失败自动重试（只编译涉及的 package） ----
+	if !result.BuildOK && prdCodeMaxRetry > 0 {
+		changedPkgs := codeExtractChangedPackages(repoRoot)
+		if len(changedPkgs) == 0 {
+			color.Yellow("      未检测到改动文件，跳过重试")
+		} else {
+			for attempt := 1; attempt <= prdCodeMaxRetry; attempt++ {
+				buildOutput, buildErr := codeRunBuildPackages(repoRoot, changedPkgs)
+				if buildErr == nil {
+					result.BuildOK = true
+					color.Green("      重试 %d/%d: 编译通过 ✓", attempt, prdCodeMaxRetry)
+					break
+				}
+				color.Yellow("      重试 %d/%d: 编译失败，正在修复...", attempt, prdCodeMaxRetry)
+
+				followUp := fmt.Sprintf("编译失败，请修复以下错误：\n%s\n修复后重新运行 go build 验证，然后输出 === CODE RESULT ===", buildOutput)
+				reply, retryErr := agent.PromptWithTools(followUp, config.CodePromptTimeout, onChunk, onToolEvent)
+				fmt.Println()
+
+				if retryErr != nil && reply == "" {
+					color.Yellow("      重试失败: %v", retryErr)
+					break
+				}
+
+				cr := prd.ParseCodeResult(reply)
+				if cr != nil {
+					result.AgentReply += "\n" + reply
+					result.BuildOK = cr.BuildOK
+					if len(cr.Files) > 0 {
+						result.FilesChanged = cr.Files
+					}
+					if cr.Summary != "" {
+						result.Summary = cr.Summary
+					}
+				} else {
+					// fallback: 重新检查编译
+					_, buildErr2 := codeRunBuildPackages(repoRoot, changedPkgs)
+					if buildErr2 == nil {
+						result.BuildOK = true
+					}
+				}
+			}
+		}
 	}
 
 	// ---- 3. 结果汇总：agent 报告 + git 交叉验证 ----
@@ -285,7 +329,6 @@ func renderToolEvent(event generator.ToolEvent) {
 	// done 事件：简洁标记
 	if event.Status == "done" {
 		if event.Kind == "bash" {
-			// bash 完成时只显示 ✓
 			fmt.Println()
 		}
 		return
@@ -294,11 +337,9 @@ func renderToolEvent(event generator.ToolEvent) {
 	// in_progress 事件：按类型渲染
 	switch event.Kind {
 	case "edit":
-		// 提取文件名
 		file := extractFileFromTitle(event.Title)
 		color.Cyan("      ✏️  编辑 %s", file)
 	case "bash":
-		// 提取命令
 		cmd := extractCmdFromTitle(event.Title)
 		color.Cyan("      ⚡ 执行 %s", cmd)
 	case "read":
@@ -314,7 +355,6 @@ func renderToolEvent(event generator.ToolEvent) {
 
 // extractFileFromTitle 从 title 中提取文件路径。
 func extractFileFromTitle(title string) string {
-	// title 格式: "Read /path/to/file" 或 "Edit /path/to/file"
 	parts := strings.SplitN(title, " ", 2)
 	if len(parts) == 2 && strings.HasPrefix(parts[1], "/") {
 		return filepath.Base(parts[1])
@@ -324,7 +364,6 @@ func extractFileFromTitle(title string) string {
 
 // extractCmdFromTitle 从 title 中提取命令。
 func extractCmdFromTitle(title string) string {
-	// title 格式: "Run command: go build ./..."
 	if after, ok := strings.CutPrefix(title, "Run command: "); ok {
 		return after
 	}
@@ -337,7 +376,6 @@ func extractCmdFromTitle(title string) string {
 func codeShowDiffSummary(repoRoot string, files []string) {
 	color.Cyan("   改动内容:")
 	for _, file := range files {
-		// 统计增删行数
 		cmd := exec.Command("git", "diff", "--numstat", "HEAD", "--", file)
 		cmd.Dir = repoRoot
 		output, _ := cmd.Output()
@@ -356,7 +394,6 @@ func parseNumstat(output string) (added, deleted int) {
 	if line == "" {
 		return 0, 0
 	}
-	// 格式: "3\t2\tfile.go"
 	parts := strings.Split(line, "\t")
 	if len(parts) >= 2 {
 		fmt.Sscanf(parts[0], "%d", &added)
@@ -479,6 +516,31 @@ func codeMergeFileLists(agentFiles, gitFiles []string) []string {
 		}
 	}
 	return merged
+}
+
+// codeExtractChangedPackages 从 git 改动文件中提取涉及的 package 目录（去重）。
+func codeExtractChangedPackages(repoRoot string) []string {
+	files := codeCollectChanges(repoRoot)
+	seen := make(map[string]bool)
+	var pkgs []string
+	for _, f := range files {
+		dir := filepath.Dir(f)
+		if dir == "." || seen[dir] {
+			continue
+		}
+		seen[dir] = true
+		pkgs = append(pkgs, "./"+dir+"/...")
+	}
+	return pkgs
+}
+
+// codeRunBuildPackages 只编译指定的 package 列表，避免全量编译。
+func codeRunBuildPackages(repoRoot string, pkgs []string) (string, error) {
+	args := append([]string{"build"}, pkgs...)
+	cmd := exec.Command("go", args...)
+	cmd.Dir = repoRoot
+	output, err := cmd.CombinedOutput()
+	return string(output), err
 }
 
 // codeCommitOnBranch 在当前分支 add + commit。

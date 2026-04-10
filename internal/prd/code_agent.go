@@ -82,7 +82,7 @@ func GenerateCodeWithAgent(agent *generator.AgentGenerator, taskDir string, now 
 	}
 
 	// 优先解析结构化结果，失败则 fallback 到启发式
-	cr := parseCodeResult(reply)
+	cr := ParseCodeResult(reply)
 	if cr == nil {
 		cr = inferCodeResult(toolEvents, reply)
 	}
@@ -107,8 +107,9 @@ type codeResult struct {
 	Summary string
 }
 
-// parseCodeResult 从 agent 输出中解析 === CODE RESULT === 块。
-func parseCodeResult(raw string) *codeResult {
+// ParseCodeResult 从 agent 输出中解析 === CODE RESULT === 块。
+// 导出供 cmd 层在重试时复用。
+func ParseCodeResult(raw string) *codeResult {
 	const marker = "=== CODE RESULT ==="
 	const endMarker = "=== END ==="
 
