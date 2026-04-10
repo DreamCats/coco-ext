@@ -5,10 +5,8 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"os/signal"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/fatih/color"
@@ -29,7 +27,7 @@ var (
 var prdCodeCmd = &cobra.Command{
 	Use:   "code",
 	Short: "基于 plan.md 自动生成实现代码",
-	Long:  "读取 plan.md 和 design.md，启动 yolo agent 自主读写文件和编译。在主仓库分支上工作，完成后自动 commit 并切回原分支。",
+	Long:  "读取 plan.md 和 design.md，创建隔离 worktree，启动 yolo agent 在 worktree 中自主读写文件和编译，成功后自动 commit 到 prd/{task_id} 分支。",
 	RunE:  runPRDCode,
 }
 
@@ -54,129 +52,98 @@ func runPRDCode(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	taskDir, err := prd.PrepareAgentCode(repoRoot, taskID)
-	if err != nil {
-		return err
-	}
-
 	branchName := prdCodeBranch
 	if branchName == "" {
 		branchName = "prd/" + taskID
 	}
 
 	startedAt := time.Now()
-	origBranch := codeCurrentBranch(repoRoot)
-
-	// ---- 1. 前置检查：未提交改动时 stash ----
-	stashed := false
-	if codeHasUncommittedChanges(repoRoot) {
-		color.Cyan("   检测到未提交的改动，正在 stash...")
-		if err := codeStash(repoRoot); err != nil {
-			return fmt.Errorf("stash 失败: %w", err)
-		}
-		stashed = true
-		color.Green("   已 stash ✓")
-	}
-
-	// ---- 5. 中断处理：Ctrl+C 时恢复 ----
-	cleanup := func() {
-		agent, _ := cmd.Flags().GetString("_agent_ref")
-		_ = agent // agent cleanup handled by defer
-		codeCheckoutBranchQuiet(repoRoot, origBranch)
-		if stashed {
-			codeStashPop(repoRoot)
-		}
-	}
-
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
-	go func() {
-		<-sigCh
-		fmt.Println()
-		color.Yellow("⚠ 收到中断信号，正在恢复...")
-		cleanup()
-		os.Exit(130)
-	}()
-	defer signal.Stop(sigCh)
-
 	color.Cyan("🤖 PRD Code")
 	color.Cyan("   task_id: %s", taskID)
 	color.Cyan("   branch: %s", branchName)
-
-	// 创建并切换到工作分支
-	if err := codeCheckoutBranch(repoRoot, branchName); err != nil {
-		if stashed {
-			codeStashPop(repoRoot)
-		}
+	report, err := executePRDCode(repoRoot, taskID, branchName, prdCodeMaxRetry, func(chunk string) {
+		fmt.Print(chunk)
+	}, func(event generator.ToolEvent) {
+		renderToolEvent(event)
+	})
+	fmt.Println()
+	if err != nil {
 		return err
 	}
 
-	// ---- 4. 错误恢复：任何失败都恢复状态 ----
-	restored := false
-	defer func() {
-		if restored {
-			return
-		}
-		codeCheckoutBranchQuiet(repoRoot, origBranch)
-		if stashed {
-			codeStashPop(repoRoot)
-		}
-	}()
+	color.Cyan("   worktree: %s", report.Worktree)
+	color.Cyan("   [3/3] 结果检查...")
+	if report.BuildOK {
+		color.Green("   [3/3] 编译通过 ✓")
+	} else {
+		color.Yellow("⚠ agent 未确认编译通过，改动未 commit")
+	}
 
-	color.Cyan("   [1/3] 正在启动 AI agent（yolo 模式）...")
-	connectStartedAt := time.Now()
-	agent, err := generator.NewAgent(repoRoot)
+	if len(report.FilesWritten) > 0 {
+		codeShowDiffSummary(report.Worktree, report.FilesWritten)
+	} else {
+		color.Yellow("⚠ 未检测到文件改动")
+	}
+
+	if report.Commit != "" {
+		color.Green("   已自动 commit: %s", report.Commit)
+	}
+
+	color.Green("\n✓ prd code 完成")
+	color.Green("  分支: %s", branchName)
+	if report.Commit != "" {
+		color.Green("  commit: %s", report.Commit)
+	}
+	color.Green("  worktree: %s", report.Worktree)
+	color.Green("  改动文件: %d 个", len(report.FilesWritten))
+	color.Green("⏱ 总耗时: %s", formatDurationSeconds(time.Since(startedAt)))
+
+	return nil
+}
+
+func executePRDCode(repoRoot, taskID, branchName string, maxRetries int, onChunk func(string), onTool func(generator.ToolEvent)) (*prd.CodeResultReport, error) {
+	startedAt := time.Now()
+
+	taskDir, err := prd.PrepareAgentCode(repoRoot, taskID)
 	if err != nil {
-		return fmt.Errorf("启动 AI agent 失败: %w", err)
+		return nil, err
+	}
+
+	workspace, err := prd.PrepareCodeWorkspace(repoRoot, taskID, branchName)
+	if err != nil {
+		return nil, err
+	}
+
+	agent, err := generator.NewAgent(workspace.WorktreeDir)
+	if err != nil {
+		return nil, fmt.Errorf("启动 AI agent 失败: %w", err)
 	}
 	defer agent.Close()
-	color.Green("   [1/3] AI agent 已就绪 ✓")
-	color.Cyan("      启动耗时: %s", formatDurationSeconds(time.Since(connectStartedAt)))
 
-	color.Cyan("   [2/3] agent 正在自主实现代码...")
-	generateStartedAt := time.Now()
-
-	onChunk := func(chunk string) { fmt.Print(chunk) }
-	onToolEvent := func(event generator.ToolEvent) { renderToolEvent(event) }
-
-	result, err := prd.GenerateCodeWithAgent(agent, taskDir, time.Now(), onChunk, onToolEvent)
-	fmt.Println()
-
+	result, err := prd.GenerateCodeWithAgent(agent, workspace.WorktreeTaskDir, taskDir, time.Now(), onChunk, onTool)
 	if err != nil {
-		return err
-	}
-	color.Cyan("      生成耗时: %s", formatDurationSeconds(time.Since(generateStartedAt)))
-
-	// 统计工具调用
-	toolCounts := make(map[string]int)
-	for _, e := range result.ToolEvents {
-		if e.Status == "done" {
-			toolCounts[e.Kind]++
-		}
-	}
-	if len(toolCounts) > 0 {
-		color.Cyan("      工具调用: %v", toolCounts)
+		return nil, err
 	}
 
-	// ---- 编译失败自动重试（只编译涉及的 package） ----
-	if !result.BuildOK && prdCodeMaxRetry > 0 {
-		changedPkgs := codeExtractChangedPackages(repoRoot)
+	if !result.BuildOK && maxRetries > 0 {
+		changedPkgs := codeExtractChangedPackages(workspace.WorktreeDir)
 		if len(changedPkgs) == 0 {
 			color.Yellow("      未检测到改动文件，跳过重试")
 		} else {
-			for attempt := 1; attempt <= prdCodeMaxRetry; attempt++ {
-				buildOutput, buildErr := codeRunBuildPackages(repoRoot, changedPkgs)
+			for attempt := 1; attempt <= maxRetries; attempt++ {
+				buildOutput, buildErr := codeRunBuildPackages(workspace.WorktreeDir, changedPkgs)
 				if buildErr == nil {
 					result.BuildOK = true
-					color.Green("      重试 %d/%d: 编译通过 ✓", attempt, prdCodeMaxRetry)
+					color.Green("      重试 %d/%d: 编译通过 ✓", attempt, maxRetries)
 					break
 				}
-				color.Yellow("      重试 %d/%d: 编译失败，正在修复...", attempt, prdCodeMaxRetry)
 
+				color.Yellow("      重试 %d/%d: 编译失败，正在修复...", attempt, maxRetries)
 				followUp := fmt.Sprintf("编译失败，请修复以下错误：\n%s\n修复后重新运行 go build 验证，然后输出 === CODE RESULT ===", buildOutput)
-				reply, retryErr := agent.PromptWithTools(followUp, config.CodePromptTimeout, onChunk, onToolEvent)
-				fmt.Println()
-
+				reply, retryErr := agent.PromptWithTools(followUp, config.CodePromptTimeout, onChunk, onTool)
+				if onChunk != nil {
+					onChunk("\n")
+				}
 				if retryErr != nil && reply == "" {
 					color.Yellow("      重试失败: %v", retryErr)
 					break
@@ -192,65 +159,41 @@ func runPRDCode(cmd *cobra.Command, args []string) error {
 					if cr.Summary != "" {
 						result.Summary = cr.Summary
 					}
-				} else {
-					// fallback: 重新检查编译
-					_, buildErr2 := codeRunBuildPackages(repoRoot, changedPkgs)
-					if buildErr2 == nil {
-						result.BuildOK = true
-					}
+					continue
+				}
+
+				if _, buildErr2 := codeRunBuildPackages(workspace.WorktreeDir, changedPkgs); buildErr2 == nil {
+					result.BuildOK = true
 				}
 			}
 		}
 	}
 
-	// ---- 3. 结果汇总：agent 报告 + git 交叉验证 ----
-	// 优先用 agent 结构化输出的 FilesChanged，用 git status 做交叉验证
 	changedFiles := result.FilesChanged
 	if len(changedFiles) == 0 {
-		changedFiles = codeCollectChanges(repoRoot)
+		changedFiles = codeCollectChanges(workspace.WorktreeDir)
 	} else {
-		// 交叉验证：agent 报告的文件是否真的有 git 改动
-		gitChanged := codeCollectChanges(repoRoot)
+		gitChanged := codeCollectChanges(workspace.WorktreeDir)
 		if len(gitChanged) > 0 {
-			merged := codeMergeFileLists(changedFiles, gitChanged)
-			changedFiles = merged
+			changedFiles = codeMergeFileLists(changedFiles, gitChanged)
 		}
 	}
 
-	color.Cyan("   [3/3] 结果检查...")
 	commitHash := ""
 	if result.BuildOK && len(changedFiles) > 0 {
-		color.Green("   [3/3] 编译通过 ✓")
-		if result.Summary != "" {
-			color.Cyan("   agent 摘要: %s", result.Summary)
-		}
-
-		codeShowDiffSummary(repoRoot, changedFiles)
-
-		hash, commitErr := codeCommitOnBranch(repoRoot, taskID, changedFiles, result.Summary)
+		hash, commitErr := codeCommitOnBranch(workspace.WorktreeDir, taskID, changedFiles, result.Summary)
 		if commitErr != nil {
 			color.Yellow("⚠ auto-commit 失败: %v", commitErr)
 		} else {
 			commitHash = hash
-			color.Green("   已自动 commit: %s", commitHash)
-		}
-	} else if len(changedFiles) == 0 {
-		color.Yellow("⚠ 未检测到文件改动")
-	} else {
-		color.Yellow("⚠ agent 未确认编译通过，改动未 commit")
-		if len(changedFiles) > 0 {
-			color.Cyan("   改动文件（未 commit）:")
-			for _, f := range changedFiles {
-				color.Cyan("      - %s", f)
-			}
 		}
 	}
 
-	// 写入 result file
-	report := prd.CodeResultReport{
+	report := &prd.CodeResultReport{
 		Status:       "success",
 		TaskID:       taskID,
 		Branch:       branchName,
+		Worktree:     workspace.WorktreeDir,
 		Commit:       commitHash,
 		BuildOK:      result.BuildOK,
 		FilesWritten: changedFiles,
@@ -261,30 +204,12 @@ func runPRDCode(cmd *cobra.Command, args []string) error {
 	if !result.BuildOK {
 		report.Status = "build_unknown"
 	}
-	_ = prd.WriteCodeResultReport(taskDir, report)
 
-	// 标记已恢复（由后续逻辑完成），防止 defer 重复恢复
-	restored = true
-	codeCheckoutBranchQuiet(repoRoot, origBranch)
-
-	// 恢复 stash
-	if stashed {
-		if popErr := codeStashPop(repoRoot); popErr != nil {
-			color.Yellow("⚠ stash pop 失败（改动可通过 git stash list 找回）: %v", popErr)
-		} else {
-			color.Green("   已恢复 stash ✓")
-		}
+	if err := prd.WriteCodeResultReport(taskDir, *report); err != nil {
+		return nil, fmt.Errorf("写入 code-result.json 失败: %w", err)
 	}
 
-	color.Green("\n✓ prd code 完成")
-	color.Green("  分支: %s", branchName)
-	if commitHash != "" {
-		color.Green("  commit: %s", commitHash)
-	}
-	color.Green("  改动文件: %d 个", len(changedFiles))
-	color.Green("⏱ 总耗时: %s", formatDurationSeconds(time.Since(startedAt)))
-
-	return nil
+	return report, nil
 }
 
 // ---------- 2. 进度渲染 ----------
@@ -404,76 +329,7 @@ func parseNumstat(output string) (added, deleted int) {
 
 // ---------- Git 操作 ----------
 
-// codeCurrentBranch 获取当前分支名。
-func codeCurrentBranch(repoRoot string) string {
-	cmd := exec.Command("git", "rev-parse", "--abbrev-ref", "HEAD")
-	cmd.Dir = repoRoot
-	output, err := cmd.Output()
-	if err != nil {
-		return "main"
-	}
-	return strings.TrimSpace(string(output))
-}
-
-// codeHasUncommittedChanges 检查是否有未提交的改动。
-func codeHasUncommittedChanges(repoRoot string) bool {
-	cmd := exec.Command("git", "status", "--porcelain")
-	cmd.Dir = repoRoot
-	output, err := cmd.Output()
-	if err != nil {
-		return false
-	}
-	return strings.TrimSpace(string(output)) != ""
-}
-
-// codeStash 执行 git stash。
-func codeStash(repoRoot string) error {
-	cmd := exec.Command("git", "stash", "push", "-m", "coco-ext prd code auto-stash")
-	cmd.Dir = repoRoot
-	if output, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("%s: %w", strings.TrimSpace(string(output)), err)
-	}
-	return nil
-}
-
-// codeStashPop 执行 git stash pop。
-func codeStashPop(repoRoot string) error {
-	cmd := exec.Command("git", "stash", "pop")
-	cmd.Dir = repoRoot
-	if output, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("%s: %w", strings.TrimSpace(string(output)), err)
-	}
-	return nil
-}
-
-// codeCheckoutBranch 创建（如不存在）并切换到分支。
-func codeCheckoutBranch(repoRoot, branchName string) error {
-	checkCmd := exec.Command("git", "rev-parse", "--verify", branchName)
-	checkCmd.Dir = repoRoot
-	if checkCmd.Run() == nil {
-		cmd := exec.Command("git", "checkout", branchName)
-		cmd.Dir = repoRoot
-		if output, err := cmd.CombinedOutput(); err != nil {
-			return fmt.Errorf("切换到分支 %s 失败: %s\n%s", branchName, err, string(output))
-		}
-		return nil
-	}
-	cmd := exec.Command("git", "checkout", "-b", branchName)
-	cmd.Dir = repoRoot
-	if output, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("创建分支 %s 失败: %s\n%s", branchName, err, string(output))
-	}
-	return nil
-}
-
-// codeCheckoutBranchQuiet 静默切回分支。
-func codeCheckoutBranchQuiet(repoRoot, branchName string) {
-	cmd := exec.Command("git", "checkout", branchName)
-	cmd.Dir = repoRoot
-	_ = cmd.Run()
-}
-
-// codeCollectChanges 获取主仓库中的改动文件列表。
+// codeCollectChanges 获取工作区中的改动文件列表。
 func codeCollectChanges(repoRoot string) []string {
 	cmd := exec.Command("git", "status", "--porcelain")
 	cmd.Dir = repoRoot

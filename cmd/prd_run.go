@@ -120,8 +120,6 @@ func runPRDRun(cmd *cobra.Command, args []string) error {
 	color.Green("   ✓ refine 完成 (%s)", formatDurationSeconds(time.Since(stepStart)))
 	fmt.Println()
 
-	taskDir := task.TaskDir
-
 	// ===== Step 2: Plan =====
 	color.Cyan("━━━ [2/3] Plan ━━━")
 	stepStart = time.Now()
@@ -164,152 +162,32 @@ func runPRDRun(cmd *cobra.Command, args []string) error {
 	color.Cyan("━━━ [3/3] Code ━━━")
 	stepStart = time.Now()
 
-	prepareTaskDir, prepareErr := prd.PrepareAgentCode(repoRoot, task.TaskID)
-	if prepareErr != nil {
-		steps = append(steps, runStep{Name: "code", Duration: time.Since(stepStart), Status: "fail", Detail: prepareErr.Error()})
-		color.Red("   ✗ code 前置检查失败: %v", prepareErr)
+	if _, err := prd.PrepareAgentCode(repoRoot, task.TaskID); err != nil {
+		steps = append(steps, runStep{Name: "code", Duration: time.Since(stepStart), Status: "fail", Detail: err.Error()})
+		color.Red("   ✗ code 前置检查失败: %v", err)
 		return printRunSummary(steps, startedAt, false)
 	}
 
 	branchName := "prd/" + task.TaskID
-	origBranch := codeCurrentBranch(repoRoot)
-
-	// stash 未提交改动
-	stashed := false
-	if codeHasUncommittedChanges(repoRoot) {
-		if stashErr := codeStash(repoRoot); stashErr != nil {
-			return fmt.Errorf("stash 失败: %w", stashErr)
-		}
-		stashed = true
-	}
-
-	// 切到工作分支
-	if checkoutErr := codeCheckoutBranch(repoRoot, branchName); checkoutErr != nil {
-		if stashed {
-			codeStashPop(repoRoot)
-		}
-		return checkoutErr
-	}
-
-	// 确保任何失败都恢复状态
-	codeOK := false
-	defer func() {
-		if codeOK {
-			return
-		}
-		codeCheckoutBranchQuiet(repoRoot, origBranch)
-		if stashed {
-			codeStashPop(repoRoot)
-		}
-	}()
-
-	agent, agentErr := generator.NewAgent(repoRoot)
-	if agentErr != nil {
-		steps = append(steps, runStep{Name: "code", Duration: time.Since(stepStart), Status: "fail", Detail: agentErr.Error()})
-		color.Red("   ✗ 启动 agent 失败: %v", agentErr)
-		return printRunSummary(steps, startedAt, false)
-	}
-	defer agent.Close()
-
-	result, codeErr := prd.GenerateCodeWithAgent(agent, prepareTaskDir, time.Now(), func(chunk string) { fmt.Print(chunk) }, func(event generator.ToolEvent) { renderToolEvent(event) })
+	report, codeErr := executePRDCode(repoRoot, task.TaskID, branchName, prdCodeMaxRetry, func(chunk string) { fmt.Print(chunk) }, func(event generator.ToolEvent) { renderToolEvent(event) })
 	if codeErr != nil {
 		steps = append(steps, runStep{Name: "code", Duration: time.Since(stepStart), Status: "fail", Detail: codeErr.Error()})
 		color.Red("   ✗ code 生成失败: %v", codeErr)
 		return printRunSummary(steps, startedAt, false)
 	}
 
-	// 编译失败自动重试
-	if !result.BuildOK && prdCodeMaxRetry > 0 {
-		changedPkgs := codeExtractChangedPackages(repoRoot)
-		if len(changedPkgs) > 0 {
-			for attempt := 1; attempt <= prdCodeMaxRetry; attempt++ {
-				buildOutput, buildErr := codeRunBuildPackages(repoRoot, changedPkgs)
-				if buildErr == nil {
-					result.BuildOK = true
-					break
-				}
-				followUp := fmt.Sprintf("编译失败，请修复以下错误：\n%s\n修复后重新运行 go build 验证，然后输出 === CODE RESULT ===", buildOutput)
-				reply, retryErr := agent.PromptWithTools(followUp, config.CodePromptTimeout, func(chunk string) { fmt.Print(chunk) }, func(event generator.ToolEvent) { renderToolEvent(event) })
-				if retryErr != nil && reply == "" {
-					break
-				}
-				cr := prd.ParseCodeResult(reply)
-				if cr != nil {
-					result.BuildOK = cr.BuildOK
-					if len(cr.Files) > 0 {
-						result.FilesChanged = cr.Files
-					}
-					if cr.Summary != "" {
-						result.Summary = cr.Summary
-					}
-				} else {
-					_, buildErr2 := codeRunBuildPackages(repoRoot, changedPkgs)
-					if buildErr2 == nil {
-						result.BuildOK = true
-					}
-				}
-			}
-		}
-	}
-
-	// 收集改动并 commit
-	changedFiles := result.FilesChanged
-	if len(changedFiles) == 0 {
-		changedFiles = codeCollectChanges(repoRoot)
-	} else {
-		gitChanged := codeCollectChanges(repoRoot)
-		if len(gitChanged) > 0 {
-			changedFiles = codeMergeFileLists(changedFiles, gitChanged)
-		}
-	}
-
-	commitHash := ""
-	if result.BuildOK && len(changedFiles) > 0 {
-		hash, commitErr := codeCommitOnBranch(repoRoot, task.TaskID, changedFiles, result.Summary)
-		if commitErr != nil {
-			color.Yellow("   ⚠ auto-commit 失败: %v", commitErr)
-		} else {
-			commitHash = hash
-		}
-	}
-
-	// 恢复状态
-	codeOK = true
-	codeCheckoutBranchQuiet(repoRoot, origBranch)
-	if stashed {
-		if popErr := codeStashPop(repoRoot); popErr != nil {
-			color.Yellow("   ⚠ stash pop 失败: %v", popErr)
-		}
-	}
-
-	stepDetail := fmt.Sprintf("%d 文件, commit %s", len(changedFiles), commitHash)
-	if !result.BuildOK {
+	stepDetail := fmt.Sprintf("%d 文件, commit %s", len(report.FilesWritten), report.Commit)
+	if !report.BuildOK {
 		steps = append(steps, runStep{Name: "code", Duration: time.Since(stepStart), Status: "fail", Detail: "编译未通过"})
 		color.Yellow("   ⚠ 编译未通过")
 	} else {
 		steps = append(steps, runStep{Name: "code", Duration: time.Since(stepStart), Status: "ok", Detail: stepDetail})
 		color.Green("   ✓ code 完成 (%s)", formatDurationSeconds(time.Since(stepStart)))
+		color.Green("   ✓ worktree: %s", report.Worktree)
 	}
-
-	// 写入 result file
-	report := prd.CodeResultReport{
-		Status:       "success",
-		TaskID:       task.TaskID,
-		Branch:       branchName,
-		Commit:       commitHash,
-		BuildOK:      result.BuildOK,
-		FilesWritten: changedFiles,
-		Log:          fmt.Sprintf("%s/code.log", taskDir),
-		StartedAt:    startedAt.Format(time.RFC3339),
-		FinishedAt:   time.Now().Format(time.RFC3339),
-	}
-	if !result.BuildOK {
-		report.Status = "build_unknown"
-	}
-	_ = prd.WriteCodeResultReport(taskDir, report)
 
 	fmt.Println()
-	return printRunSummary(steps, startedAt, result.BuildOK)
+	return printRunSummary(steps, startedAt, report.BuildOK)
 }
 
 func printRunSummary(steps []runStep, startedAt time.Time, buildOK bool) error {
