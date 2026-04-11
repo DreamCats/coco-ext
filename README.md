@@ -28,6 +28,12 @@ GOPRIVATE=github.com/DreamCats/coco-acp-sdk go install github.com/DreamCats/coco
 git clone git@github.com:DreamCats/coco-ext.git
 cd coco-ext
 make install
+
+# 如果你直接在源码目录使用 go install .
+# 需要先构建前端静态资源，再重新编译二进制
+cd web && npm run build
+cd ..
+go install .
 ```
 
 ## 使用
@@ -243,6 +249,7 @@ coco-ext prd run -i "需求描述或飞书链接"
   - `GET /api/workspace`
 - 正式安装态默认使用内嵌静态前端资源，因此同事可直接通过 `go install` 安装后运行 `coco-ext ui serve`
 - 开发态可通过 `--web-dir` 覆盖静态目录
+- 从源码构建时，`make build` / `make install` / `make build-all` 会自动先执行 `web` 前端构建，再把静态资源内嵌进二进制
 - 开发期可以：
   1. 在仓库根目录执行 `coco-ext ui serve`
   2. 在 [`web/`](/Users/bytedance/go/src/coco-ext/web) 目录执行 `npm run dev`

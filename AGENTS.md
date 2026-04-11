@@ -41,6 +41,10 @@ make build-all
 # 安装到 ~/.local/bin/
 make install
 
+# 如需直接在源码目录使用 go install .，
+# 先构建前端资源再重新编译二进制
+cd web && npm run build && cd .. && go install .
+
 # 单包测试
 go test ./internal/scanner/ -v
 
@@ -209,6 +213,7 @@ scanner 当前会跳过：
 - 不要删除或重置用户的 `.livecoding/` 产物，除非用户明确要求清理。
 - 修改 CLI 行为时，同时检查对应 README / AGENTS / help 文案是否需要同步。
 - 这个仓库大量依赖文件落盘和后台子进程；改动 review、lint、install、daemon、prd 流程时，要额外关注日志路径、权限位和异步行为。
+- `make build` / `make install` / `make build-all` 当前会自动先构建 `web` 前端静态资源，再把 UI embed 进 Go 二进制。
 - 生成或修改 hook 时，保持 shell 脚本可直接执行，不要引入交互式依赖。
 
 <!-- coco-ext-agents:start -->
