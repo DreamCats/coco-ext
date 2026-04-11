@@ -16,3 +16,5 @@ dist/
 
 # Livecoding
 .livecoding/
+.vite
+node_modules
