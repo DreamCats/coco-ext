@@ -1,0 +1,410 @@
+import { Link, Navigate, Outlet, useLocation, useParams } from '@tanstack/react-router'
+import { useEffect, useMemo, useState } from 'react'
+import { getTask, type TaskArtifactName, type TaskListItem, type TaskRecord, type TaskStatus } from '../api'
+import { ActionPanel } from '../components/action-panel'
+import { ArtifactViewer, artifactLabel } from '../components/artifact-viewer'
+import { DiffPanel } from '../components/diff-panel'
+import {
+  CompactField,
+  FilterChip,
+  KeyValue,
+  PanelMessage,
+  RepoStatusBadge,
+  StatusBadge,
+  TimelineCard,
+} from '../components/ui-primitives'
+import { useAppData } from '../hooks/use-app-data'
+
+export function TasksLayout() {
+  const { tasks, loading, error } = useAppData()
+  const [query, setQuery] = useState('')
+  const [statusFilter, setStatusFilter] = useState<'all' | TaskStatus>('all')
+  const [repoFilter, setRepoFilter] = useState('all')
+
+  const repoOptions = useMemo(() => {
+    const set = new Set<string>()
+    for (const task of tasks) {
+      for (const repoId of task.repoIds) {
+        set.add(repoId)
+      }
+    }
+    return Array.from(set).sort()
+  }, [tasks])
+
+  const filteredTasks = useMemo(() => {
+    const keyword = query.trim().toLowerCase()
+    return tasks.filter((task) => {
+      if (statusFilter !== 'all' && task.status !== statusFilter) {
+        return false
+      }
+      if (repoFilter !== 'all' && !task.repoIds.includes(repoFilter)) {
+        return false
+      }
+      if (!keyword) {
+        return true
+      }
+      return (
+        task.title.toLowerCase().includes(keyword) ||
+        task.id.toLowerCase().includes(keyword) ||
+        task.repoIds.some((repoId) => repoId.toLowerCase().includes(keyword))
+      )
+    })
+  }, [tasks, query, statusFilter, repoFilter])
+
+  return (
+    <div className="grid gap-4 lg:h-[calc(100vh-235px)] lg:grid-cols-[360px_minmax(0,1fr)]">
+      <section className="overflow-hidden rounded-[24px] border border-stone-200 bg-stone-50/80 p-4">
+        <div className="mb-4 flex items-start justify-between gap-3">
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-[0.22em] text-stone-500">PRD</div>
+            <h2 className="mt-2 text-2xl font-semibold tracking-[-0.04em] text-stone-950">任务流列表</h2>
+          </div>
+          <div className="rounded-2xl bg-stone-900 px-3 py-2 text-right text-white">
+            <div className="text-[11px] uppercase tracking-[0.24em] text-stone-400">Latest</div>
+            <div className="text-sm font-semibold">{tasks[0]?.updatedAt ?? '-'}</div>
+          </div>
+        </div>
+
+        <div className="mb-4 grid grid-cols-3 gap-2 text-xs">
+          <FilterChip label="All" value={loading ? '...' : `${tasks.length}`} />
+          <FilterChip
+            label="Coded"
+            value={loading ? '...' : `${tasks.filter((task) => task.status === 'coded' || task.status === 'partially_coded').length}`}
+          />
+          <FilterChip
+            label="Planned"
+            value={loading ? '...' : `${tasks.filter((task) => task.status === 'planned').length}`}
+          />
+        </div>
+
+        <div className="mb-4 space-y-3">
+          <input
+            className="w-full rounded-2xl border border-stone-200 bg-white px-3 py-3 text-sm text-stone-900 outline-none transition placeholder:text-stone-400 focus:border-stone-400"
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="搜索 task / repo / task_id"
+            type="text"
+            value={query}
+          />
+          <div className="grid grid-cols-2 gap-2">
+            <select
+              className="rounded-2xl border border-stone-200 bg-white px-3 py-3 text-sm text-stone-700 outline-none focus:border-stone-400"
+              onChange={(event) => setStatusFilter(event.target.value as 'all' | TaskStatus)}
+              value={statusFilter}
+            >
+              <option value="all">全部状态</option>
+              <option value="planned">planned</option>
+              <option value="coding">coding</option>
+              <option value="partially_coded">partially_coded</option>
+              <option value="coded">coded</option>
+              <option value="archived">archived</option>
+              <option value="failed">failed</option>
+            </select>
+            <select
+              className="rounded-2xl border border-stone-200 bg-white px-3 py-3 text-sm text-stone-700 outline-none focus:border-stone-400"
+              onChange={(event) => setRepoFilter(event.target.value)}
+              value={repoFilter}
+            >
+              <option value="all">全部仓库</option>
+              {repoOptions.map((repoId) => (
+                <option key={repoId} value={repoId}>
+                  {repoId}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        {loading ? (
+          <PanelMessage>正在加载 task 列表...</PanelMessage>
+        ) : error ? (
+          <PanelMessage>{error}</PanelMessage>
+        ) : filteredTasks.length === 0 ? (
+          <PanelMessage>当前过滤条件下没有 task。</PanelMessage>
+        ) : tasks.length === 0 ? (
+          <PanelMessage>当前没有 task。</PanelMessage>
+        ) : (
+          <div className="space-y-3 lg:max-h-[calc(100%-112px)] lg:overflow-y-auto lg:pr-1">
+            {filteredTasks.map((task) => (
+              <TaskListItemCard key={task.id} task={task} />
+            ))}
+          </div>
+        )}
+      </section>
+
+      <div className="min-h-0 overflow-hidden">
+        <Outlet />
+      </div>
+    </div>
+  )
+}
+
+export function TasksIndexPage() {
+  const { tasks, loading, error } = useAppData()
+  if (loading) {
+    return <PanelMessage>正在加载 task...</PanelMessage>
+  }
+  if (error) {
+    return <PanelMessage>{error}</PanelMessage>
+  }
+  if (tasks.length === 0) {
+    return <PanelMessage>当前没有 task。</PanelMessage>
+  }
+  return <Navigate params={{ taskId: tasks[0]!.id }} replace to="/tasks/$taskId" />
+}
+
+export function TaskDetailPage() {
+  const { taskId } = useParams({ from: '/tasks/$taskId' })
+  const [task, setTask] = useState<TaskRecord | null>(null)
+  const [artifact, setArtifact] = useState<TaskArtifactName>('prd-refined.md')
+  const [selectedDiffRepo, setSelectedDiffRepo] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    let cancelled = false
+    async function load() {
+      try {
+        setLoading(true)
+        const detail = await getTask(taskId)
+        if (cancelled) {
+          return
+        }
+        setTask(detail)
+        const firstDiffRepo = detail.repos.find((repo) => repo.diffSummary)?.id ?? detail.repos[0]?.id ?? ''
+        setSelectedDiffRepo(firstDiffRepo)
+        setError('')
+      } catch (err) {
+        if (cancelled) {
+          return
+        }
+        setError(err instanceof Error ? err.message : '加载 task 详情失败')
+      } finally {
+        if (!cancelled) {
+          setLoading(false)
+        }
+      }
+    }
+    setArtifact('prd-refined.md')
+    void load()
+    return () => {
+      cancelled = true
+    }
+  }, [taskId])
+
+  if (loading) {
+    return <PanelMessage>正在加载 task 详情...</PanelMessage>
+  }
+  if (error) {
+    return <PanelMessage>{error}</PanelMessage>
+  }
+  if (!task) {
+    return <PanelMessage>未找到对应 task。</PanelMessage>
+  }
+
+  return (
+    <div className="space-y-4 lg:h-full lg:overflow-y-auto lg:pr-1">
+      <section className="overflow-hidden rounded-[24px] border border-stone-200 bg-[#111317] text-white shadow-[0_30px_80px_rgba(15,23,42,0.18)]">
+        <div className="border-b border-white/8 bg-[linear-gradient(135deg,_rgba(16,185,129,0.18),_transparent_38%),linear-gradient(180deg,_rgba(255,255,255,0.04),_rgba(255,255,255,0))] px-5 py-5">
+          <div className="mb-3 flex flex-wrap items-center gap-2">
+            <StatusBadge status={task.status} />
+            <span className="rounded-full border border-white/12 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-stone-300">
+              {task.sourceType}
+            </span>
+            <span className="rounded-full border border-white/12 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-stone-300">
+              {task.complexity}
+            </span>
+          </div>
+          <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
+            <div>
+              <div className="text-xs font-semibold uppercase tracking-[0.24em] text-stone-400">Task Detail</div>
+              <h3 className="mt-2 text-[30px] font-semibold tracking-[-0.05em] text-white">{task.title}</h3>
+              <p className="mt-3 max-w-3xl text-sm leading-6 text-stone-300">
+                真实数据视图下，task 主记录、多仓 repo 状态、设计文档和 code 日志都在同一页汇总，方便回看和排障。
+              </p>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
+              <CompactField label="task_id" value={task.id} />
+              <CompactField label="updated" value={task.updatedAt} />
+              <CompactField label="owner" value={task.owner} />
+              <CompactField label="repos" value={`${task.repos.length}`} />
+            </div>
+          </div>
+        </div>
+        <div className="grid gap-4 px-5 py-5 lg:grid-cols-[minmax(0,1fr)_360px]">
+          <div className="rounded-[20px] border border-white/8 bg-white/3 p-4">
+            <div className="mb-3 text-xs font-semibold uppercase tracking-[0.22em] text-stone-400">Workflow Timeline</div>
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+              {task.timeline.map((step) => (
+                <TimelineCard key={step.label} detail={step.detail} label={step.label} state={step.state} />
+              ))}
+            </div>
+          </div>
+
+          <div className="rounded-[20px] border border-emerald-300/20 bg-emerald-400/10 p-4">
+            <div className="text-xs font-semibold uppercase tracking-[0.22em] text-emerald-200">Recommended Next</div>
+            <div className="mt-3 text-xl font-semibold tracking-[-0.04em] text-white">
+              {task.status === 'coded'
+                ? '确认结果后归档'
+                : task.status === 'partially_coded'
+                  ? '继续推进剩余仓库'
+                  : task.status === 'planned'
+                    ? '进入隔离 code 阶段'
+                    : '继续推进 task'}
+            </div>
+            <p className="mt-3 text-sm leading-6 text-emerald-100/85">
+              下一步来源于 task 当前状态和 repo 子状态聚合，不再是静态 mock 文案。
+            </p>
+            <div className="mt-4 rounded-2xl border border-emerald-200/20 bg-stone-950/50 px-4 py-3 font-mono text-sm text-emerald-100">
+              {task.nextAction}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <div className="grid gap-4 2xl:grid-cols-[minmax(0,1fr)_360px]">
+        <section className="rounded-[24px] border border-stone-200 bg-stone-50/70 p-4">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div className="text-xs font-semibold uppercase tracking-[0.22em] text-stone-500">Artifacts</div>
+              <h4 className="mt-2 text-2xl font-semibold tracking-[-0.04em] text-stone-950">文档与结果产物</h4>
+            </div>
+            <div className="text-sm text-stone-500">task 主目录下的真实文件内容与 code 日志</div>
+          </div>
+
+          <div className="mb-4 flex flex-wrap gap-2">
+            {(Object.keys(task.artifacts) as TaskArtifactName[]).map((name) => (
+              <button
+                className={`rounded-full border px-3 py-2 text-sm font-medium transition ${
+                  artifact === name
+                    ? 'border-stone-900 bg-stone-900 text-white shadow-sm'
+                    : 'border-stone-200 bg-white text-stone-600 hover:border-stone-400 hover:text-stone-950'
+                }`}
+                key={name}
+                onClick={() => setArtifact(name)}
+                type="button"
+              >
+                {artifactLabel(name)}
+              </button>
+            ))}
+          </div>
+
+          <ArtifactViewer artifact={artifact} content={task.artifacts[artifact] || ''} taskID={task.id} />
+        </section>
+
+        <aside className="space-y-4">
+          <ActionPanel task={task} />
+          <RepoScopeCard task={task} />
+          <CodeResultCard task={task} />
+          <DiffPanel repos={task.repos} selectedRepo={selectedDiffRepo} onSelectRepo={setSelectedDiffRepo} />
+          <section className="rounded-[24px] border border-stone-200 bg-white p-4">
+            <div className="text-xs font-semibold uppercase tracking-[0.22em] text-stone-500">Why This Matters</div>
+            <h4 className="mt-2 text-2xl font-semibold tracking-[-0.04em] text-stone-950">当前这一版的价值</h4>
+            <ul className="mt-4 space-y-3 text-sm leading-6 text-stone-600">
+              <li>把真实 task 数据接进现有样板，验证信息架构而不是继续靠 mock 想象。</li>
+              <li>把多仓 repo scope、分支、worktree、commit 和 code.log 放在一页里回看。</li>
+              <li>先做好只读工作台，再考虑后续的触发操作和控制面。</li>
+            </ul>
+          </section>
+        </aside>
+      </div>
+    </div>
+  )
+}
+
+function TaskListItemCard({ task }: { task: TaskListItem }) {
+  const location = useLocation()
+  const active = location.pathname === `/tasks/${task.id}`
+
+  return (
+    <Link
+      className={`block rounded-[22px] border px-4 py-4 transition ${
+        active
+          ? 'border-stone-900 bg-stone-900 text-white shadow-[0_16px_40px_rgba(15,23,42,0.2)]'
+          : 'border-stone-200 bg-white text-stone-900 hover:border-stone-300 hover:bg-stone-100/80'
+      }`}
+      params={{ taskId: task.id }}
+      to="/tasks/$taskId"
+    >
+      <div className="flex items-center justify-between gap-3">
+        <StatusBadge status={task.status} />
+        <div className={`text-xs ${active ? 'text-stone-300' : 'text-stone-500'}`}>{task.updatedAt}</div>
+      </div>
+      <div className="mt-3 text-[17px] font-semibold leading-6 tracking-[-0.03em]">{task.title}</div>
+      <div className={`mt-2 text-xs font-mono ${active ? 'text-stone-400' : 'text-stone-500'}`}>{task.id}</div>
+      <div className={`mt-4 flex items-center justify-between text-xs ${active ? 'text-stone-300' : 'text-stone-500'}`}>
+        <span>{task.repoIds.slice(0, 2).join(', ') || '-'}</span>
+        <span>{task.repoCount} repo(s)</span>
+      </div>
+    </Link>
+  )
+}
+
+function RepoScopeCard({ task }: { task: TaskRecord }) {
+  return (
+    <section className="rounded-[24px] border border-stone-200 bg-white p-4">
+      <div className="mb-4 text-xs font-semibold uppercase tracking-[0.22em] text-stone-500">Repo Scope</div>
+      <div className="space-y-3">
+        <KeyValue label="Repos Involved" value={`${task.repos.length}`} />
+        <KeyValue label="Repo IDs" value={task.repos.map((repo) => repo.id).join(', ')} />
+      </div>
+
+      <div className="mt-4 space-y-2">
+        {task.repos.map((repo) => (
+          <div className="rounded-[18px] border border-stone-200 bg-stone-50 px-3 py-3" key={repo.id}>
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="text-sm font-semibold text-stone-950">{repo.displayName}</div>
+                <div className="mt-1 font-mono text-[11px] text-stone-500">{repo.path}</div>
+              </div>
+              <RepoStatusBadge status={repo.status} />
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+function CodeResultCard({ task }: { task: TaskRecord }) {
+  return (
+    <section className="rounded-[24px] border border-stone-200 bg-white p-4">
+      <div className="mb-4 text-xs font-semibold uppercase tracking-[0.22em] text-stone-500">Repo Code Results</div>
+      <div className="space-y-4">
+        {task.repos.map((repo) => (
+          <RepoCodeResult key={repo.id} repo={repo} />
+        ))}
+      </div>
+    </section>
+  )
+}
+
+function RepoCodeResult({ repo }: { repo: TaskRecord['repos'][number] }) {
+  return (
+    <div className="rounded-[20px] border border-stone-200 bg-stone-50 p-4">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div>
+          <div className="text-sm font-semibold text-stone-950">{repo.displayName}</div>
+          <div className="mt-1 text-[11px] uppercase tracking-[0.2em] text-stone-500">{repo.id}</div>
+        </div>
+        <RepoStatusBadge status={repo.status} />
+      </div>
+      <div className="space-y-3">
+        <KeyValue label="Build" value={repo.build === 'passed' ? 'Passed' : repo.build === 'failed' ? 'Failed' : 'Pending'} />
+        <KeyValue label="Branch" mono value={repo.branch ?? '尚未创建'} />
+        <KeyValue label="Worktree" mono value={repo.worktree ?? '尚未创建'} />
+        <KeyValue label="Commit" mono value={repo.commit ?? '尚未提交'} />
+      </div>
+
+      <div className="mt-4 rounded-[18px] border border-stone-200 bg-white px-3 py-3">
+        <div className="text-[11px] uppercase tracking-[0.2em] text-stone-500">Files Written</div>
+        <div className="mt-2 space-y-2">
+          {(repo.filesWritten && repo.filesWritten.length > 0 ? repo.filesWritten : ['尚无写入结果']).map((file) => (
+            <div className="font-mono text-xs text-stone-800" key={file}>
+              {file}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}

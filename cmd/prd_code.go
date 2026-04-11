@@ -277,6 +277,14 @@ func executePRDCodeForRepo(repoRoot, taskID, branchName, repoID string, maxRetri
 		} else {
 			codeAppendLogLine(&logBuffer, fmt.Sprintf("auto_commit: %s", hash))
 			commitHash = hash
+			patch, diffErr := codeReadCommitPatch(workspace.WorktreeDir)
+			if diffErr != nil {
+				codeAppendLogLine(&logBuffer, fmt.Sprintf("write_diff_patch_error: %v", diffErr))
+			} else if writeErr := prd.WriteRepoDiffArtifacts(taskDir, repoBinding.ID, branchName, hash, changedFiles, patch); writeErr != nil {
+				codeAppendLogLine(&logBuffer, fmt.Sprintf("write_diff_patch_error: %v", writeErr))
+			} else {
+				codeAppendLogLine(&logBuffer, fmt.Sprintf("diff_patch: %s", filepath.Join(taskDir, "diffs", repoBinding.ID+".patch")))
+			}
 		}
 	}
 
@@ -389,6 +397,16 @@ func codeFormatToolEvent(event generator.ToolEvent) string {
 		return base
 	}
 	return base + " input=" + input
+}
+
+func codeReadCommitPatch(repoRoot string) (string, error) {
+	cmd := exec.Command("git", "show", "--format=medium", "--stat=0", "HEAD")
+	cmd.Dir = repoRoot
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("读取 commit patch 失败: %s\n%s", err, string(output))
+	}
+	return string(output), nil
 }
 
 func buildPRDBranchName(taskID string) string {
