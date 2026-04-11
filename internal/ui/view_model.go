@@ -63,6 +63,25 @@ type WorkspaceSummary struct {
 	TaskCount     int      `json:"taskCount"`
 }
 
+type RepoCandidate struct {
+	ID          string `json:"id"`
+	DisplayName string `json:"displayName"`
+	Path        string `json:"path"`
+	TaskCount   int    `json:"taskCount,omitempty"`
+	LastSeenAt  string `json:"lastSeenAt,omitempty"`
+}
+
+type RemoteRoot struct {
+	Label string `json:"label"`
+	Path  string `json:"path"`
+}
+
+type RemoteDirEntry struct {
+	Name      string `json:"name"`
+	Path      string `json:"path"`
+	IsGitRepo bool   `json:"isGitRepo"`
+}
+
 var uiArtifactOrder = []string{
 	"prd.source.md",
 	"prd-refined.md",

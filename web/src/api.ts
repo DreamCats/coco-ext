@@ -80,6 +80,31 @@ export type WorkspaceSummary = {
   taskCount: number
 }
 
+export type RepoCandidate = {
+  id: string
+  displayName: string
+  path: string
+  taskCount?: number
+  lastSeenAt?: string
+}
+
+export type RemoteRoot = {
+  label: string
+  path: string
+}
+
+export type RemoteDirEntry = {
+  name: string
+  path: string
+  isGitRepo: boolean
+}
+
+export type CreateTaskRequest = {
+  input: string
+  title?: string
+  repos?: string[]
+}
+
 async function fetchJSON<T>(path: string): Promise<T> {
   const response = await fetch(path)
   if (!response.ok) {
@@ -100,4 +125,58 @@ export async function getTask(taskId: string) {
 
 export async function getWorkspace() {
   return fetchJSON<WorkspaceSummary>('/api/workspace')
+}
+
+export async function createTask(input: CreateTaskRequest) {
+  const response = await fetch('/api/tasks', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  })
+  if (!response.ok) {
+    throw new Error(await response.text())
+  }
+  return response.json() as Promise<{ task_id: string; status: string }>
+}
+
+export async function deleteTask(taskId: string) {
+  const response = await fetch(`/api/tasks/${taskId}`, {
+    method: 'DELETE',
+  })
+  if (!response.ok) {
+    throw new Error(await response.text())
+  }
+  return response.json() as Promise<{ task_id: string; status: string }>
+}
+
+export async function listRecentRepos() {
+  const response = await fetchJSON<{ repos: RepoCandidate[] }>('/api/repos/recent')
+  return response.repos
+}
+
+export async function validateRepo(path: string) {
+  const response = await fetch('/api/repos/validate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path }),
+  })
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { error?: string } | null
+    throw new Error(body?.error || '校验 repo 失败')
+  }
+  return response.json() as Promise<RepoCandidate>
+}
+
+export async function listRemoteRoots() {
+  const response = await fetchJSON<{ roots: RemoteRoot[] }>('/api/fs/roots')
+  return response.roots
+}
+
+export async function listRemoteDirs(path: string) {
+  const response = await fetchJSON<{
+    path: string
+    parentPath: string
+    entries: RemoteDirEntry[]
+  }>(`/api/fs/list?path=${encodeURIComponent(path)}`)
+  return response
 }

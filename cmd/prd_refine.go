@@ -53,6 +53,7 @@ func runPRDRefine(cmd *cobra.Command, args []string) error {
 		Title:        prdRefineTitle,
 		ExplicitTask: prdRefineTaskID,
 		RepoPaths:    prdRefineRepos,
+		AutoAddRepo:  true,
 		Now:          now,
 	})
 	if err != nil {

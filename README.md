@@ -242,11 +242,26 @@ coco-ext prd run -i "需求描述或飞书链接"
 
 ## Web UI
 
-- `coco-ext ui serve` 会在当前仓库启动本地只读 HTTP 服务
+- `coco-ext ui serve` 会在当前仓库启动本地 HTTP 服务，默认托管内嵌静态前端资源
 - API 入口：
   - `GET /api/tasks`
   - `GET /api/tasks/:task_id`
   - `GET /api/workspace`
+- Web UI 当前已支持：
+  - `Create Task`：通过弹层创建全局 task，后台异步执行 refine，前端轮询 `initialized -> refined`
+  - `Delete Task`：仅允许删除未进入 code 的 task（`initialized/refined/planned/failed`）
+  - repo 选择：支持 `Recent Repos` 和 `Remote Browser`
+- Web UI 创建 task 时：
+  - 不会自动把当前启动 `ui serve` 的仓库注入 repo 列表
+  - 必须显式选择至少一个 repo
+  - `Remote Browser` 浏览和校验的是运行 `coco-ext ui serve` 的那台机器上的文件系统
+- 扩展 API：
+  - `POST /api/tasks`
+  - `DELETE /api/tasks/:task_id`
+  - `GET /api/repos/recent`
+  - `POST /api/repos/validate`
+  - `GET /api/fs/roots`
+  - `GET /api/fs/list?path=...`
 - 正式安装态默认使用内嵌静态前端资源，因此同事可直接通过 `go install` 安装后运行 `coco-ext ui serve`
 - 开发态可通过 `--web-dir` 覆盖静态目录
 - 从源码构建时，`make build` / `make install` / `make build-all` 会自动先执行 `web` 前端构建，再把静态资源内嵌进二进制

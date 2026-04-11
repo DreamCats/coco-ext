@@ -107,16 +107,18 @@ func repoCodeResultPath(taskDir, repoID string) string {
 	return filepath.Join(taskDir, "code-results", sanitizeRepoResultFileName(repoID)+".json")
 }
 
-func initTaskRepos(taskDir, repoRoot string, extraRepoPaths []string) error {
-	repoID := deriveRepoID(repoRoot)
-	repos := []RepoBinding{
-		{
+func initTaskRepos(taskDir, repoRoot string, extraRepoPaths []string, autoAddRepo bool) error {
+	repos := make([]RepoBinding, 0, len(extraRepoPaths)+1)
+	seen := make(map[string]bool, len(extraRepoPaths)+1)
+	if autoAddRepo {
+		repoID := deriveRepoID(repoRoot)
+		repos = append(repos, RepoBinding{
 			ID:     repoID,
 			Path:   repoRoot,
 			Status: TaskStatusInitialized,
-		},
+		})
+		seen[repoID] = true
 	}
-	seen := map[string]bool{repoID: true}
 	for _, repoPath := range extraRepoPaths {
 		repoPath = filepath.Clean(strings.TrimSpace(repoPath))
 		if repoPath == "" {
@@ -132,6 +134,9 @@ func initTaskRepos(taskDir, repoRoot string, extraRepoPaths []string) error {
 			Path:   repoPath,
 			Status: TaskStatusInitialized,
 		})
+	}
+	if len(repos) == 0 {
+		return fmt.Errorf("至少需要一个关联 repo")
 	}
 	meta := ReposMetadata{
 		Repos: repos,

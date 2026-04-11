@@ -95,7 +95,7 @@ coco-ext ui serve
 - [`internal/knowledge/`](/Users/bytedance/go/src/coco-ext/internal/knowledge)：`.livecoding/context/` 读写
 - [`internal/review/`](/Users/bytedance/go/src/coco-ext/internal/review)：facts → scope → release → impact → quality → summary 管线
 - [`internal/prd/`](/Users/bytedance/go/src/coco-ext/internal/prd)：refine / plan / code / archive / status / list
-- [`internal/ui/`](/Users/bytedance/go/src/coco-ext/internal/ui)：本地只读 Web UI 的 HTTP API 与静态资源托管
+- [`internal/ui/`](/Users/bytedance/go/src/coco-ext/internal/ui)：本地 Web UI 的 HTTP API、静态资源托管与 task 创建/删除动作
 - [`internal/lint/`](/Users/bytedance/go/src/coco-ext/internal/lint)：`golangci-lint` 执行与结果落盘
 - [`internal/git/`](/Users/bytedance/go/src/coco-ext/internal/git)：diff、branch、commit 等 git 封装
 - [`internal/metrics/`](/Users/bytedance/go/src/coco-ext/internal/metrics)：本地事件采集
@@ -168,11 +168,18 @@ coco-ext ui serve
 
 ### ui
 
-- `ui serve` 会在当前仓库启动本地只读 HTTP 服务
+- `ui serve` 会在当前仓库启动本地 HTTP 服务，默认托管内嵌静态资源
 - 当前 API 入口：
   - `GET /api/tasks`
   - `GET /api/tasks/:task_id`
   - `GET /api/workspace`
+- 当前写操作与 repo 选择能力：
+  - `POST /api/tasks`：Web UI 创建 task，后台异步 refine
+  - `DELETE /api/tasks/:task_id`：仅允许删除未进入 code 的 task
+  - `GET /api/repos/recent`：recent repos
+  - `POST /api/repos/validate`：手动路径校验并加入 repo
+  - `GET /api/fs/roots` / `GET /api/fs/list?path=...`：远程开发机上的目录浏览
+- Web UI 创建 task 时不会自动把当前仓库加入 repo scope，必须显式选择至少一个 repo
 - 正式安装态默认使用内嵌静态前端资源；开发态可通过 `--web-dir` 覆盖静态目录
 
 ## 关键约定
