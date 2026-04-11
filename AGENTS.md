@@ -139,13 +139,16 @@ coco-ext prd list
 
 ### PRD
 
-- `prd run -i ...` 一键执行 `refine -> plan -> code`
+- `prd run -i ...` 一键执行 `refine -> plan -> code`；支持通过重复 `--repo` 声明多仓 task，并可通过 `--all-repos` 顺序推进所有 repo 的 code
 - `prd refine` 支持文本、本地文件、飞书文档链接；飞书拉取走 [`internal/prd/lark.go`](/Users/bytedance/go/src/coco-ext/internal/prd/lark.go)，依赖 `lark-cli`
 - `prd plan` 默认使用只读 explorer agent 生成 `design.md` 和 `plan.md`
-- `prd code` 会先在主仓库同级目录的 `.coco-ext-worktree/` 下创建隔离 worktree，同步 task/context 产物后再启动 yolo agent；默认分支名是 `prd_<task_id>`
+- `prd refine` 当前支持通过重复 `--repo` 声明多仓 task 的关联仓库，task 主目录统一落在 `~/.config/coco-ext/tasks/`
+- `prd` task 当前统一存储在 `~/.config/coco-ext/tasks/` 下，不再写入仓库内 `.livecoding/tasks/`
+- `prd code` 会先在主仓库同级目录的 `.coco-ext-worktree/` 下创建隔离 worktree，同步 task/context 产物后再启动 yolo agent；默认分支名是 `prd_<task_id>`，支持通过 `--repo <repo_id>` 更新多仓 task 中某个 repo 的 code 结果，也支持通过 `--all-repos` 顺序推进所有 repo；多仓 task 下默认必须显式指定 `--repo`
 - `prd code` 编译失败后会按改动 package 自动重试，成功时自动 commit
-- `prd reset` / `prd archive` 需要先删除 code 阶段生成的 worktree，再删除对应分支
-- `prd list` 支持状态过滤，当前 task 状态为 `initialized/refined/planned/coded/archived`
+- `prd run` 在多仓 task 下默认只自动推进当前 repo；若 `plan` 判定复杂度为“复杂”，则会停止在 plan 阶段，不自动进入 code
+- `prd reset` / `prd archive` 需要先删除 code 阶段生成的 worktree，再删除对应分支；当前已支持 `--repo` 只操作某个 repo 的结果
+- `prd list` 支持状态过滤，当前 task 状态已扩展为 `initialized/refined/planned/coding/partially_coded/coded/archived`
 
 ### doctor / install / agents / daemon
 
@@ -159,7 +162,7 @@ coco-ext prd list
 - `.livecoding/context/`：知识文件
 - `.livecoding/review/`：review 产物
 - `.livecoding/lint/`：lint 产物
-- `.livecoding/tasks/`：PRD task
+- `~/.config/coco-ext/tasks/`：PRD task 主目录（当前统一使用全局目录，不再写入仓库内 `.livecoding/tasks/`）
 - `.livecoding/metrics/events.jsonl`：submit/gcmsg/review 等事件
 - `.livecoding/logs/`：后台 review / lint / gcmsg 日志
 - `.livecoding/changelog/`：commit 优化历史

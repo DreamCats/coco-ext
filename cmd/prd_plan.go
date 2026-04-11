@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/fatih/color"
@@ -45,9 +46,14 @@ func runPRDPlan(cmd *cobra.Command, args []string) error {
 	color.Cyan("🧭 PRD Plan")
 	color.Cyan("   task_id: %s", taskID)
 
-	// 校验 context 和 task 状态
+	// 校验 task 状态与必要文件
 	if err := prd.CheckPlanPrerequisites(repoRoot, taskID); err != nil {
 		return err
+	}
+	if missing, err := prd.MissingContextFiles(repoRoot); err != nil {
+		return err
+	} else if len(missing) > 0 {
+		color.Yellow("⚠ context 不完整，缺少 %s；将降级继续生成 plan", strings.Join(missing, ", "))
 	}
 
 	color.Cyan("   [1/3] 正在启动只读 agent（yolo，禁止写入）...")

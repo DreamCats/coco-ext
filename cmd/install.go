@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/DreamCats/coco-ext/internal/config"
+	internalgit "github.com/DreamCats/coco-ext/internal/git"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 )
@@ -60,6 +61,9 @@ func runInstall(cmd *cobra.Command, args []string) error {
 
 	if err := installLintConfig(repoRoot); err != nil {
 		color.Yellow("⚠ 安装 golangci-lint 配置失败: %v", err)
+	}
+	if err := internalgit.EnsureLivecodingLocalIgnores(repoRoot); err != nil {
+		return fmt.Errorf("更新本地 .git/info/exclude 失败: %w", err)
 	}
 
 	color.Green("✓ 安装完成")

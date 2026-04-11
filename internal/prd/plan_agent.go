@@ -105,7 +105,11 @@ func extractMarkdownHeadings(path string) []string {
 
 // GeneratePlanWithExplorer 使用只读 agent 调研并生成 design.md + plan.md。
 func GeneratePlanWithExplorer(explorer *generator.AgentGenerator, repoRoot, taskID string, now time.Time, onChunk func(string), onTool func(generator.ToolEvent)) (*PlanArtifacts, error) {
-	taskDir := filepath.Join(repoRoot, ".livecoding", "tasks", taskID)
+	task, loadErr := LoadTaskStatus(repoRoot, taskID)
+	if loadErr != nil {
+		return nil, loadErr
+	}
+	taskDir := task.TaskDir
 
 	prompt := BuildExplorerPlanPrompt(repoRoot, taskDir)
 
@@ -129,11 +133,6 @@ func GeneratePlanWithExplorer(explorer *generator.AgentGenerator, repoRoot, task
 	}
 
 	// 写入文件
-	task, loadErr := LoadTaskStatus(repoRoot, taskID)
-	if loadErr != nil {
-		return nil, loadErr
-	}
-
 	designPath := filepath.Join(task.TaskDir, "design.md")
 	planPath := filepath.Join(task.TaskDir, "plan.md")
 	if writeErr := os.WriteFile(designPath, []byte(design), 0644); writeErr != nil {
@@ -153,7 +152,8 @@ func GeneratePlanWithExplorer(explorer *generator.AgentGenerator, repoRoot, task
 	}, nil
 }
 
-// CheckPlanPrerequisites 校验 plan 前置条件：task 状态 + context + 文件存在。
+// CheckPlanPrerequisites 校验 plan 前置条件：task 状态 + 关键文件存在。
+// context 作为增强输入而非强依赖，缺失时允许降级继续。
 func CheckPlanPrerequisites(repoRoot, taskID string) error {
 	task, err := LoadTaskStatus(repoRoot, taskID)
 	if err != nil {
@@ -162,11 +162,8 @@ func CheckPlanPrerequisites(repoRoot, taskID string) error {
 	if task.Metadata.Status != TaskStatusRefined && task.Metadata.Status != TaskStatusPlanned {
 		return fmt.Errorf("task 状态为 %s，需要先执行 coco-ext prd refine", task.Metadata.Status)
 	}
-	if _, err := LoadContextSnapshot(repoRoot); err != nil {
-		return err
-	}
 	for _, name := range []string{"prd-refined.md"} {
-		path := filepath.Join(repoRoot, ".livecoding", "tasks", taskID, name)
+		path := filepath.Join(task.TaskDir, name)
 		if _, err := os.Stat(path); err != nil {
 			return fmt.Errorf("%s 不存在: %w", name, err)
 		}

@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"time"
 
 	"github.com/fatih/color"
@@ -15,6 +14,7 @@ import (
 )
 
 var prdArchiveTaskID string
+var prdArchiveRepoID string
 
 var prdArchiveCmd = &cobra.Command{
 	Use:   "archive",
@@ -26,6 +26,7 @@ var prdArchiveCmd = &cobra.Command{
 func init() {
 	prdCmd.AddCommand(prdArchiveCmd)
 	prdArchiveCmd.Flags().StringVar(&prdArchiveTaskID, "task", "", "指定 task id；默认读取最近一个 task")
+	prdArchiveCmd.Flags().StringVar(&prdArchiveRepoID, "repo", "", "仅归档指定 repo_id；不传则归档整个 task")
 }
 
 func runPRDArchive(cmd *cobra.Command, args []string) error {
@@ -46,55 +47,74 @@ func runPRDArchive(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	if prdArchiveRepoID == "" && task.Metadata.Status != prd.TaskStatusCoded && task.Metadata.Status != prd.TaskStatusArchived {
+		return fmt.Errorf("task 状态为 %s，仅 coded / archived 状态可归档", task.Metadata.Status)
+	}
 
 	color.Cyan("📦 PRD Archive")
 	color.Cyan("   task_id: %s", taskID)
+	if prdArchiveRepoID != "" {
+		color.Cyan("   repo: %s", prdArchiveRepoID)
+	}
 
-	branchName := buildPRDBranchName(taskID)
+	branchName := ""
 	worktreePath := ""
-
-	report, _ := prd.ReadCodeResultReport(task.TaskDir)
-	if report != nil && report.Branch != "" {
-		branchName = report.Branch
-	}
-	if report != nil {
-		worktreePath = report.Worktree
-	}
-
 	worktreeDeleted := false
-	if worktreePath != "" {
-		if err := prd.CleanupCodeWorktree(repoRoot, worktreePath); err != nil {
-			color.Yellow("   ⚠ 删除 worktree 失败: %v", err)
-		} else {
-			worktreeDeleted = true
-			color.Green("   ✓ 已删除 worktree %s", worktreePath)
-		}
-	}
-
-	// 清理分支
 	branchDeleted := false
-	checkCmd := exec.Command("git", "rev-parse", "--verify", branchName)
-	checkCmd.Dir = repoRoot
-	if checkCmd.Run() == nil {
-		delCmd := exec.Command("git", "branch", "-D", branchName)
-		delCmd.Dir = repoRoot
-		if delCmd.Run() == nil {
-			branchDeleted = true
-			color.Green("   ✓ 已删除分支 %s", branchName)
-		}
-	} else {
-		branchDeleted = true
-	}
 
-	// 更新状态
-	if err := prd.ArchiveTask(task.TaskDir, time.Now()); err != nil {
-		return err
+	if prdArchiveRepoID == "" {
+		for _, repo := range task.Repos.Repos {
+			if repo.Worktree != "" {
+				if err := prd.CleanupCodeWorktree(repoRoot, repo.Worktree); err != nil {
+					color.Yellow("   ⚠ 删除 worktree 失败: %v", err)
+				} else {
+					worktreeDeleted = true
+					color.Green("   ✓ 已删除 worktree %s", repo.Worktree)
+				}
+			}
+			if repo.Branch != "" {
+				deleted := deleteBranchQuiet(repoRoot, repo.Branch)
+				branchDeleted = branchDeleted || deleted
+				if deleted {
+					color.Green("   ✓ 已删除分支 %s", repo.Branch)
+				}
+			}
+		}
+		if err := prd.ArchiveTask(task.TaskDir, time.Now()); err != nil {
+			return err
+		}
+		color.Green("   ✓ 状态已更新为 archived")
+	} else {
+		repo, err := prd.ResolveTaskRepo(task.TaskDir, repoRoot, prdArchiveRepoID)
+		if err != nil {
+			return err
+		}
+		branchName = repo.Branch
+		worktreePath = repo.Worktree
+		if repo.Worktree != "" {
+			if err := prd.CleanupCodeWorktree(repoRoot, repo.Worktree); err != nil {
+				color.Yellow("   ⚠ 删除 worktree 失败: %v", err)
+			} else {
+				worktreeDeleted = true
+				color.Green("   ✓ 已删除 worktree %s", repo.Worktree)
+			}
+		}
+		if repo.Branch != "" {
+			branchDeleted = deleteBranchQuiet(repoRoot, repo.Branch)
+			if branchDeleted {
+				color.Green("   ✓ 已删除分支 %s", repo.Branch)
+			}
+		}
+		if err := prd.ArchiveRepoBinding(task.TaskDir, repo.ID); err != nil {
+			return err
+		}
+		color.Green("   ✓ repo %s 状态已更新为 archived", repo.ID)
 	}
-	color.Green("   ✓ 状态已更新为 archived")
 
 	result := map[string]any{
 		"status":           "archived",
 		"task_id":          taskID,
+		"repo":             prdArchiveRepoID,
 		"branch":           branchName,
 		"worktree":         worktreePath,
 		"worktree_deleted": worktreeDeleted,

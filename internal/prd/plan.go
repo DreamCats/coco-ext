@@ -15,6 +15,7 @@ import (
 )
 
 type ContextSnapshot struct {
+	Available        bool
 	GlossaryPath     string
 	ArchitecturePath string
 	PatternsPath     string
@@ -97,6 +98,11 @@ type PlanBuild struct {
 	Assessment ComplexityAssessment
 }
 
+type PlanRepoGroup struct {
+	RepoID string
+	Files  []string
+}
+
 var rePlanASCIIWord = regexp.MustCompile(`[A-Za-z][A-Za-z0-9_-]{1,}`)
 
 func PreparePlanBuild(repoRoot, taskID string) (*PlanBuild, error) {
@@ -111,7 +117,7 @@ func PreparePlanBuild(repoRoot, taskID string) (*PlanBuild, error) {
 		return nil, fmt.Errorf("读取 prd-refined.md 失败: %w", err)
 	}
 
-	context, err := LoadContextSnapshot(repoRoot)
+	context, err := LoadOptionalContextSnapshot(repoRoot)
 	if err != nil {
 		return nil, err
 	}
@@ -178,7 +184,7 @@ func GeneratePlanWithAI(gen *generator.Generator, repoRoot, taskID string, now t
 		localDesign = BuildDesignContent(repoRoot, build.Task, build.Context, build.Sections, build.Findings, build.Assessment)
 	}
 
-	return writePlanArtifacts(build.Task, localDesign, planHeader+BuildPlanBody(build.Sections, build.Findings, build.Assessment, &aiSections), now, true)
+	return writePlanArtifacts(build.Task, localDesign, planHeader+BuildPlanBody(build.Task, build.Sections, build.Findings, build.Assessment, &aiSections), now, true)
 }
 
 // parseAICandidateFiles 从 AI 输出的候选文件文本中提取文件路径
@@ -215,27 +221,68 @@ func parseAICandidateFiles(raw string) []string {
 }
 
 func LoadContextSnapshot(repoRoot string) (*ContextSnapshot, error) {
-	contextDir := filepath.Join(repoRoot, ".livecoding", "context")
-	required := map[string]*string{
-		"glossary.md":     nil,
-		"architecture.md": nil,
-		"patterns.md":     nil,
+	context, err := loadContextSnapshot(repoRoot, true)
+	if err != nil {
+		return nil, err
 	}
+	return context, nil
+}
 
-	for name := range required {
+// LoadOptionalContextSnapshot 以降级模式读取 context。
+// 缺少知识文件时不报错，而是返回 Available=false 的空快照。
+func LoadOptionalContextSnapshot(repoRoot string) (*ContextSnapshot, error) {
+	return loadContextSnapshot(repoRoot, false)
+}
+
+// MissingContextFiles 返回当前仓库缺失的核心 context 文件。
+func MissingContextFiles(repoRoot string) ([]string, error) {
+	contextDir := filepath.Join(repoRoot, ".livecoding", "context")
+	required := []string{
+		"glossary.md",
+		"architecture.md",
+		"patterns.md",
+	}
+	missing := make([]string, 0, len(required))
+	for _, name := range required {
 		path := filepath.Join(contextDir, name)
-		if _, err := os.Stat(path); err != nil {
+		info, err := os.Stat(path)
+		if err != nil {
 			if os.IsNotExist(err) {
-				return nil, fmt.Errorf("context 不完整，缺少 %s；请先执行 `coco-ext context init` 或 `coco-ext context update`", name)
+				missing = append(missing, name)
+				continue
 			}
 			return nil, fmt.Errorf("读取 context 文件失败: %w", err)
 		}
+		if info.Size() == 0 {
+			missing = append(missing, name)
+		}
 	}
+	return missing, nil
+}
 
+func loadContextSnapshot(repoRoot string, strict bool) (*ContextSnapshot, error) {
+	contextDir := filepath.Join(repoRoot, ".livecoding", "context")
 	glossaryPath := filepath.Join(contextDir, "glossary.md")
 	architecturePath := filepath.Join(contextDir, "architecture.md")
 	patternsPath := filepath.Join(contextDir, "patterns.md")
 	gotchasPath := filepath.Join(contextDir, "gotchas.md")
+
+	missing, err := MissingContextFiles(repoRoot)
+	if err != nil {
+		return nil, err
+	}
+	if len(missing) > 0 {
+		if strict {
+			return nil, fmt.Errorf("context 不完整，缺少 %s；请先执行 `coco-ext context init` 或 `coco-ext context update`", strings.Join(missing, ", "))
+		}
+		return &ContextSnapshot{
+			Available:        false,
+			GlossaryPath:     glossaryPath,
+			ArchitecturePath: architecturePath,
+			PatternsPath:     patternsPath,
+			GotchasPath:      gotchasPath,
+		}, nil
+	}
 
 	glossaryContent, err := os.ReadFile(glossaryPath)
 	if err != nil {
@@ -256,6 +303,7 @@ func LoadContextSnapshot(repoRoot string) (*ContextSnapshot, error) {
 	}
 
 	return &ContextSnapshot{
+		Available:        true,
 		GlossaryPath:     glossaryPath,
 		ArchitecturePath: architecturePath,
 		PatternsPath:     patternsPath,
@@ -427,7 +475,7 @@ func ScoreComplexity(sections RefinedSections, findings ResearchFinding) Complex
 func BuildPlanContent(task *TaskStatusReport, sections RefinedSections, findings ResearchFinding, assessment ComplexityAssessment) string {
 	var b strings.Builder
 	b.WriteString(BuildPlanHeader(task))
-	b.WriteString(BuildPlanBody(sections, findings, assessment, nil))
+	b.WriteString(BuildPlanBody(task, sections, findings, assessment, nil))
 	return b.String()
 }
 
@@ -440,9 +488,10 @@ func BuildPlanHeader(task *TaskStatusReport) string {
 	return b.String()
 }
 
-func BuildPlanBody(sections RefinedSections, findings ResearchFinding, assessment ComplexityAssessment, ai *PlanAISections) string {
+func BuildPlanBody(task *TaskStatusReport, sections RefinedSections, findings ResearchFinding, assessment ComplexityAssessment, ai *PlanAISections) string {
 	var b strings.Builder
 	tasks := BuildPlanTasks(sections, findings, ai)
+	repoGroups := buildPlanRepoGroups(task, findings.CandidateFiles)
 	b.WriteString("## 复杂度评估\n\n")
 	b.WriteString(fmt.Sprintf("- complexity: %s (%d)\n", assessment.Level, assessment.Total))
 	b.WriteString(fmt.Sprintf("- 结论: %s\n\n", assessment.Conclusion))
@@ -469,6 +518,14 @@ func BuildPlanBody(sections RefinedSections, findings ResearchFinding, assessmen
 		b.WriteString("\n")
 	}
 
+	if len(repoGroups) > 0 {
+		b.WriteString("## 涉及仓库\n\n")
+		for _, group := range repoGroups {
+			b.WriteString(fmt.Sprintf("- %s：%d 个候选文件\n", group.RepoID, len(group.Files)))
+		}
+		b.WriteString("\n")
+	}
+
 	b.WriteString("## 拟改文件\n\n")
 	if len(findings.CandidateFiles) == 0 {
 		b.WriteString("- 暂未命中候选文件，需要补充 context 或人工指定模块。\n")
@@ -477,15 +534,18 @@ func BuildPlanBody(sections RefinedSections, findings ResearchFinding, assessmen
 		if ai != nil {
 			aiSteps = ai.Steps
 		}
-		for _, file := range findings.CandidateFiles {
-			desc := matchAIStepForFile(aiSteps, file)
-			if desc == "" {
-				desc = describePlannedFileChange(file)
+		for _, group := range repoGroups {
+			b.WriteString(fmt.Sprintf("### repo: %s\n\n", group.RepoID))
+			for _, file := range group.Files {
+				desc := matchAIStepForFile(aiSteps, file)
+				if desc == "" {
+					desc = describePlannedFileChange(file)
+				}
+				b.WriteString(fmt.Sprintf("- %s：%s\n", file, desc))
 			}
-			b.WriteString(fmt.Sprintf("- %s：%s\n", file, desc))
+			b.WriteString("\n")
 		}
 	}
-	b.WriteString("\n")
 
 	b.WriteString("## 任务列表\n\n")
 	if len(tasks) == 0 {
@@ -600,6 +660,14 @@ func BuildPlanPrompt(build *PlanBuild) string {
 
 	b.WriteString("## PRD Refined\n")
 	b.WriteString(build.Sections.Raw)
+	b.WriteString("\n\n## 任务关联仓库\n")
+	if build.Task.Repos == nil || len(build.Task.Repos.Repos) == 0 {
+		b.WriteString("- current-repo\n")
+	} else {
+		for _, repo := range build.Task.Repos.Repos {
+			b.WriteString(fmt.Sprintf("- %s (%s)\n", repo.ID, firstNonEmpty(repo.Path, "path-unknown")))
+		}
+	}
 	b.WriteString("\n\n## Context 摘要\n")
 	b.WriteString("- glossary 命中术语：\n")
 	if len(build.Findings.MatchedTerms) == 0 {
@@ -779,6 +847,54 @@ func BuildPlanTasks(sections RefinedSections, findings ResearchFinding, ai *Plan
 	return tasks
 }
 
+func buildPlanRepoGroups(task *TaskStatusReport, files []string) []PlanRepoGroup {
+	order := make([]string, 0, 4)
+	groups := make(map[string][]string)
+
+	if task != nil && task.Repos != nil {
+		for _, repo := range task.Repos.Repos {
+			if _, ok := groups[repo.ID]; !ok {
+				order = append(order, repo.ID)
+				groups[repo.ID] = nil
+			}
+		}
+	}
+
+	for _, file := range files {
+		repoID := inferRepoIDFromFile(file)
+		if _, ok := groups[repoID]; !ok {
+			order = append(order, repoID)
+			groups[repoID] = nil
+		}
+		groups[repoID] = append(groups[repoID], file)
+	}
+
+	result := make([]PlanRepoGroup, 0, len(order))
+	for _, repoID := range order {
+		result = append(result, PlanRepoGroup{
+			RepoID: repoID,
+			Files:  groups[repoID],
+		})
+	}
+	return result
+}
+
+func inferRepoIDFromFile(file string) string {
+	parts := strings.Split(filepath.ToSlash(strings.TrimSpace(file)), "/")
+	if len(parts) == 0 {
+		return "current-repo"
+	}
+	first := parts[0]
+	switch first {
+	case "sdk", "client", "clients":
+		return "shared-sdk"
+	case "web", "frontend", "ui":
+		return "frontend"
+	default:
+		return "current-repo"
+	}
+}
+
 func buildTaskActions(files []string, sections RefinedSections, aiSteps string) []string {
 	actions := make([]string, 0, len(files)+1)
 	hasAIMatch := false
@@ -855,7 +971,15 @@ func updateTaskStatus(taskDir, status string, now time.Time) error {
 	}
 	meta.Status = status
 	meta.UpdatedAt = now
-	return writeJSONFile(metaPath, meta)
+	if err := writeJSONFile(metaPath, meta); err != nil {
+		return err
+	}
+	switch status {
+	case TaskStatusPlanned, TaskStatusArchived, TaskStatusInitialized, TaskStatusRefined:
+		return syncRepoStatuses(taskDir, status)
+	default:
+		return nil
+	}
 }
 
 func parseGlossaryEntries(content string) []GlossaryEntry {

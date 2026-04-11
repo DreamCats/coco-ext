@@ -13,11 +13,14 @@ import (
 )
 
 const (
-	TaskStatusInitialized = "initialized"
-	TaskStatusRefined     = "refined"
-	TaskStatusPlanned     = "planned"
-	TaskStatusCoded    = "coded"
-	TaskStatusArchived = "archived"
+	TaskStatusInitialized    = "initialized"
+	TaskStatusRefined        = "refined"
+	TaskStatusPlanned        = "planned"
+	TaskStatusCoding         = "coding"
+	TaskStatusPartiallyCoded = "partially_coded"
+	TaskStatusCoded          = "coded"
+	TaskStatusArchived       = "archived"
+	TaskStatusFailed         = "failed"
 )
 
 type SourceType string
@@ -36,6 +39,7 @@ type TaskMetadata struct {
 	UpdatedAt   time.Time  `json:"updated_at"`
 	SourceType  SourceType `json:"source_type"`
 	SourceValue string     `json:"source_value"`
+	RepoCount   int        `json:"repo_count,omitempty"`
 }
 
 type SourceMetadata struct {
@@ -51,6 +55,7 @@ type RefineInput struct {
 	RawInput     string
 	Title        string
 	ExplicitTask string
+	RepoPaths    []string
 	Now          time.Time
 }
 
@@ -117,9 +122,9 @@ func PrepareRefineTask(repoRoot string, input RefineInput) (*RefineTask, error) 
 		taskID = BuildTaskID(source.Title, source.RawInput, input.Now)
 	}
 
-	taskDir := filepath.Join(repoRoot, ".livecoding", "tasks", taskID)
-	if err := os.MkdirAll(taskDir, 0755); err != nil {
-		return nil, fmt.Errorf("创建 task 目录失败: %w", err)
+	taskDir, err := createTaskDir(taskID)
+	if err != nil {
+		return nil, err
 	}
 
 	task := &RefineTask{
@@ -136,6 +141,9 @@ func PrepareRefineTask(repoRoot string, input RefineInput) (*RefineTask, error) 
 
 	if err := writeSourceArtifacts(task, input.Now); err != nil {
 		return nil, err
+	}
+	if err := initTaskRepos(taskDir, repoRoot, input.RepoPaths); err != nil {
+		return nil, fmt.Errorf("初始化 repos.json 失败: %w", err)
 	}
 
 	return task, nil
@@ -416,6 +424,7 @@ func writeSourceArtifacts(task *RefineTask, now time.Time) error {
 		UpdatedAt:   now,
 		SourceType:  task.Source.Type,
 		SourceValue: firstNonEmpty(task.Source.URL, task.Source.Path, task.Source.RawInput),
+		RepoCount:   1,
 	}
 	if err := writeJSONFile(task.MetadataPath, taskMeta); err != nil {
 		return fmt.Errorf("写入 task.json 失败: %w", err)
@@ -437,6 +446,7 @@ func WriteRefinedContent(task *RefineTask, content string, now time.Time, status
 		UpdatedAt:   now,
 		SourceType:  task.Source.Type,
 		SourceValue: firstNonEmpty(task.Source.URL, task.Source.Path, task.Source.RawInput),
+		RepoCount:   1,
 	}
 	return writeJSONFile(task.MetadataPath, meta)
 }
@@ -472,6 +482,9 @@ func buildSourceMarkdown(source RefineSource) string {
 func writeJSONFile(path string, v any) error {
 	data, err := json.MarshalIndent(v, "", "  ")
 	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		return err
 	}
 	return os.WriteFile(path, data, 0644)

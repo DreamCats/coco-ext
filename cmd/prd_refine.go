@@ -19,6 +19,7 @@ import (
 var prdRefineInput string
 var prdRefineTitle string
 var prdRefineTaskID string
+var prdRefineRepos []string
 
 var prdRefineCmd = &cobra.Command{
 	Use:   "refine",
@@ -32,6 +33,7 @@ func init() {
 	prdRefineCmd.Flags().StringVar(&prdRefineInput, "prd", "", "PRD 输入：纯文本、本地文件路径或飞书链接")
 	prdRefineCmd.Flags().StringVar(&prdRefineTitle, "title", "", "可选标题，优先用于生成 task_id 和任务目录")
 	prdRefineCmd.Flags().StringVar(&prdRefineTaskID, "task", "", "可选 task id；不传则自动生成")
+	prdRefineCmd.Flags().StringArrayVar(&prdRefineRepos, "repo", nil, "附加关联仓库路径；可重复传入，当前仓库会自动加入 task 的 repo 列表")
 	_ = prdRefineCmd.MarkFlagRequired("prd")
 }
 
@@ -50,6 +52,7 @@ func runPRDRefine(cmd *cobra.Command, args []string) error {
 		RawInput:     prdRefineInput,
 		Title:        prdRefineTitle,
 		ExplicitTask: prdRefineTaskID,
+		RepoPaths:    prdRefineRepos,
 		Now:          now,
 	})
 	if err != nil {

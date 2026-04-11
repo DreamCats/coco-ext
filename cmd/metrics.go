@@ -14,6 +14,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/DreamCats/coco-ext/internal/config"
+	"github.com/DreamCats/coco-ext/internal/prd"
 )
 
 var metricsJSON bool
@@ -26,13 +27,13 @@ var metricsCmd = &cobra.Command{
 }
 
 type metricsReport struct {
-	RepoRoot     string         `json:"repo_root"`
-	GeneratedAt  string         `json:"generated_at"`
-	Review       reviewMetrics  `json:"review"`
-	Lint         lintMetrics    `json:"lint"`
-	PRD          prdMetrics     `json:"prd"`
-	Events       eventMetrics   `json:"events"`
-	Recommendations []string    `json:"recommendations"`
+	RepoRoot        string        `json:"repo_root"`
+	GeneratedAt     string        `json:"generated_at"`
+	Review          reviewMetrics `json:"review"`
+	Lint            lintMetrics   `json:"lint"`
+	PRD             prdMetrics    `json:"prd"`
+	Events          eventMetrics  `json:"events"`
+	Recommendations []string      `json:"recommendations"`
 }
 
 type reviewMetrics struct {
@@ -54,28 +55,28 @@ type lintMetrics struct {
 }
 
 type prdMetrics struct {
-	TotalTasks        int            `json:"total_tasks"`
-	StatusCounts      map[string]int `json:"status_counts"`
-	SourceTypeCounts  map[string]int `json:"source_type_counts"`
-	ComplexityCounts  map[string]int `json:"complexity_counts"`
-	LatestTaskID      string         `json:"latest_task_id,omitempty"`
+	TotalTasks       int            `json:"total_tasks"`
+	StatusCounts     map[string]int `json:"status_counts"`
+	SourceTypeCounts map[string]int `json:"source_type_counts"`
+	ComplexityCounts map[string]int `json:"complexity_counts"`
+	LatestTaskID     string         `json:"latest_task_id,omitempty"`
 }
 
 type eventMetrics struct {
-	TotalEvents            int            `json:"total_events"`
-	SubmitTotal            int            `json:"submit_total"`
-	SubmitSuccess          int            `json:"submit_success"`
-	SubmitFailure          int            `json:"submit_failure"`
-	SubmitMessageSources   map[string]int `json:"submit_message_sources"`
-	GCMsgTotal             int            `json:"gcmsg_total"`
-	GCMsgSuccess           int            `json:"gcmsg_success"`
-	GCMsgFailure           int            `json:"gcmsg_failure"`
-	GCMsgMessageSources    map[string]int `json:"gcmsg_message_sources"`
-	ReviewTotal            int            `json:"review_total"`
-	ReviewSuccess          int            `json:"review_success"`
-	ReviewFailure          int            `json:"review_failure"`
-	ReviewRatingCounts     map[string]int `json:"review_rating_counts"`
-	LatestEventTime        string         `json:"latest_event_time,omitempty"`
+	TotalEvents          int            `json:"total_events"`
+	SubmitTotal          int            `json:"submit_total"`
+	SubmitSuccess        int            `json:"submit_success"`
+	SubmitFailure        int            `json:"submit_failure"`
+	SubmitMessageSources map[string]int `json:"submit_message_sources"`
+	GCMsgTotal           int            `json:"gcmsg_total"`
+	GCMsgSuccess         int            `json:"gcmsg_success"`
+	GCMsgFailure         int            `json:"gcmsg_failure"`
+	GCMsgMessageSources  map[string]int `json:"gcmsg_message_sources"`
+	ReviewTotal          int            `json:"review_total"`
+	ReviewSuccess        int            `json:"review_success"`
+	ReviewFailure        int            `json:"review_failure"`
+	ReviewRatingCounts   map[string]int `json:"review_rating_counts"`
+	LatestEventTime      string         `json:"latest_event_time,omitempty"`
 }
 
 type reviewSummaryJSON struct {
@@ -138,9 +139,9 @@ func runMetrics(cmd *cobra.Command, args []string) error {
 func collectReviewMetrics(repoRoot string) reviewMetrics {
 	result := reviewMetrics{
 		RatingCounts: map[string]int{
-			"🟢 可提交":      0,
+			"🟢 可提交":     0,
 			"🟡 建议修复后提交": 0,
-			"🔴 需修复":      0,
+			"🔴 需修复":     0,
 		},
 	}
 
@@ -261,52 +262,28 @@ func collectPRDMetrics(repoRoot string) prdMetrics {
 		ComplexityCounts: map[string]int{},
 	}
 
-	tasksRoot := filepath.Join(repoRoot, ".livecoding", "tasks")
-	entries, err := os.ReadDir(tasksRoot)
+	tasks, err := prd.ListTasks(repoRoot, "")
 	if err != nil {
 		return result
 	}
-
-	type taskEntry struct {
-		id      string
-		modTime time.Time
+	if len(tasks) > 0 {
+		result.LatestTaskID = tasks[0].TaskID
 	}
-	taskDirs := make([]taskEntry, 0, len(entries))
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
+
+	for _, taskSummary := range tasks {
+		result.TotalTasks++
+		if taskSummary.Status != "" {
+			result.StatusCounts[taskSummary.Status]++
 		}
-		info, err := entry.Info()
+		if taskSummary.SourceType != "" {
+			result.SourceTypeCounts[string(taskSummary.SourceType)]++
+		}
+
+		taskReport, err := prd.LoadTaskStatus(repoRoot, taskSummary.TaskID)
 		if err != nil {
 			continue
 		}
-		taskDirs = append(taskDirs, taskEntry{id: entry.Name(), modTime: info.ModTime()})
-	}
-
-	sort.Slice(taskDirs, func(i, j int) bool {
-		return taskDirs[i].modTime.After(taskDirs[j].modTime)
-	})
-	if len(taskDirs) > 0 {
-		result.LatestTaskID = taskDirs[0].id
-	}
-
-	for _, dir := range taskDirs {
-		result.TotalTasks++
-		taskPath := filepath.Join(tasksRoot, dir.id, "task.json")
-		taskData, err := os.ReadFile(taskPath)
-		if err == nil {
-			var meta prdTaskJSON
-			if json.Unmarshal(taskData, &meta) == nil {
-				if meta.Status != "" {
-					result.StatusCounts[meta.Status]++
-				}
-				if meta.SourceType != "" {
-					result.SourceTypeCounts[meta.SourceType]++
-				}
-			}
-		}
-
-		planPath := filepath.Join(tasksRoot, dir.id, "plan.md")
+		planPath := filepath.Join(taskReport.TaskDir, "plan.md")
 		planData, err := os.ReadFile(planPath)
 		if err != nil {
 			continue
@@ -327,8 +304,7 @@ func buildMetricsRecommendations(repoRoot string) []string {
 		recommendations = append(recommendations, "当前仓库还没有 review 结构化产物，建议先执行 `coco-ext review --json`。")
 	}
 
-	tasksRoot := filepath.Join(repoRoot, ".livecoding", "tasks")
-	if _, err := os.Stat(tasksRoot); err != nil {
+	if tasks, err := prd.ListTasks(repoRoot, ""); err != nil || len(tasks) == 0 {
 		recommendations = append(recommendations, "当前仓库还没有 prd task，建议先执行 `coco-ext prd refine`。")
 	}
 

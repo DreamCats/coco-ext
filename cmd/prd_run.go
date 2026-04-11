@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -17,6 +18,8 @@ import (
 )
 
 var prdRunInput string
+var prdRunRepos []string
+var prdRunAllRepos bool
 
 var prdRunCmd = &cobra.Command{
 	Use:   "run",
@@ -28,6 +31,8 @@ var prdRunCmd = &cobra.Command{
 func init() {
 	prdCmd.AddCommand(prdRunCmd)
 	prdRunCmd.Flags().StringVarP(&prdRunInput, "input", "i", "", "PRD 输入：纯文本、本地文件路径或飞书链接")
+	prdRunCmd.Flags().StringArrayVar(&prdRunRepos, "repo", nil, "附加关联仓库路径；可重复传入")
+	prdRunCmd.Flags().BoolVar(&prdRunAllRepos, "all-repos", false, "多仓 task 下按绑定顺序依次执行所有 repo 的 code；失败即停")
 	_ = prdRunCmd.MarkFlagRequired("input")
 }
 
@@ -70,8 +75,9 @@ func runPRDRun(cmd *cobra.Command, args []string) error {
 	stepStart := time.Now()
 
 	task, refineErr := prd.PrepareRefineTask(repoRoot, prd.RefineInput{
-		RawInput: prdRunInput,
-		Now:      time.Now(),
+		RawInput:  prdRunInput,
+		RepoPaths: prdRunRepos,
+		Now:       time.Now(),
 	})
 	if refineErr != nil {
 		return fmt.Errorf("refine 准备失败: %w", refineErr)
@@ -129,6 +135,13 @@ func runPRDRun(cmd *cobra.Command, args []string) error {
 		color.Red("   ✗ plan 前置检查失败: %v", checkErr)
 		return printRunSummary(steps, startedAt, false)
 	}
+	if missing, err := prd.MissingContextFiles(repoRoot); err != nil {
+		steps = append(steps, runStep{Name: "plan", Duration: time.Since(stepStart), Status: "fail", Detail: err.Error()})
+		color.Red("   ✗ context 检查失败: %v", err)
+		return printRunSummary(steps, startedAt, false)
+	} else if len(missing) > 0 {
+		color.Yellow("⚠ context 不完整，缺少 %s；将降级继续生成 plan", strings.Join(missing, ", "))
+	}
 
 	explorer, explorerErr := generator.NewExplorer(repoRoot)
 	if explorerErr != nil {
@@ -161,6 +174,7 @@ func runPRDRun(cmd *cobra.Command, args []string) error {
 	// ===== Step 3: Code =====
 	color.Cyan("━━━ [3/3] Code ━━━")
 	stepStart = time.Now()
+	buildOK := true
 
 	if _, err := prd.PrepareAgentCode(repoRoot, task.TaskID); err != nil {
 		steps = append(steps, runStep{Name: "code", Duration: time.Since(stepStart), Status: "fail", Detail: err.Error()})
@@ -168,32 +182,88 @@ func runPRDRun(cmd *cobra.Command, args []string) error {
 		return printRunSummary(steps, startedAt, false)
 	}
 
-	branchName := buildPRDBranchName(task.TaskID)
-	report, codeErr := executePRDCode(repoRoot, task.TaskID, branchName, prdCodeMaxRetry, func(chunk string) { fmt.Print(chunk) }, func(event generator.ToolEvent) { renderToolEvent(event) })
-	if codeErr != nil {
-		steps = append(steps, runStep{Name: "code", Duration: time.Since(stepStart), Status: "fail", Detail: codeErr.Error()})
-		color.Red("   ✗ code 生成失败: %v", codeErr)
+	taskReport, err := prd.LoadTaskStatus(repoRoot, task.TaskID)
+	if err != nil {
+		steps = append(steps, runStep{Name: "code", Duration: time.Since(stepStart), Status: "fail", Detail: err.Error()})
+		color.Red("   ✗ 加载 task 状态失败: %v", err)
 		return printRunSummary(steps, startedAt, false)
 	}
+	complexityLevel, _, err := prd.ReadTaskComplexity(taskReport.TaskDir)
+	if err != nil {
+		steps = append(steps, runStep{Name: "code", Duration: time.Since(stepStart), Status: "fail", Detail: err.Error()})
+		color.Red("   ✗ 读取复杂度失败: %v", err)
+		return printRunSummary(steps, startedAt, false)
+	}
+	if complexityLevel == "复杂" {
+		steps = append(steps, runStep{Name: "code", Duration: time.Since(stepStart), Status: "skip", Detail: "复杂任务停止在 plan 阶段"})
+		color.Yellow("   - 当前复杂度为「复杂」，run 将停止在 plan 阶段")
+		return printRunSummary(steps, startedAt, true)
+	}
 
-	stepDetail := fmt.Sprintf("%d 文件, commit %s", len(report.FilesWritten), report.Commit)
-	if !report.BuildOK {
-		steps = append(steps, runStep{Name: "code", Duration: time.Since(stepStart), Status: "fail", Detail: "编译未通过"})
-		color.Yellow("   ⚠ 编译未通过")
+	branchName := buildPRDBranchName(task.TaskID)
+	if prdRunAllRepos {
+		if taskReport.Repos == nil || len(taskReport.Repos.Repos) == 0 {
+			steps = append(steps, runStep{Name: "code", Duration: time.Since(stepStart), Status: "fail", Detail: "task 未绑定 repo"})
+			color.Red("   ✗ task 未绑定任何 repo")
+			return printRunSummary(steps, startedAt, false)
+		}
+		for idx, repo := range taskReport.Repos.Repos {
+			color.Cyan("   [%d/%d] repo: %s", idx+1, len(taskReport.Repos.Repos), repo.ID)
+			report, codeErr := executePRDCodeForRepo(repo.Path, task.TaskID, branchName, repo.ID, prdCodeMaxRetry, func(chunk string) { fmt.Print(chunk) }, func(event generator.ToolEvent) { renderToolEvent(event) })
+			fmt.Println()
+			if codeErr != nil {
+				steps = append(steps, runStep{Name: "code", Duration: time.Since(stepStart), Status: "fail", Detail: fmt.Sprintf("repo %s: %v", repo.ID, codeErr)})
+				color.Red("   ✗ repo %s code 失败: %v", repo.ID, codeErr)
+				return printRunSummary(steps, startedAt, false)
+			}
+			renderCodeRepoProgress(report)
+			if !report.BuildOK {
+				buildOK = false
+				steps = append(steps, runStep{Name: "code", Duration: time.Since(stepStart), Status: "fail", Detail: fmt.Sprintf("repo %s 编译未通过", repo.ID)})
+				color.Yellow("   ⚠ repo %s 编译未通过", repo.ID)
+				return printRunSummary(steps, startedAt, false)
+			}
+		}
+		steps = append(steps, runStep{Name: "code", Duration: time.Since(stepStart), Status: "ok", Detail: fmt.Sprintf("all repos completed (%d)", len(taskReport.Repos.Repos))})
+		color.Green("   ✓ all repos code 完成 (%s)", formatDurationSeconds(time.Since(stepStart)))
 	} else {
+		report, codeErr := executePRDCodeForRepo(repoRoot, task.TaskID, branchName, "", prdCodeMaxRetry, func(chunk string) { fmt.Print(chunk) }, func(event generator.ToolEvent) { renderToolEvent(event) })
+		if codeErr != nil {
+			steps = append(steps, runStep{Name: "code", Duration: time.Since(stepStart), Status: "fail", Detail: codeErr.Error()})
+			color.Red("   ✗ code 生成失败: %v", codeErr)
+			return printRunSummary(steps, startedAt, false)
+		}
+
+		stepDetail := fmt.Sprintf("%d 文件, commit %s", len(report.FilesWritten), report.Commit)
+		if !report.BuildOK {
+			buildOK = false
+			steps = append(steps, runStep{Name: "code", Duration: time.Since(stepStart), Status: "fail", Detail: "编译未通过"})
+			color.Yellow("   ⚠ 编译未通过")
+			return printRunSummary(steps, startedAt, false)
+		}
 		steps = append(steps, runStep{Name: "code", Duration: time.Since(stepStart), Status: "ok", Detail: stepDetail})
 		color.Green("   ✓ code 完成 (%s)", formatDurationSeconds(time.Since(stepStart)))
 		color.Green("   ✓ worktree: %s", report.Worktree)
+
+		if taskReport.Repos != nil && len(taskReport.Repos.Repos) > 1 {
+			if refreshed, loadErr := prd.LoadTaskStatus(repoRoot, task.TaskID); loadErr == nil && len(refreshed.RepoNext) > 0 {
+				color.Cyan("   其他 repo 待执行:")
+				for _, action := range refreshed.RepoNext {
+					color.Cyan("      %s", action)
+				}
+			}
+		}
 	}
 
 	fmt.Println()
-	return printRunSummary(steps, startedAt, report.BuildOK)
+	return printRunSummary(steps, startedAt, buildOK)
 }
 
 func printRunSummary(steps []runStep, startedAt time.Time, buildOK bool) error {
 	color.Cyan("━━━ 汇总 ━━━")
 
 	allOK := true
+	hasSkip := false
 	for _, s := range steps {
 		icon := "✓"
 		if s.Status == "fail" {
@@ -201,6 +271,7 @@ func printRunSummary(steps []runStep, startedAt time.Time, buildOK bool) error {
 			allOK = false
 		} else if s.Status == "skip" {
 			icon = "-"
+			hasSkip = true
 		}
 		detail := ""
 		if s.Detail != "" {
@@ -213,10 +284,13 @@ func printRunSummary(steps []runStep, startedAt time.Time, buildOK bool) error {
 	}
 
 	fmt.Println()
-	if allOK && buildOK {
+	if allOK && buildOK && !hasSkip {
 		color.Green("✓ prd run 全部通过")
 		color.Green("  分支: prd_<task_id>")
 		color.Green("  next: 确认代码后执行 coco-ext push")
+	} else if allOK && hasSkip {
+		color.Yellow("⚠ prd run 已在 plan 阶段停止")
+		color.Yellow("  next: 根据 plan 结果决定是否继续执行 coco-ext prd code")
 	} else {
 		color.Yellow("⚠ prd run 部分失败，请检查上方日志")
 	}

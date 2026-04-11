@@ -68,6 +68,8 @@ func runPRDList(cmd *cobra.Command, args []string) error {
 			statusColor = color.WhiteString
 		case prd.TaskStatusCoded:
 			statusColor = color.GreenString
+		case prd.TaskStatusPartiallyCoded:
+			statusColor = color.MagentaString
 		case prd.TaskStatusPlanned:
 			statusColor = color.YellowString
 		}
@@ -77,9 +79,10 @@ func runPRDList(cmd *cobra.Command, args []string) error {
 			statusColor("[%s]", t.Status),
 			t.Title,
 		)
-		fmt.Printf("    created: %s  source: %s\n",
+		fmt.Printf("    created: %s  source: %s  repos: %d\n",
 			t.CreatedAt.Format("2006-01-02 15:04"),
 			t.SourceType,
+			t.RepoCount,
 		)
 		fmt.Println()
 	}

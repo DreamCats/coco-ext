@@ -9,10 +9,17 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/DreamCats/coco-acp-sdk/acp"
 	"github.com/DreamCats/coco-acp-sdk/daemon"
 	"github.com/DreamCats/coco-ext/internal/config"
 	"github.com/DreamCats/coco-ext/internal/daemonutil"
 )
+
+var knowledgeDisallowedTools = []string{
+	"Read", "Edit", "Write", "Replace",
+	"Bash", "Search", "Glob", "Grep",
+	"Todo", "TodoRead",
+}
 
 // CodePrompter 是代码生成所需的最小 prompt 接口。
 // Generator（daemon 模式）和 RawGenerator（直连模式）均实现此接口。
@@ -31,14 +38,32 @@ type Generator struct {
 // New 创建生成器，连接 coco daemon
 // 每次调用都会创建新的 session，由上游 agent 决策是否复用
 func New(repoPath string) (*Generator, error) {
+	return newGenerator(repoPath, nil)
+}
+
+// NewPromptOnly 创建禁用工具的生成器，适用于知识文件生成等纯文本输出场景。
+func NewPromptOnly(repoPath string) (*Generator, error) {
+	return newGenerator(repoPath, &daemon.DialOption{
+		ConfigDir: config.DefaultConfigDir(),
+		ServeFlags: &acp.ServeFlags{
+			DisallowedTools: knowledgeDisallowedTools,
+		},
+	})
+}
+
+func newGenerator(repoPath string, opt *daemon.DialOption) (*Generator, error) {
 	logPath, err := ensureDaemonStartWithLog(repoPath)
 	if err != nil {
 		return nil, fmt.Errorf("预启动 coco daemon 失败: %w", err)
 	}
 
-	conn, err := daemon.Dial(repoPath, &daemon.DialOption{
-		ConfigDir: config.DefaultConfigDir(),
-	})
+	if opt == nil {
+		opt = &daemon.DialOption{ConfigDir: config.DefaultConfigDir()}
+	} else if opt.ConfigDir == "" {
+		opt.ConfigDir = config.DefaultConfigDir()
+	}
+
+	conn, err := daemon.Dial(repoPath, opt)
 	if err != nil {
 		if logPath != "" {
 			return nil, fmt.Errorf("连接 coco daemon 失败: %w\n建议：先执行 `coco-ext doctor --fix` 或 `coco-ext daemon start -d --cwd .`\ndaemon 启动日志：%s", err, logPath)

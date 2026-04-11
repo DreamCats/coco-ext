@@ -39,10 +39,17 @@ func runInit(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("当前目录不是 git 仓库: %s", repoRoot)
 	}
 
-	// 检查 .livecoding/context/ 是否已存在
+	// 检查 .livecoding/context/ 是否已存在有效知识文件。
+	// 仅目录存在但为空时，允许继续初始化，避免中途中断后必须手动 --force。
 	contextDir := filepath.Join(repoRoot, config.ContextDir)
 	if _, err := os.Stat(contextDir); err == nil && !forceInit {
-		return fmt.Errorf(".livecoding/context/ 已存在，使用 --force 强制覆盖")
+		hasGeneratedFiles, statusErr := knowledge.HasGeneratedFiles(repoRoot)
+		if statusErr != nil {
+			return fmt.Errorf("检查 context 目录状态失败: %w", statusErr)
+		}
+		if hasGeneratedFiles {
+			return fmt.Errorf(".livecoding/context/ 已存在有效知识文件，使用 --force 强制覆盖")
+		}
 	}
 
 	// 1. 扫描仓库
@@ -61,7 +68,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 
 	// 3. 连接 coco daemon 生成知识文件
 	color.Cyan("正在连接 coco daemon...")
-	gen, err := generator.New(repoRoot)
+	gen, err := generator.NewPromptOnly(repoRoot)
 	if err != nil {
 		return err
 	}
