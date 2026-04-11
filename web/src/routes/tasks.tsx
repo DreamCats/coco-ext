@@ -1,5 +1,5 @@
 import { Link, Navigate, Outlet, useLocation, useNavigate, useParams } from '@tanstack/react-router'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   createTask,
   deleteTask,
@@ -37,6 +37,7 @@ export function TasksLayout() {
   const [createInput, setCreateInput] = useState('')
   const [createTitle, setCreateTitle] = useState('')
   const [selectedRepos, setSelectedRepos] = useState<RepoCandidate[]>([])
+  const createDialogRef = useRef<HTMLDivElement | null>(null)
 
   const repoOptions = useMemo(() => {
     const set = new Set<string>()
@@ -84,6 +85,25 @@ export function TasksLayout() {
     return () => {
       document.body.style.overflow = previousOverflow
       window.removeEventListener('keydown', onKeyDown)
+    }
+  }, [showCreateForm])
+
+  useEffect(() => {
+    if (!showCreateForm) {
+      return
+    }
+
+    const frame = window.requestAnimationFrame(() => {
+      const block = window.matchMedia('(min-width: 640px)').matches ? 'center' : 'end'
+      createDialogRef.current?.scrollIntoView({
+        behavior: 'smooth',
+        block,
+        inline: 'nearest',
+      })
+    })
+
+    return () => {
+      window.cancelAnimationFrame(frame)
     }
   }, [showCreateForm])
 
@@ -223,6 +243,7 @@ export function TasksLayout() {
           <div
             className="mx-4 my-4 flex max-h-[calc(100%-32px)] w-full flex-col overflow-hidden rounded-[28px] border border-stone-200 bg-white shadow-[0_30px_80px_rgba(15,23,42,0.18)] transition duration-200 ease-out dark:border-white/10 dark:bg-[#14171c] dark:shadow-[0_30px_80px_rgba(0,0,0,0.35)] sm:mx-6 sm:my-6 sm:max-w-[900px] sm:max-h-[calc(100%-48px)]"
             onClick={(event) => event.stopPropagation()}
+            ref={createDialogRef}
           >
             <div className="flex items-start justify-between gap-4 border-b border-stone-200 px-5 py-5 dark:border-white/10 md:px-6">
               <div>
