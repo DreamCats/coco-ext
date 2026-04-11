@@ -21,6 +21,8 @@ import (
 var (
 	prdCodeTaskID   string
 	prdCodeBranch   string
+	prdCodeRepoID   string
+	prdCodeAllRepos bool
 	prdCodeMaxRetry int
 )
 
@@ -35,6 +37,8 @@ func init() {
 	prdCmd.AddCommand(prdCodeCmd)
 	prdCodeCmd.Flags().StringVar(&prdCodeTaskID, "task", "", "指定 task id；默认读取最近一个 task")
 	prdCodeCmd.Flags().StringVar(&prdCodeBranch, "branch", "", "自定义分支名；默认 prd_<task_id>")
+	prdCodeCmd.Flags().StringVar(&prdCodeRepoID, "repo", "", "指定当前要执行 code 的 repo_id；默认使用当前仓库目录名")
+	prdCodeCmd.Flags().BoolVar(&prdCodeAllRepos, "all-repos", false, "按 task 绑定顺序依次执行所有 repo 的 code；失败即停")
 	prdCodeCmd.Flags().IntVar(&prdCodeMaxRetry, "max-retries", 2, "编译失败时最大重试次数")
 }
 
@@ -51,6 +55,9 @@ func runPRDCode(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	if prdCodeAllRepos && strings.TrimSpace(prdCodeRepoID) != "" {
+		return fmt.Errorf("--repo 与 --all-repos 互斥，请选择其中一种模式")
+	}
 
 	branchName := prdCodeBranch
 	if branchName == "" {
@@ -60,8 +67,16 @@ func runPRDCode(cmd *cobra.Command, args []string) error {
 	startedAt := time.Now()
 	color.Cyan("🤖 PRD Code")
 	color.Cyan("   task_id: %s", taskID)
+	if prdCodeAllRepos {
+		color.Cyan("   repos: all")
+	} else if prdCodeRepoID != "" {
+		color.Cyan("   repo: %s", prdCodeRepoID)
+	}
 	color.Cyan("   branch: %s", branchName)
-	report, err := executePRDCode(repoRoot, taskID, branchName, prdCodeMaxRetry, func(chunk string) {
+	if prdCodeAllRepos {
+		return runPRDCodeAllRepos(repoRoot, taskID, branchName, startedAt)
+	}
+	report, err := executePRDCodeForRepo(repoRoot, taskID, branchName, prdCodeRepoID, prdCodeMaxRetry, func(chunk string) {
 		fmt.Print(chunk)
 	}, func(event generator.ToolEvent) {
 		renderToolEvent(event)
@@ -71,6 +86,232 @@ func runPRDCode(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	renderSingleCodeReport(report, branchName, startedAt)
+	return nil
+}
+
+func runPRDCodeAllRepos(repoRoot, taskID, branchName string, startedAt time.Time) error {
+	task, err := prd.LoadTaskStatus(repoRoot, taskID)
+	if err != nil {
+		return err
+	}
+	if task.Repos == nil || len(task.Repos.Repos) == 0 {
+		return fmt.Errorf("task 未绑定任何 repo")
+	}
+
+	reports := make([]*prd.CodeResultReport, 0, len(task.Repos.Repos))
+	for idx, repo := range task.Repos.Repos {
+		color.Cyan("   [%d/%d] repo: %s", idx+1, len(task.Repos.Repos), repo.ID)
+		report, execErr := executePRDCodeForRepo(repo.Path, taskID, branchName, repo.ID, prdCodeMaxRetry, func(chunk string) {
+			fmt.Print(chunk)
+		}, func(event generator.ToolEvent) {
+			renderToolEvent(event)
+		})
+		fmt.Println()
+		if execErr != nil {
+			renderCodeBatchSummary(reports, branchName, startedAt)
+			return fmt.Errorf("repo %s 执行失败: %w", repo.ID, execErr)
+		}
+		reports = append(reports, report)
+		renderCodeRepoProgress(report)
+	}
+
+	renderCodeBatchSummary(reports, branchName, startedAt)
+	return nil
+}
+
+func executePRDCode(repoRoot, taskID, branchName string, maxRetries int, onChunk func(string), onTool func(generator.ToolEvent)) (*prd.CodeResultReport, error) {
+	return executePRDCodeForRepo(repoRoot, taskID, branchName, prdCodeRepoID, maxRetries, onChunk, onTool)
+}
+
+func executePRDCodeForRepo(repoRoot, taskID, branchName, repoID string, maxRetries int, onChunk func(string), onTool func(generator.ToolEvent)) (_ *prd.CodeResultReport, retErr error) {
+	startedAt := time.Now()
+	var logBuffer strings.Builder
+	taskDir := ""
+
+	defer func() {
+		if strings.TrimSpace(taskDir) == "" {
+			return
+		}
+		codeAppendLogLine(&logBuffer, "=== CODE LOG ===")
+		codeAppendLogLine(&logBuffer, fmt.Sprintf("task_id: %s", taskID))
+		codeAppendLogLine(&logBuffer, fmt.Sprintf("branch: %s", branchName))
+		codeAppendLogLine(&logBuffer, fmt.Sprintf("started_at: %s", startedAt.Format(time.RFC3339)))
+		if retErr != nil {
+			codeAppendLogLine(&logBuffer, fmt.Sprintf("result: error (%v)", retErr))
+		} else {
+			codeAppendLogLine(&logBuffer, "result: ok")
+		}
+		codeAppendLogLine(&logBuffer, fmt.Sprintf("finished_at: %s", time.Now().Format(time.RFC3339)))
+		codeAppendLogLine(&logBuffer, "=== END ===")
+
+		logPath := filepath.Join(taskDir, "code.log")
+		if err := os.WriteFile(logPath, []byte(logBuffer.String()), 0644); err != nil && retErr == nil {
+			retErr = fmt.Errorf("写入 code.log 失败: %w", err)
+		}
+	}()
+
+	codeAppendLogLine(&logBuffer, "=== SETUP ===")
+	codeAppendLogLine(&logBuffer, fmt.Sprintf("repo_root: %s", repoRoot))
+
+	var err error
+	taskDir, err = prd.PrepareAgentCode(repoRoot, taskID)
+	if err != nil {
+		codeAppendLogLine(&logBuffer, fmt.Sprintf("prepare_agent_code_error: %v", err))
+		return nil, err
+	}
+	codeAppendLogLine(&logBuffer, fmt.Sprintf("task_dir: %s", taskDir))
+	repoBinding, err := prd.ResolveTaskRepo(taskDir, repoRoot, repoID)
+	if err != nil {
+		codeAppendLogLine(&logBuffer, fmt.Sprintf("resolve_task_repo_error: %v", err))
+		return nil, err
+	}
+	codeAppendLogLine(&logBuffer, fmt.Sprintf("repo_id: %s", repoBinding.ID))
+	codeAppendLogLine(&logBuffer, fmt.Sprintf("repo_path: %s", repoBinding.Path))
+
+	workspace, err := prd.PrepareCodeWorkspace(repoRoot, taskID, branchName)
+	if err != nil {
+		codeAppendLogLine(&logBuffer, fmt.Sprintf("prepare_code_workspace_error: %v", err))
+		return nil, err
+	}
+	codeAppendLogLine(&logBuffer, fmt.Sprintf("worktree: %s", workspace.WorktreeDir))
+
+	agent, err := generator.NewAgent(workspace.WorktreeDir)
+	if err != nil {
+		codeAppendLogLine(&logBuffer, fmt.Sprintf("start_agent_error: %v", err))
+		return nil, fmt.Errorf("启动 AI agent 失败: %w", err)
+	}
+	defer agent.Close()
+
+	codeAppendLogLine(&logBuffer, "=== AGENT OUTPUT ===")
+	wrappedOnChunk := func(chunk string) {
+		logBuffer.WriteString(chunk)
+		if onChunk != nil {
+			onChunk(chunk)
+		}
+	}
+	wrappedOnTool := func(event generator.ToolEvent) {
+		codeAppendLogLine(&logBuffer, codeFormatToolEvent(event))
+		if onTool != nil {
+			onTool(event)
+		}
+	}
+
+	result, err := prd.GenerateCodeWithAgent(agent, workspace.WorktreeTaskDir, taskDir, time.Now(), wrappedOnChunk, wrappedOnTool)
+	if err != nil {
+		codeAppendLogLine(&logBuffer, fmt.Sprintf("generate_code_with_agent_error: %v", err))
+		return nil, err
+	}
+	codeAppendLogLine(&logBuffer, "")
+
+	if !result.BuildOK && maxRetries > 0 {
+		changedPkgs := codeExtractChangedPackages(workspace.WorktreeDir)
+		if len(changedPkgs) == 0 {
+			codeAppendLogLine(&logBuffer, "retry: 未检测到改动文件，跳过重试")
+			color.Yellow("      未检测到改动文件，跳过重试")
+		} else {
+			for attempt := 1; attempt <= maxRetries; attempt++ {
+				buildOutput, buildErr := codeRunBuildPackages(workspace.WorktreeDir, changedPkgs)
+				if buildErr == nil {
+					codeAppendLogLine(&logBuffer, fmt.Sprintf("retry_%d: build passed", attempt))
+					result.BuildOK = true
+					color.Green("      重试 %d/%d: 编译通过 ✓", attempt, maxRetries)
+					break
+				}
+
+				codeAppendLogLine(&logBuffer, fmt.Sprintf("=== RETRY %d/%d BUILD OUTPUT ===", attempt, maxRetries))
+				logBuffer.WriteString(buildOutput)
+				if !strings.HasSuffix(buildOutput, "\n") {
+					logBuffer.WriteString("\n")
+				}
+				color.Yellow("      重试 %d/%d: 编译失败，正在修复...", attempt, maxRetries)
+				followUp := fmt.Sprintf("编译失败，请修复以下错误：\n%s\n修复后重新运行 go build 验证，然后输出 === CODE RESULT ===", buildOutput)
+				codeAppendLogLine(&logBuffer, fmt.Sprintf("=== RETRY %d/%d AGENT OUTPUT ===", attempt, maxRetries))
+				reply, retryErr := agent.PromptWithTools(followUp, config.CodePromptTimeout, wrappedOnChunk, wrappedOnTool)
+				if onChunk != nil {
+					onChunk("\n")
+				}
+				if retryErr != nil && reply == "" {
+					codeAppendLogLine(&logBuffer, fmt.Sprintf("retry_%d_error: %v", attempt, retryErr))
+					color.Yellow("      重试失败: %v", retryErr)
+					break
+				}
+
+				cr := prd.ParseCodeResult(reply)
+				if cr != nil {
+					result.AgentReply += "\n" + reply
+					result.BuildOK = cr.BuildOK
+					if len(cr.Files) > 0 {
+						result.FilesChanged = cr.Files
+					}
+					if cr.Summary != "" {
+						result.Summary = cr.Summary
+					}
+					continue
+				}
+
+				if _, buildErr2 := codeRunBuildPackages(workspace.WorktreeDir, changedPkgs); buildErr2 == nil {
+					codeAppendLogLine(&logBuffer, fmt.Sprintf("retry_%d_postcheck: build passed", attempt))
+					result.BuildOK = true
+				}
+			}
+		}
+	}
+
+	changedFiles := result.FilesChanged
+	if len(changedFiles) == 0 {
+		changedFiles = codeCollectChanges(workspace.WorktreeDir)
+	} else {
+		gitChanged := codeCollectChanges(workspace.WorktreeDir)
+		if len(gitChanged) > 0 {
+			changedFiles = codeMergeFileLists(changedFiles, gitChanged)
+		}
+	}
+
+	commitHash := ""
+	if result.BuildOK && len(changedFiles) > 0 {
+		hash, commitErr := codeCommitOnBranch(workspace.WorktreeDir, taskID, changedFiles, result.Summary)
+		if commitErr != nil {
+			codeAppendLogLine(&logBuffer, fmt.Sprintf("auto_commit_error: %v", commitErr))
+			color.Yellow("⚠ auto-commit 失败: %v", commitErr)
+		} else {
+			codeAppendLogLine(&logBuffer, fmt.Sprintf("auto_commit: %s", hash))
+			commitHash = hash
+		}
+	}
+
+	report := &prd.CodeResultReport{
+		Status:       "success",
+		TaskID:       taskID,
+		RepoID:       repoBinding.ID,
+		RepoPath:     repoRoot,
+		Branch:       branchName,
+		Worktree:     workspace.WorktreeDir,
+		Commit:       commitHash,
+		BuildOK:      result.BuildOK,
+		FilesWritten: changedFiles,
+		Log:          filepath.Join(taskDir, "code.log"),
+		StartedAt:    startedAt.Format(time.RFC3339),
+		FinishedAt:   time.Now().Format(time.RFC3339),
+	}
+	if !result.BuildOK {
+		report.Status = "build_unknown"
+	}
+
+	if err := prd.WriteCodeResultReport(taskDir, *report); err != nil {
+		codeAppendLogLine(&logBuffer, fmt.Sprintf("write_code_result_error: %v", err))
+		return nil, fmt.Errorf("写入 code-result.json 失败: %w", err)
+	}
+	codeAppendLogLine(&logBuffer, "=== RESULT ===")
+	codeAppendLogLine(&logBuffer, fmt.Sprintf("build_ok: %t", report.BuildOK))
+	codeAppendLogLine(&logBuffer, fmt.Sprintf("files_written: %s", strings.Join(report.FilesWritten, ", ")))
+	codeAppendLogLine(&logBuffer, fmt.Sprintf("commit: %s", report.Commit))
+	codeAppendLogLine(&logBuffer, fmt.Sprintf("code_result_json: %s", filepath.Join(taskDir, "code-result.json")))
+
+	return report, nil
+}
+
+func renderSingleCodeReport(report *prd.CodeResultReport, branchName string, startedAt time.Time) {
 	color.Cyan("   worktree: %s", report.Worktree)
 	color.Cyan("   [3/3] 结果检查...")
 	if report.BuildOK {
@@ -97,119 +338,57 @@ func runPRDCode(cmd *cobra.Command, args []string) error {
 	color.Green("  worktree: %s", report.Worktree)
 	color.Green("  改动文件: %d 个", len(report.FilesWritten))
 	color.Green("⏱ 总耗时: %s", formatDurationSeconds(time.Since(startedAt)))
-
-	return nil
 }
 
-func executePRDCode(repoRoot, taskID, branchName string, maxRetries int, onChunk func(string), onTool func(generator.ToolEvent)) (*prd.CodeResultReport, error) {
-	startedAt := time.Now()
-
-	taskDir, err := prd.PrepareAgentCode(repoRoot, taskID)
-	if err != nil {
-		return nil, err
-	}
-
-	workspace, err := prd.PrepareCodeWorkspace(repoRoot, taskID, branchName)
-	if err != nil {
-		return nil, err
-	}
-
-	agent, err := generator.NewAgent(workspace.WorktreeDir)
-	if err != nil {
-		return nil, fmt.Errorf("启动 AI agent 失败: %w", err)
-	}
-	defer agent.Close()
-
-	result, err := prd.GenerateCodeWithAgent(agent, workspace.WorktreeTaskDir, taskDir, time.Now(), onChunk, onTool)
-	if err != nil {
-		return nil, err
-	}
-
-	if !result.BuildOK && maxRetries > 0 {
-		changedPkgs := codeExtractChangedPackages(workspace.WorktreeDir)
-		if len(changedPkgs) == 0 {
-			color.Yellow("      未检测到改动文件，跳过重试")
-		} else {
-			for attempt := 1; attempt <= maxRetries; attempt++ {
-				buildOutput, buildErr := codeRunBuildPackages(workspace.WorktreeDir, changedPkgs)
-				if buildErr == nil {
-					result.BuildOK = true
-					color.Green("      重试 %d/%d: 编译通过 ✓", attempt, maxRetries)
-					break
-				}
-
-				color.Yellow("      重试 %d/%d: 编译失败，正在修复...", attempt, maxRetries)
-				followUp := fmt.Sprintf("编译失败，请修复以下错误：\n%s\n修复后重新运行 go build 验证，然后输出 === CODE RESULT ===", buildOutput)
-				reply, retryErr := agent.PromptWithTools(followUp, config.CodePromptTimeout, onChunk, onTool)
-				if onChunk != nil {
-					onChunk("\n")
-				}
-				if retryErr != nil && reply == "" {
-					color.Yellow("      重试失败: %v", retryErr)
-					break
-				}
-
-				cr := prd.ParseCodeResult(reply)
-				if cr != nil {
-					result.AgentReply += "\n" + reply
-					result.BuildOK = cr.BuildOK
-					if len(cr.Files) > 0 {
-						result.FilesChanged = cr.Files
-					}
-					if cr.Summary != "" {
-						result.Summary = cr.Summary
-					}
-					continue
-				}
-
-				if _, buildErr2 := codeRunBuildPackages(workspace.WorktreeDir, changedPkgs); buildErr2 == nil {
-					result.BuildOK = true
-				}
-			}
-		}
-	}
-
-	changedFiles := result.FilesChanged
-	if len(changedFiles) == 0 {
-		changedFiles = codeCollectChanges(workspace.WorktreeDir)
+func renderCodeRepoProgress(report *prd.CodeResultReport) {
+	color.Cyan("   worktree: %s", report.Worktree)
+	if report.BuildOK {
+		color.Green("   编译通过 ✓")
 	} else {
-		gitChanged := codeCollectChanges(workspace.WorktreeDir)
-		if len(gitChanged) > 0 {
-			changedFiles = codeMergeFileLists(changedFiles, gitChanged)
+		color.Yellow("   编译状态未知")
+	}
+	if report.Commit != "" {
+		color.Green("   commit: %s", report.Commit)
+	}
+	if len(report.FilesWritten) > 0 {
+		color.Cyan("   改动文件: %d 个", len(report.FilesWritten))
+	}
+}
+
+func renderCodeBatchSummary(reports []*prd.CodeResultReport, branchName string, startedAt time.Time) {
+	color.Green("\n✓ prd code 完成")
+	color.Green("  分支: %s", branchName)
+	color.Cyan("  repo summary:")
+	for _, report := range reports {
+		status := "build_unknown"
+		if report.BuildOK {
+			status = "coded"
 		}
-	}
-
-	commitHash := ""
-	if result.BuildOK && len(changedFiles) > 0 {
-		hash, commitErr := codeCommitOnBranch(workspace.WorktreeDir, taskID, changedFiles, result.Summary)
-		if commitErr != nil {
-			color.Yellow("⚠ auto-commit 失败: %v", commitErr)
-		} else {
-			commitHash = hash
+		line := fmt.Sprintf("  - %s [%s]", report.RepoID, status)
+		if report.Commit != "" {
+			line += fmt.Sprintf(" commit=%s", report.Commit)
 		}
+		line += fmt.Sprintf(" files=%d", len(report.FilesWritten))
+		color.Cyan(line)
 	}
+	color.Green("⏱ 总耗时: %s", formatDurationSeconds(time.Since(startedAt)))
+}
 
-	report := &prd.CodeResultReport{
-		Status:       "success",
-		TaskID:       taskID,
-		Branch:       branchName,
-		Worktree:     workspace.WorktreeDir,
-		Commit:       commitHash,
-		BuildOK:      result.BuildOK,
-		FilesWritten: changedFiles,
-		Log:          filepath.Join(taskDir, "code.log"),
-		StartedAt:    startedAt.Format(time.RFC3339),
-		FinishedAt:   time.Now().Format(time.RFC3339),
-	}
-	if !result.BuildOK {
-		report.Status = "build_unknown"
-	}
+func codeAppendLogLine(b *strings.Builder, line string) {
+	b.WriteString(line)
+	b.WriteString("\n")
+}
 
-	if err := prd.WriteCodeResultReport(taskDir, *report); err != nil {
-		return nil, fmt.Errorf("写入 code-result.json 失败: %w", err)
+func codeFormatToolEvent(event generator.ToolEvent) string {
+	base := fmt.Sprintf("[tool] status=%s kind=%s title=%s", event.Status, event.Kind, event.Title)
+	if len(event.RawInput) == 0 {
+		return base
 	}
-
-	return report, nil
+	input := strings.TrimSpace(string(event.RawInput))
+	if input == "" {
+		return base
+	}
+	return base + " input=" + input
 }
 
 func buildPRDBranchName(taskID string) string {

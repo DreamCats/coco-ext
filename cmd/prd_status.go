@@ -47,8 +47,11 @@ func runPRDStatus(cmd *cobra.Command, args []string) error {
 	color.Cyan("📋 PRD Task Status")
 	color.Cyan("   task_id: %s", report.TaskID)
 	color.Cyan("   title: %s", report.Metadata.Title)
-	color.Cyan("   status: %s", report.Metadata.Status)
+	color.Cyan("   task status: %s", report.Metadata.Status)
 	color.Cyan("   task dir: %s", report.TaskDir)
+	if report.Repos != nil {
+		color.Cyan("   repos: %d", len(report.Repos.Repos))
+	}
 	if report.Source != nil {
 		color.Cyan("   source: %s", report.Source.Type)
 		if report.Source.URL != "" {
@@ -59,6 +62,28 @@ func runPRDStatus(cmd *cobra.Command, args []string) error {
 		}
 	}
 	fmt.Println()
+
+	if report.Repos != nil && len(report.Repos.Repos) > 0 {
+		color.Cyan("Repos")
+		counts := map[string]int{}
+		for _, repo := range report.Repos.Repos {
+			counts[repo.Status]++
+		}
+		color.Cyan("   summary: %s", formatCountMap(counts))
+		for _, repo := range report.Repos.Repos {
+			color.Cyan("   - %s [%s]", repo.ID, repo.Status)
+			if repo.Path != "" {
+				color.Cyan("     path: %s", repo.Path)
+			}
+			if repo.Branch != "" {
+				color.Cyan("     branch: %s", repo.Branch)
+			}
+			if repo.Worktree != "" {
+				color.Cyan("     worktree: %s", repo.Worktree)
+			}
+		}
+		fmt.Println()
+	}
 
 	color.Cyan("Artifacts")
 	for _, artifact := range report.Artifacts {
@@ -80,6 +105,12 @@ func runPRDStatus(cmd *cobra.Command, args []string) error {
 
 	color.Cyan("Next")
 	color.Green("   %s", report.NextCommand)
+	if len(report.RepoNext) > 0 {
+		color.Cyan("Repo Next")
+		for _, action := range report.RepoNext {
+			color.Green("   %s", action)
+		}
+	}
 
 	return nil
 }

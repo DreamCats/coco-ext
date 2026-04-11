@@ -8,6 +8,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	internalgit "github.com/DreamCats/coco-ext/internal/git"
 )
 
 // CodeWorkspace 描述 prd code 使用的隔离工作区。
@@ -21,9 +23,12 @@ type CodeWorkspace struct {
 
 // PrepareCodeWorkspace 创建或复用 prd code 专用 worktree，并同步 task/context 产物。
 func PrepareCodeWorkspace(repoRoot, taskID, branchName string) (*CodeWorkspace, error) {
-	mainTaskDir := filepath.Join(repoRoot, ".livecoding", "tasks", taskID)
-	if _, err := os.Stat(mainTaskDir); err != nil {
-		return nil, fmt.Errorf("task 目录不存在: %w", err)
+	mainTaskDir, err := findTaskDir(repoRoot, taskID)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, fmt.Errorf("task 目录不存在: %s", taskID)
+		}
+		return nil, fmt.Errorf("查找 task 目录失败: %w", err)
 	}
 
 	worktreeDir, err := BuildCodeWorktreePath(repoRoot, taskID)
@@ -34,9 +39,12 @@ func PrepareCodeWorkspace(repoRoot, taskID, branchName string) (*CodeWorkspace, 
 	if err := ensureCodeWorktree(repoRoot, worktreeDir, branchName); err != nil {
 		return nil, err
 	}
+	if err := ensureWorktreeIgnorePatterns(repoRoot); err != nil {
+		return nil, err
+	}
 
 	worktreeTaskDir := filepath.Join(worktreeDir, ".livecoding", "tasks", taskID)
-	if err := syncCodeWorkspaceArtifacts(repoRoot, worktreeDir, taskID); err != nil {
+	if err := syncCodeWorkspaceArtifacts(repoRoot, mainTaskDir, worktreeDir, taskID); err != nil {
 		return nil, err
 	}
 
@@ -47,6 +55,10 @@ func PrepareCodeWorkspace(repoRoot, taskID, branchName string) (*CodeWorkspace, 
 		WorktreeDir:     worktreeDir,
 		WorktreeTaskDir: worktreeTaskDir,
 	}, nil
+}
+
+func ensureWorktreeIgnorePatterns(repoRoot string) error {
+	return internalgit.EnsureLivecodingLocalIgnores(repoRoot)
 }
 
 // BuildCodeWorktreePath 返回指定 task 的 worktree 目录。
@@ -123,7 +135,7 @@ func ensureCodeWorktree(repoRoot, worktreeDir, branchName string) error {
 	return nil
 }
 
-func syncCodeWorkspaceArtifacts(repoRoot, worktreeDir, taskID string) error {
+func syncCodeWorkspaceArtifacts(repoRoot, mainTaskDir, worktreeDir, taskID string) error {
 	type syncPair struct {
 		src string
 		dst string
@@ -131,7 +143,7 @@ func syncCodeWorkspaceArtifacts(repoRoot, worktreeDir, taskID string) error {
 
 	pairs := []syncPair{
 		{
-			src: filepath.Join(repoRoot, ".livecoding", "tasks", taskID),
+			src: mainTaskDir,
 			dst: filepath.Join(worktreeDir, ".livecoding", "tasks", taskID),
 		},
 		{

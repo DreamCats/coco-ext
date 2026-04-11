@@ -45,11 +45,14 @@ coco-ext context status
 # 2. PRD 工作流
 cd /path/to/your/repo
 coco-ext prd run -i "做一个支持飞书链接导入的 PRD 工作流"   # 一键：refine → plan → code
+coco-ext prd run -i "跨仓需求" --repo /path/to/repo-b        # 多仓：默认只自动推进当前 repo 的 code
+coco-ext prd run -i "跨仓需求" --repo /path/to/repo-b --all-repos
 coco-ext prd refine --prd "做一个支持飞书链接导入的 PRD 工作流"
 coco-ext prd refine --prd https://bytedance.larkoffice.com/docx/xxx
 coco-ext prd status
 coco-ext prd plan
 coco-ext prd code           # 在隔离 worktree 中跑 agent，自主实现代码（编译失败自动重试）
+coco-ext prd code --all-repos
 coco-ext prd reset          # 不满意？清理 worktree/分支后重新 code
 coco-ext prd list
 
@@ -117,16 +120,20 @@ coco-ext prd run -i "需求描述或飞书链接"
 
 ### 分步执行
 
-- `coco-ext prd refine --prd <文本|本地文件|飞书链接>` 为需求生成 task 目录，落盘 `task.json`、`source.json`、`prd.source.md`、`prd-refined.md`
+- `coco-ext prd refine --prd <文本|本地文件|飞书链接>` 为需求生成全局 task 目录，默认落盘到 `~/.config/coco-ext/tasks/<task-id>/`
 - `coco-ext prd status` 查看最近 task 的当前状态、缺失产物和下一步命令
 - `coco-ext prd plan` 启动只读 explorer agent 调研仓库，生成 `design.md` 与 `plan.md`（失败回退本地模板）
-- `coco-ext prd code` 会先创建隔离 worktree，同步 task/context 产物后启动 yolo agent 自主实现代码；默认分支名为 `prd_<task_id>`，编译失败自动重试（按改动 package 定向编译），通过后 auto-commit
-- `coco-ext prd reset` 不满意时重置，删除 prd code 生成的 worktree 和分支，可重新执行 `prd code`
+- `coco-ext prd code` 会先创建隔离 worktree，同步 task/context 产物后启动 yolo agent 自主实现代码；默认分支名为 `prd_<task_id>`，支持通过 `--repo <repo_id>` 更新多仓 task 中某个仓库的 code 结果，也支持通过 `--all-repos` 按绑定顺序顺序执行所有 repo；多仓 task 下默认不传 `--repo` 会要求显式指定
+- `coco-ext prd reset` 不满意时重置；不传 `--repo` 时重置整个 task，传 `--repo` 时只重置指定仓库
 - `coco-ext prd list` 列出所有 task
+- `coco-ext prd archive` 不传 `--repo` 时归档整个 task，传 `--repo` 时只归档指定仓库
 
 ### Worktree 目录
 
 - `prd code` / `prd run` 的 code 阶段默认会在主仓库同级目录创建隔离 worktree
+- `prd run --all-repos` 会按 task 绑定顺序逐个 repo 执行 code，失败即停
+- `prd run` 在多仓 task 下默认只自动推进当前 repo；其他 repo 会在汇总中给出后续命令
+- 如果 `plan` 判定复杂度为“复杂”，`prd run` 会停止在 plan 阶段，不自动进入 code
 - 路径形态：`<repo-parent>/.coco-ext-worktree/<repo-name>-<repo-hash>/<task-id>`
 - 这样可以尽量保留与主仓库相近的目录结构，提高 Go 编译、`replace ../xxx` 和同级依赖场景下的兼容性
 - `.coco-ext-worktree/` 位于仓库外部，不属于当前仓库工作区，所以通常不需要修改当前仓库的 `.gitignore`
@@ -185,7 +192,7 @@ coco-ext prd run -i "需求描述或飞书链接"
 
 ## 本地 Metrics
 
-- `coco-ext metrics` 会聚合 `.livecoding/review`、`.livecoding/tasks`、`.livecoding/metrics/events.jsonl`
+- `coco-ext metrics` 会聚合 `.livecoding/review`、`~/.config/coco-ext/tasks`、`.livecoding/metrics/events.jsonl`
 - 当前指标包含三类：
   - review 运行次数、评级分布、P0/P1/P2 与 finding 总量
   - prd task 数量、状态分布、来源类型分布、plan complexity 分布

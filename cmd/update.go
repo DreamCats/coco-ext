@@ -61,7 +61,7 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 
 	// 3. 连接 coco daemon
 	color.Cyan("正在连接 coco daemon...")
-	gen, err := generator.New(repoRoot)
+	gen, err := generator.NewPromptOnly(repoRoot)
 	if err != nil {
 		return err
 	}

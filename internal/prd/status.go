@@ -5,7 +5,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
+	"regexp"
+	"strconv"
 	"time"
 )
 
@@ -20,12 +21,15 @@ type TaskStatusReport struct {
 	TaskDir     string
 	Metadata    TaskMetadata
 	Source      *SourceMetadata
+	Repos       *ReposMetadata
 	Artifacts   []ArtifactStatus
 	Missing     []string
 	NextCommand string
+	RepoNext    []string
 }
 
 var trackedArtifactNames = []string{
+	"repos.json",
 	"source.json",
 	"prd.source.md",
 	"prd-refined.md",
@@ -33,15 +37,16 @@ var trackedArtifactNames = []string{
 	"plan.md",
 }
 
+var reTaskPlanComplexity = regexp.MustCompile(`(?m)^- complexity:\s*([^\s]+)\s*\((\d+)\)\s*$`)
+
 // LoadTaskStatus 加载指定 task 的状态信息。
 func LoadTaskStatus(repoRoot, taskID string) (*TaskStatusReport, error) {
-	taskDir := filepath.Join(repoRoot, ".livecoding", "tasks", taskID)
-	info, err := os.Stat(taskDir)
+	taskDir, err := findTaskDir(repoRoot, taskID)
 	if err != nil {
-		return nil, fmt.Errorf("task 不存在: %s", taskID)
-	}
-	if !info.IsDir() {
-		return nil, fmt.Errorf("task 路径不是目录: %s", taskDir)
+		if os.IsNotExist(err) {
+			return nil, fmt.Errorf("task 不存在: %s", taskID)
+		}
+		return nil, fmt.Errorf("查找 task 失败: %w", err)
 	}
 
 	meta, err := readTaskMetadata(filepath.Join(taskDir, "task.json"))
@@ -50,6 +55,7 @@ func LoadTaskStatus(repoRoot, taskID string) (*TaskStatusReport, error) {
 	}
 
 	sourceMeta, _ := readSourceMetadata(filepath.Join(taskDir, "source.json"))
+	reposMeta, _ := readReposMetadata(reposMetadataPath(taskDir))
 	artifacts, missing := collectArtifacts(taskDir)
 
 	return &TaskStatusReport{
@@ -57,9 +63,11 @@ func LoadTaskStatus(repoRoot, taskID string) (*TaskStatusReport, error) {
 		TaskDir:     taskDir,
 		Metadata:    *meta,
 		Source:      sourceMeta,
+		Repos:       reposMeta,
 		Artifacts:   artifacts,
 		Missing:     missing,
-		NextCommand: suggestNextCommand(taskID, meta.Status, artifacts),
+		NextCommand: suggestNextCommand(taskDir, taskID, meta.Status, artifacts, reposMeta),
+		RepoNext:    buildRepoNextActions(taskID, reposMeta),
 	}, nil
 }
 
@@ -69,39 +77,14 @@ func ResolveTaskID(repoRoot, explicitTaskID string) (string, error) {
 		return explicitTaskID, nil
 	}
 
-	tasksRoot := filepath.Join(repoRoot, ".livecoding", "tasks")
-	entries, err := os.ReadDir(tasksRoot)
+	taskDirs, err := listTaskDirs(repoRoot)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return "", fmt.Errorf("未找到任何 task，请先执行 coco-ext prd refine")
-		}
-		return "", fmt.Errorf("读取 tasks 目录失败: %w", err)
+		return "", err
 	}
-
-	type taskEntry struct {
-		name    string
-		modTime time.Time
-	}
-	tasks := make([]taskEntry, 0, len(entries))
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
-		}
-		info, err := entry.Info()
-		if err != nil {
-			continue
-		}
-		tasks = append(tasks, taskEntry{name: entry.Name(), modTime: info.ModTime()})
-	}
-
-	if len(tasks) == 0 {
+	if len(taskDirs) == 0 {
 		return "", fmt.Errorf("未找到任何 task，请先执行 coco-ext prd refine")
 	}
-
-	sort.Slice(tasks, func(i, j int) bool {
-		return tasks[i].modTime.After(tasks[j].modTime)
-	})
-	return tasks[0].name, nil
+	return taskDirs[0].id, nil
 }
 
 func readTaskMetadata(path string) (*TaskMetadata, error) {
@@ -152,16 +135,21 @@ func collectArtifacts(taskDir string) ([]ArtifactStatus, []string) {
 	return artifacts, missing
 }
 
-func suggestNextCommand(taskID, status string, artifacts []ArtifactStatus) string {
+func suggestNextCommand(taskDir, taskID, status string, artifacts []ArtifactStatus, repos *ReposMetadata) string {
 	hasRefined := hasArtifact(artifacts, "prd-refined.md")
 	hasDesign := hasArtifact(artifacts, "design.md")
 	hasPlan := hasArtifact(artifacts, "plan.md")
 
 	switch {
 	case !hasRefined:
-		return fmt.Sprintf("coco-ext prd refine --task %s --prd .livecoding/tasks/%s/prd.source.md", taskID, taskID)
+		return fmt.Sprintf("coco-ext prd refine --task %s --prd %s", taskID, filepath.Join(taskDir, "prd.source.md"))
 	case !hasDesign || !hasPlan:
 		return fmt.Sprintf("coco-ext prd plan --task %s", taskID)
+	case status == TaskStatusCoding || status == TaskStatusPartiallyCoded:
+		if nextRepo := suggestNextRepo(repos); nextRepo != "" {
+			return fmt.Sprintf("coco-ext prd code --task %s --repo %s", taskID, nextRepo)
+		}
+		return fmt.Sprintf("task 部分仓库已进入 code 阶段，请查看 `coco-ext prd status --task %s` 中的 repo 状态后继续执行 `coco-ext prd code --task %s --repo <repo_id>`", taskID, taskID)
 	case status == TaskStatusPlanned:
 		return fmt.Sprintf("coco-ext prd code --task %s", taskID)
 	case status == TaskStatusCoded:
@@ -181,30 +169,19 @@ type TaskSummary struct {
 	CreatedAt  time.Time  `json:"created_at"`
 	UpdatedAt  time.Time  `json:"updated_at"`
 	SourceType SourceType `json:"source_type"`
+	RepoCount  int        `json:"repo_count,omitempty"`
 }
 
 // ListTasks 列出所有 task，按目录名排序（时间序）。可选按 status 过滤。
 func ListTasks(repoRoot string, filterStatus string) ([]TaskSummary, error) {
-	tasksRoot := filepath.Join(repoRoot, ".livecoding", "tasks")
-	entries, err := os.ReadDir(tasksRoot)
+	taskDirs, err := listTaskDirs(repoRoot)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil // 没有任何 task，返回空列表
-		}
-		return nil, fmt.Errorf("读取 tasks 目录失败: %w", err)
+		return nil, err
 	}
-
-	var dirs []string
-	for _, entry := range entries {
-		if entry.IsDir() {
-			dirs = append(dirs, entry.Name())
-		}
-	}
-	sort.Strings(dirs) // 目录名以时间戳开头，字符串排序即时间序
 
 	var tasks []TaskSummary
-	for _, name := range dirs {
-		metaPath := filepath.Join(tasksRoot, name, "task.json")
+	for _, dir := range taskDirs {
+		metaPath := filepath.Join(dir.path, "task.json")
 		meta, err := readTaskMetadata(metaPath)
 		if err != nil {
 			continue // 跳过损坏的 task
@@ -219,6 +196,7 @@ func ListTasks(repoRoot string, filterStatus string) ([]TaskSummary, error) {
 			CreatedAt:  meta.CreatedAt,
 			UpdatedAt:  meta.UpdatedAt,
 			SourceType: meta.SourceType,
+			RepoCount:  maxInt(meta.RepoCount, 1),
 		})
 	}
 	return tasks, nil
@@ -231,4 +209,66 @@ func hasArtifact(artifacts []ArtifactStatus, name string) bool {
 		}
 	}
 	return false
+}
+
+func maxInt(values ...int) int {
+	max := 0
+	for _, v := range values {
+		if v > max {
+			max = v
+		}
+	}
+	return max
+}
+
+func suggestNextRepo(repos *ReposMetadata) string {
+	if repos == nil {
+		return ""
+	}
+
+	for _, repo := range repos.Repos {
+		switch repo.Status {
+		case TaskStatusPlanned, TaskStatusInitialized, TaskStatusRefined, "", "pending", TaskStatusFailed:
+			return repo.ID
+		}
+	}
+	return ""
+}
+
+func buildRepoNextActions(taskID string, repos *ReposMetadata) []string {
+	if repos == nil {
+		return nil
+	}
+
+	actions := make([]string, 0, len(repos.Repos))
+	for _, repo := range repos.Repos {
+		switch repo.Status {
+		case TaskStatusInitialized, TaskStatusRefined, TaskStatusPlanned, "", "pending", TaskStatusFailed:
+			actions = append(actions, fmt.Sprintf("%s: coco-ext prd code --task %s --repo %s", repo.ID, taskID, repo.ID))
+		case TaskStatusCoding:
+			actions = append(actions, fmt.Sprintf("%s: 当前处于 coding，可等待完成或执行 reset -> coco-ext prd reset --task %s --repo %s", repo.ID, taskID, repo.ID))
+		case TaskStatusCoded:
+			actions = append(actions, fmt.Sprintf("%s: coco-ext prd archive --task %s --repo %s", repo.ID, taskID, repo.ID))
+		}
+	}
+	return actions
+}
+
+// ReadTaskComplexity 从 task 目录下的 plan.md 提取复杂度等级与分数。
+func ReadTaskComplexity(taskDir string) (level string, score int, err error) {
+	data, err := os.ReadFile(filepath.Join(taskDir, "plan.md"))
+	if err != nil {
+		return "", 0, err
+	}
+
+	matches := reTaskPlanComplexity.FindStringSubmatch(string(data))
+	if len(matches) != 3 {
+		return "", 0, nil
+	}
+
+	score, err = strconv.Atoi(matches[2])
+	if err != nil {
+		return "", 0, fmt.Errorf("解析复杂度分数失败: %w", err)
+	}
+	return matches[1], score, nil
 }

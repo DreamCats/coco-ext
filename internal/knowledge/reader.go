@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/DreamCats/coco-ext/internal/config"
@@ -11,11 +12,11 @@ import (
 
 // FileStatus 单个知识文件的状态
 type FileStatus struct {
-	Name     string    // 文件名
-	Exists   bool      // 是否存在
-	ModTime  time.Time // 最后修改时间
-	Size     int64     // 文件大小
-	Content  string    // 文件内容
+	Name    string    // 文件名
+	Exists  bool      // 是否存在
+	ModTime time.Time // 最后修改时间
+	Size    int64     // 文件大小
+	Content string    // 文件内容
 }
 
 // Status 知识库整体状态
@@ -53,6 +54,25 @@ func ReadStatus(repoRoot string) (*Status, error) {
 	}
 
 	return st, nil
+}
+
+// HasGeneratedFiles 返回 context 目录下是否已经存在有效知识文件。
+// 仅当文件存在且大小大于 0 时，才认为已有内容需要覆盖保护。
+func HasGeneratedFiles(repoRoot string) (bool, error) {
+	st, err := ReadStatus(repoRoot)
+	if err != nil {
+		return false, err
+	}
+	if !st.Exists {
+		return false, nil
+	}
+
+	for _, file := range st.Files {
+		if file.Exists && file.Size > 0 && strings.TrimSpace(file.Name) != "" {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // ReadFile 读取单个知识文件内容

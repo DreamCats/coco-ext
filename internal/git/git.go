@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 )
 
@@ -258,6 +259,133 @@ func IsModSumOnly(repoRoot string) (bool, error) {
 	}
 
 	return modSumOnly, nil
+}
+
+// EnsureInfoExcludePattern 确保 repo-local 的 .git/info/exclude 中包含指定模式。
+// 这不会修改受版本控制的 .gitignore，仅影响当前仓库的本地忽略规则。
+func EnsureInfoExcludePattern(repoRoot, pattern string) error {
+	pattern = strings.TrimSpace(pattern)
+	if pattern == "" {
+		return nil
+	}
+
+	cmd := exec.Command("git", "rev-parse", "--git-path", "info/exclude")
+	cmd.Dir = repoRoot
+	output, err := cmd.Output()
+	if err != nil {
+		return fmt.Errorf("定位 .git/info/exclude 失败: %w", err)
+	}
+
+	excludePath := strings.TrimSpace(string(output))
+	if excludePath == "" {
+		return fmt.Errorf("定位 .git/info/exclude 失败: 空路径")
+	}
+	if !filepath.IsAbs(excludePath) {
+		excludePath = filepath.Join(repoRoot, excludePath)
+	}
+
+	if err := os.MkdirAll(filepath.Dir(excludePath), 0755); err != nil {
+		return fmt.Errorf("创建 info 目录失败: %w", err)
+	}
+
+	existing := ""
+	if data, readErr := os.ReadFile(excludePath); readErr == nil {
+		existing = string(data)
+	} else if !os.IsNotExist(readErr) {
+		return fmt.Errorf("读取 .git/info/exclude 失败: %w", readErr)
+	}
+
+	for _, line := range strings.Split(existing, "\n") {
+		if strings.TrimSpace(line) == pattern {
+			return nil
+		}
+	}
+
+	var b strings.Builder
+	b.WriteString(existing)
+	if existing != "" && !strings.HasSuffix(existing, "\n") {
+		b.WriteString("\n")
+	}
+	b.WriteString(pattern)
+	b.WriteString("\n")
+
+	if err := os.WriteFile(excludePath, []byte(b.String()), 0644); err != nil {
+		return fmt.Errorf("写入 .git/info/exclude 失败: %w", err)
+	}
+	return nil
+}
+
+// RemoveInfoExcludePattern 从 repo-local 的 .git/info/exclude 中删除指定模式。
+func RemoveInfoExcludePattern(repoRoot, pattern string) error {
+	pattern = strings.TrimSpace(pattern)
+	if pattern == "" {
+		return nil
+	}
+
+	cmd := exec.Command("git", "rev-parse", "--git-path", "info/exclude")
+	cmd.Dir = repoRoot
+	output, err := cmd.Output()
+	if err != nil {
+		return fmt.Errorf("定位 .git/info/exclude 失败: %w", err)
+	}
+
+	excludePath := strings.TrimSpace(string(output))
+	if excludePath == "" {
+		return fmt.Errorf("定位 .git/info/exclude 失败: 空路径")
+	}
+	if !filepath.IsAbs(excludePath) {
+		excludePath = filepath.Join(repoRoot, excludePath)
+	}
+
+	data, err := os.ReadFile(excludePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("读取 .git/info/exclude 失败: %w", err)
+	}
+
+	lines := strings.Split(string(data), "\n")
+	filtered := make([]string, 0, len(lines))
+	changed := false
+	for _, line := range lines {
+		if strings.TrimSpace(line) == pattern {
+			changed = true
+			continue
+		}
+		filtered = append(filtered, line)
+	}
+	if !changed {
+		return nil
+	}
+
+	content := strings.Join(filtered, "\n")
+	content = strings.TrimRight(content, "\n") + "\n"
+	if err := os.WriteFile(excludePath, []byte(content), 0644); err != nil {
+		return fmt.Errorf("写入 .git/info/exclude 失败: %w", err)
+	}
+	return nil
+}
+
+// EnsureLivecodingLocalIgnores 为当前仓库配置 coco-ext 本地产物的忽略规则。
+// context 目录会保留可见，以便用户按需共享；其他运行产物进入 repo-local ignore。
+func EnsureLivecodingLocalIgnores(repoRoot string) error {
+	if err := RemoveInfoExcludePattern(repoRoot, ".livecoding/"); err != nil {
+		return fmt.Errorf("清理过宽的 .git/info/exclude 规则失败: %w", err)
+	}
+
+	patterns := []string{
+		".livecoding/tasks/",
+		".livecoding/logs/",
+		".livecoding/review/",
+		".livecoding/lint/",
+	}
+	for _, pattern := range patterns {
+		if err := EnsureInfoExcludePattern(repoRoot, pattern); err != nil {
+			return fmt.Errorf("更新 .git/info/exclude 失败: %w", err)
+		}
+	}
+	return nil
 }
 
 // IsGitRepo 检查是否是 git 仓库

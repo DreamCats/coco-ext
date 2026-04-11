@@ -61,6 +61,8 @@ type CodeResult struct {
 type CodeResultReport struct {
 	Status       string   `json:"status"`
 	TaskID       string   `json:"task_id"`
+	RepoID       string   `json:"repo_id,omitempty"`
+	RepoPath     string   `json:"repo_path,omitempty"`
 	Branch       string   `json:"branch"`
 	Worktree     string   `json:"worktree"`
 	Commit       string   `json:"commit,omitempty"`
@@ -74,7 +76,15 @@ type CodeResultReport struct {
 
 // WriteCodeResultReport 将结果写入 task 目录的 code-result.json。
 func WriteCodeResultReport(taskDir string, report CodeResultReport) error {
-	return writeJSONFile(filepath.Join(taskDir, "code-result.json"), report)
+	if err := writeJSONFile(filepath.Join(taskDir, "code-result.json"), report); err != nil {
+		return err
+	}
+	if report.RepoID != "" {
+		if err := writeJSONFile(filepath.Join(taskDir, "code-results", sanitizeRepoResultFileName(report.RepoID)+".json"), report); err != nil {
+			return err
+		}
+	}
+	return syncRepoBindingFromCodeResult(taskDir, report)
 }
 
 // ReadCodeResultReport 读取 code-result.json。
@@ -88,6 +98,34 @@ func ReadCodeResultReport(taskDir string) (*CodeResultReport, error) {
 		return nil, err
 	}
 	return &report, nil
+}
+
+func sanitizeRepoResultFileName(repoID string) string {
+	repoID = strings.TrimSpace(repoID)
+	if repoID == "" {
+		return "repo"
+	}
+
+	var b strings.Builder
+	for _, r := range repoID {
+		switch {
+		case r >= 'a' && r <= 'z':
+			b.WriteRune(r)
+		case r >= 'A' && r <= 'Z':
+			b.WriteRune(r + ('a' - 'A'))
+		case r >= '0' && r <= '9':
+			b.WriteRune(r)
+		case r == '-' || r == '_':
+			b.WriteRune(r)
+		default:
+			b.WriteRune('-')
+		}
+	}
+	result := strings.Trim(b.String(), "-")
+	if result == "" {
+		return "repo"
+	}
+	return result
 }
 
 // PrepareCodeBuild 校验 task 状态，读取 plan/design/context/源文件，返回 CodeBuild。
