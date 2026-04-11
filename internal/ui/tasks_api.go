@@ -3,13 +3,17 @@ package ui
 import (
 	"net/http"
 	"os"
-	"strings"
 
 	"github.com/DreamCats/coco-ext/internal/prd"
 )
 
 func (s *Server) handleTasks(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
+	switch r.Method {
+	case http.MethodGet:
+	case http.MethodPost:
+		s.handleCreateTask(w, r)
+		return
+	default:
 		writeJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
@@ -41,14 +45,17 @@ func (s *Server) handleTasks(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleTaskDetail(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		writeJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
-		return
-	}
-
-	taskID := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/tasks/"), "/")
+	taskID := parseTaskIDFromPath(r.URL.Path)
 	if taskID == "" {
 		writeJSONError(w, http.StatusBadRequest, "missing task id")
+		return
+	}
+	if r.Method == http.MethodDelete {
+		s.handleDeleteTask(w, r, taskID)
+		return
+	}
+	if r.Method != http.MethodGet {
+		writeJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
 

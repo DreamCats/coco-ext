@@ -1,9 +1,19 @@
-import { Link, Navigate, Outlet, useLocation, useParams } from '@tanstack/react-router'
+import { Link, Navigate, Outlet, useLocation, useNavigate, useParams } from '@tanstack/react-router'
 import { useEffect, useMemo, useState } from 'react'
-import { getTask, type TaskArtifactName, type TaskListItem, type TaskRecord, type TaskStatus } from '../api'
+import {
+  createTask,
+  deleteTask,
+  getTask,
+  type RepoCandidate,
+  type TaskArtifactName,
+  type TaskListItem,
+  type TaskRecord,
+  type TaskStatus,
+} from '../api'
 import { ActionPanel } from '../components/action-panel'
 import { ArtifactViewer, artifactLabel } from '../components/artifact-viewer'
 import { DiffPanel } from '../components/diff-panel'
+import { RepoPicker } from '../components/repo-picker'
 import {
   CompactField,
   FilterChip,
@@ -16,10 +26,17 @@ import {
 import { useAppData } from '../hooks/use-app-data'
 
 export function TasksLayout() {
-  const { tasks, loading, error } = useAppData()
+  const { tasks, loading, error, reload } = useAppData()
+  const navigate = useNavigate()
   const [query, setQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<'all' | TaskStatus>('all')
   const [repoFilter, setRepoFilter] = useState('all')
+  const [creating, setCreating] = useState(false)
+  const [createError, setCreateError] = useState('')
+  const [showCreateForm, setShowCreateForm] = useState(false)
+  const [createInput, setCreateInput] = useState('')
+  const [createTitle, setCreateTitle] = useState('')
+  const [selectedRepos, setSelectedRepos] = useState<RepoCandidate[]>([])
 
   const repoOptions = useMemo(() => {
     const set = new Set<string>()
@@ -51,17 +68,79 @@ export function TasksLayout() {
     })
   }, [tasks, query, statusFilter, repoFilter])
 
+  useEffect(() => {
+    if (!showCreateForm) {
+      return
+    }
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setShowCreateForm(false)
+        setCreateError('')
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.body.style.overflow = previousOverflow
+      window.removeEventListener('keydown', onKeyDown)
+    }
+  }, [showCreateForm])
+
+  async function submitCreateTask() {
+    try {
+      setCreating(true)
+      setCreateError('')
+      const result = await createTask({
+        input: createInput.trim(),
+        title: createTitle.trim() || undefined,
+        repos: selectedRepos.map((repo) => repo.path),
+      })
+      await reload()
+      setShowCreateForm(false)
+      setCreateInput('')
+      setCreateTitle('')
+      setSelectedRepos([])
+      void navigate({ to: '/tasks/$taskId', params: { taskId: result.task_id } })
+    } catch (err) {
+      setCreateError(err instanceof Error ? err.message : '创建 task 失败')
+    } finally {
+      setCreating(false)
+    }
+  }
+
+  function closeCreateForm() {
+    setShowCreateForm(false)
+    setCreateError('')
+    setSelectedRepos([])
+  }
+
   return (
-    <div className="grid gap-4 lg:h-[calc(100vh-235px)] lg:grid-cols-[360px_minmax(0,1fr)]">
-      <section className="overflow-hidden rounded-[24px] border border-stone-200 bg-stone-50/80 p-4">
+    <>
+      <div className="grid gap-4 lg:h-[calc(100vh-235px)] lg:grid-cols-[360px_minmax(0,1fr)]">
+      <section
+        className="rounded-[24px] border border-stone-200 bg-stone-50/80 p-4 lg:overflow-hidden"
+      >
         <div className="mb-4 flex items-start justify-between gap-3">
           <div>
-            <div className="text-xs font-semibold uppercase tracking-[0.22em] text-stone-500">PRD</div>
-            <h2 className="mt-2 text-2xl font-semibold tracking-[-0.04em] text-stone-950">任务流列表</h2>
+            <div className="text-xs font-semibold uppercase tracking-[0.22em] text-stone-500">Delivery Console</div>
+            <h2 className="mt-2 text-2xl font-semibold tracking-[-0.04em] text-stone-950">任务流与交付队列</h2>
+            <p className="mt-2 max-w-[280px] text-sm leading-6 text-stone-500">
+              从这里看当前有哪些需求在流转、哪些已经进入多仓 code、哪些还在等待下一步。
+            </p>
           </div>
-          <div className="rounded-2xl bg-stone-900 px-3 py-2 text-right text-white">
-            <div className="text-[11px] uppercase tracking-[0.24em] text-stone-400">Latest</div>
-            <div className="text-sm font-semibold">{tasks[0]?.updatedAt ?? '-'}</div>
+          <div className="flex flex-col gap-2">
+            <button
+              className="rounded-2xl bg-stone-900 px-4 py-3 text-sm font-semibold text-white transition hover:bg-stone-800"
+              onClick={() => setShowCreateForm((current) => !current)}
+              type="button"
+            >
+              {showCreateForm ? '收起 New Task' : 'New Task'}
+            </button>
+            <div className="rounded-2xl bg-stone-900 px-3 py-2 text-right text-white">
+              <div className="text-[11px] uppercase tracking-[0.24em] text-stone-400">Latest</div>
+              <div className="text-sm font-semibold">{tasks[0]?.updatedAt ?? '-'}</div>
+            </div>
           </div>
         </div>
 
@@ -134,7 +213,76 @@ export function TasksLayout() {
       <div className="min-h-0 overflow-hidden">
         <Outlet />
       </div>
-    </div>
+      </div>
+
+      {showCreateForm ? (
+        <div
+          className="absolute inset-4 z-50 flex items-end rounded-[28px] bg-stone-950/30 backdrop-blur-sm transition sm:items-center sm:justify-center lg:inset-5"
+          onClick={closeCreateForm}
+        >
+          <div
+            className="mx-4 my-4 flex max-h-[calc(100%-32px)] w-full flex-col overflow-hidden rounded-[28px] border border-stone-200 bg-white shadow-[0_30px_80px_rgba(15,23,42,0.18)] transition duration-200 ease-out sm:mx-6 sm:my-6 sm:max-w-[900px] sm:max-h-[calc(100%-48px)]"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-4 border-b border-stone-200 px-5 py-5 md:px-6">
+              <div>
+                <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-stone-500">Create Task</div>
+                <h3 className="mt-2 text-[30px] font-semibold tracking-[-0.05em] text-stone-950">新建需求任务</h3>
+                <p className="mt-2 text-sm leading-6 text-stone-500">
+                  这里创建的是全局 task。先明确需求输入和 repo scope，再由后台异步执行 refine。
+                </p>
+              </div>
+              <button
+                className="rounded-full border border-stone-200 px-3 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-stone-500 transition hover:border-stone-300 hover:text-stone-900"
+                onClick={closeCreateForm}
+                type="button"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 md:px-6">
+              <div className="space-y-4">
+              <textarea
+                className="min-h-32 w-full rounded-[22px] border border-stone-200 px-4 py-4 text-sm text-stone-900 outline-none focus:border-stone-400"
+                onChange={(event) => setCreateInput(event.target.value)}
+                placeholder="输入需求描述、PRD 文本或飞书链接"
+                value={createInput}
+              />
+              <input
+                className="w-full rounded-[22px] border border-stone-200 px-4 py-4 text-sm text-stone-900 outline-none focus:border-stone-400"
+                onChange={(event) => setCreateTitle(event.target.value)}
+                placeholder="可选标题"
+                type="text"
+                value={createTitle}
+              />
+              <RepoPicker onChange={setSelectedRepos} selectedRepos={selectedRepos} />
+              {createError ? <div className="text-sm text-rose-600">{createError}</div> : null}
+              </div>
+            </div>
+            <div className="border-t border-stone-200 px-5 py-4 md:px-6">
+              <div className="flex flex-wrap gap-2">
+                <button
+                  className="rounded-2xl bg-stone-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-stone-800 disabled:cursor-not-allowed disabled:opacity-60"
+                  disabled={creating || !createInput.trim() || selectedRepos.length === 0}
+                  onClick={() => void submitCreateTask()}
+                  type="button"
+                >
+                  {creating ? 'Creating...' : 'Create'}
+                </button>
+                <button
+                  className="rounded-2xl border border-stone-200 px-5 py-3 text-sm text-stone-700 transition hover:border-stone-300 hover:bg-stone-50"
+                  onClick={closeCreateForm}
+                  type="button"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </>
   )
 }
 
@@ -153,6 +301,8 @@ export function TasksIndexPage() {
 }
 
 export function TaskDetailPage() {
+  const navigate = useNavigate()
+  const { reload } = useAppData()
   const { taskId } = useParams({ from: '/tasks/$taskId' })
   const [task, setTask] = useState<TaskRecord | null>(null)
   const [artifact, setArtifact] = useState<TaskArtifactName>('prd-refined.md')
@@ -191,6 +341,34 @@ export function TaskDetailPage() {
     }
   }, [taskId])
 
+  useEffect(() => {
+    if (!task || task.status !== 'initialized') {
+      return
+    }
+
+    let cancelled = false
+    const timer = window.setInterval(() => {
+      void getTask(taskId)
+        .then((detail) => {
+          if (cancelled) {
+            return
+          }
+          setTask(detail)
+          const firstDiffRepo = detail.repos.find((repo) => repo.diffSummary)?.id ?? detail.repos[0]?.id ?? ''
+          setSelectedDiffRepo(firstDiffRepo)
+          if (detail.status !== 'initialized') {
+            void reload()
+          }
+        })
+        .catch(() => {})
+    }, 2500)
+
+    return () => {
+      cancelled = true
+      window.clearInterval(timer)
+    }
+  }, [task, taskId, reload])
+
   if (loading) {
     return <PanelMessage>正在加载 task 详情...</PanelMessage>
   }
@@ -200,6 +378,8 @@ export function TaskDetailPage() {
   if (!task) {
     return <PanelMessage>未找到对应 task。</PanelMessage>
   }
+  const deletableStatuses = new Set<TaskStatus>(['initialized', 'refined', 'planned', 'failed'])
+  const canDelete = deletableStatuses.has(task.status)
 
   return (
     <div className="space-y-4 lg:h-full lg:overflow-y-auto lg:pr-1">
@@ -221,6 +401,30 @@ export function TaskDetailPage() {
               <p className="mt-3 max-w-3xl text-sm leading-6 text-stone-300">
                 真实数据视图下，task 主记录、多仓 repo 状态、设计文档和 code 日志都在同一页汇总，方便回看和排障。
               </p>
+              {canDelete ? (
+                <div className="mt-4 flex flex-wrap items-center gap-3">
+                  <button
+                    className="rounded-2xl border border-rose-300/30 bg-rose-400/10 px-4 py-3 text-sm font-semibold text-rose-100 transition hover:border-rose-200/40 hover:bg-rose-400/20"
+                    onClick={async () => {
+                      const confirmed = window.confirm(`确认删除 task ${task.id}？仅允许删除未进入 code 的 task。`)
+                      if (!confirmed) {
+                        return
+                      }
+                      try {
+                        await deleteTask(task.id)
+                        await reload()
+                        void navigate({ to: '/tasks' })
+                      } catch (err) {
+                        window.alert(err instanceof Error ? err.message : '删除 task 失败')
+                      }
+                    }}
+                    type="button"
+                  >
+                    Delete Task
+                  </button>
+                  <span className="text-xs text-stone-400">只适用于未进入 code 的 task</span>
+                </div>
+              ) : null}
             </div>
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
               <CompactField label="task_id" value={task.id} />
@@ -254,6 +458,11 @@ export function TaskDetailPage() {
             <p className="mt-3 text-sm leading-6 text-emerald-100/85">
               下一步来源于 task 当前状态和 repo 子状态聚合，不再是静态 mock 文案。
             </p>
+            {task.status === 'initialized' ? (
+              <div className="mt-3 rounded-2xl border border-amber-300/20 bg-amber-400/10 px-4 py-3 text-sm leading-6 text-amber-100">
+                Refine 正在后台执行。页面会自动轮询并在 task 进入 `refined` 后刷新列表。
+              </div>
+            ) : null}
             <div className="mt-4 rounded-2xl border border-emerald-200/20 bg-stone-950/50 px-4 py-3 font-mono text-sm text-emerald-100">
               {task.nextAction}
             </div>
@@ -293,6 +502,7 @@ export function TaskDetailPage() {
 
         <aside className="space-y-4">
           <ActionPanel task={task} />
+          <DeletePolicyCard canDelete={canDelete} status={task.status} />
           <RepoScopeCard task={task} />
           <CodeResultCard task={task} />
           <DiffPanel repos={task.repos} selectedRepo={selectedDiffRepo} onSelectRepo={setSelectedDiffRepo} />
@@ -308,6 +518,29 @@ export function TaskDetailPage() {
         </aside>
       </div>
     </div>
+  )
+}
+
+function DeletePolicyCard({
+  canDelete,
+  status,
+}: {
+  canDelete: boolean
+  status: TaskStatus
+}) {
+  return (
+    <section className="rounded-[24px] border border-stone-200 bg-white p-4">
+      <div className="mb-3 text-xs font-semibold uppercase tracking-[0.22em] text-stone-500">Delete Policy</div>
+      {canDelete ? (
+        <div className="rounded-[18px] border border-emerald-200 bg-emerald-50 px-3 py-3 text-sm leading-6 text-emerald-800">
+          当前状态为 `{status}`，允许删除。删除动作只适用于未进入 code 的 task。
+        </div>
+      ) : (
+        <div className="rounded-[18px] border border-amber-200 bg-amber-50 px-3 py-3 text-sm leading-6 text-amber-900">
+          当前状态为 `{status}`，已进入或完成 code 阶段，不允许直接删除。
+        </div>
+      )}
+    </section>
   )
 }
 
@@ -332,7 +565,7 @@ function TaskListItemCard({ task }: { task: TaskListItem }) {
       <div className="mt-3 text-[17px] font-semibold leading-6 tracking-[-0.03em]">{task.title}</div>
       <div className={`mt-2 text-xs font-mono ${active ? 'text-stone-400' : 'text-stone-500'}`}>{task.id}</div>
       <div className={`mt-4 flex items-center justify-between text-xs ${active ? 'text-stone-300' : 'text-stone-500'}`}>
-        <span>{task.repoIds.slice(0, 2).join(', ') || '-'}</span>
+        <span>{task.status === 'initialized' ? 'Refining…' : task.repoIds.slice(0, 2).join(', ') || '-'}</span>
         <span>{task.repoCount} repo(s)</span>
       </div>
     </Link>

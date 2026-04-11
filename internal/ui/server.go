@@ -33,6 +33,10 @@ func (s *Server) Handler() http.Handler {
 }
 
 func (s *Server) registerRoutes() {
+	s.mux.HandleFunc("/api/fs/roots", s.handleFSRoots)
+	s.mux.HandleFunc("/api/fs/list", s.handleFSList)
+	s.mux.HandleFunc("/api/repos/recent", s.handleRecentRepos)
+	s.mux.HandleFunc("/api/repos/validate", s.handleValidateRepo)
 	s.mux.HandleFunc("/api/tasks", s.handleTasks)
 	s.mux.HandleFunc("/api/tasks/", s.handleTaskDetail)
 	s.mux.HandleFunc("/api/workspace", s.handleWorkspace)

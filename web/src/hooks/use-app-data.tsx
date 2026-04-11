@@ -13,6 +13,7 @@ type AppDataContextValue = {
   workspace: WorkspaceSummary | null
   loading: boolean
   error: string
+  reload: () => Promise<void>
 }
 
 const AppDataContext = createContext<AppDataContextValue>({
@@ -20,6 +21,7 @@ const AppDataContext = createContext<AppDataContextValue>({
   workspace: null,
   loading: true,
   error: '',
+  reload: async () => {},
 })
 
 export function AppDataProvider({ children }: { children: ReactNode }) {
@@ -28,38 +30,42 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
-  useEffect(() => {
-    let cancelled = false
-    async function load() {
-      try {
-        setLoading(true)
-        const [taskItems, workspaceSummary] = await Promise.all([listTasks(), getWorkspace()])
-        if (cancelled) {
-          return
-        }
-        setTasks(taskItems)
-        setWorkspace(workspaceSummary)
-        setError('')
-      } catch (err) {
-        if (cancelled) {
-          return
-        }
-        setError(err instanceof Error ? err.message : '加载数据失败')
-      } finally {
-        if (!cancelled) {
-          setLoading(false)
-        }
+  const load = async (cancelled = false) => {
+    try {
+      setLoading(true)
+      const [taskItems, workspaceSummary] = await Promise.all([listTasks(), getWorkspace()])
+      if (cancelled) {
+        return
+      }
+      setTasks(taskItems)
+      setWorkspace(workspaceSummary)
+      setError('')
+    } catch (err) {
+      if (cancelled) {
+        return
+      }
+      setError(err instanceof Error ? err.message : '加载数据失败')
+    } finally {
+      if (!cancelled) {
+        setLoading(false)
       }
     }
+  }
 
-    void load()
+  useEffect(() => {
+    let cancelled = false
+    void load(cancelled)
     return () => {
       cancelled = true
     }
   }, [])
 
+  const reload = async () => {
+    await load(false)
+  }
+
   const value = useMemo(
-    () => ({ tasks, workspace, loading, error }),
+    () => ({ tasks, workspace, loading, error, reload }),
     [tasks, workspace, loading, error],
   )
 

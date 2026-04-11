@@ -13,15 +13,15 @@ export function MetricCard({
 }) {
   const toneClass =
     tone === 'emerald'
-      ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+      ? 'border-emerald-200 bg-[linear-gradient(180deg,_rgba(16,185,129,0.12),_rgba(236,253,245,0.9))] text-emerald-800'
       : tone === 'amber'
-        ? 'border-amber-200 bg-amber-50 text-amber-800'
-        : 'border-sky-200 bg-sky-50 text-sky-800'
+        ? 'border-amber-200 bg-[linear-gradient(180deg,_rgba(245,158,11,0.12),_rgba(255,251,235,0.92))] text-amber-800'
+        : 'border-sky-200 bg-[linear-gradient(180deg,_rgba(14,165,233,0.12),_rgba(240,249,255,0.92))] text-sky-800'
 
   return (
-    <div className={`rounded-[20px] border px-4 py-3 ${toneClass}`}>
+    <div className={`rounded-[22px] border px-4 py-3 shadow-[0_10px_25px_rgba(15,23,42,0.04)] ${toneClass}`}>
       <div className="text-[11px] uppercase tracking-[0.2em] opacity-70">{label}</div>
-      <div className="mt-1 text-lg font-semibold">{value}</div>
+      <div className="mt-2 text-[28px] font-semibold tracking-[-0.04em]">{value}</div>
     </div>
   )
 }
@@ -39,14 +39,17 @@ export function TopNavItem({
 }) {
   return (
     <Link
-      className={`block min-w-[220px] rounded-[22px] border px-4 py-4 transition ${
+      className={`block min-w-[260px] rounded-[22px] border px-4 py-4 transition ${
         isActive
           ? 'border-stone-900 bg-stone-900 text-white shadow-[0_16px_30px_rgba(15,23,42,0.14)]'
-          : 'border-stone-200 bg-stone-50 text-stone-700 hover:border-stone-300 hover:bg-white'
+          : 'border-stone-200 bg-white text-stone-700 hover:border-stone-300 hover:bg-stone-50'
       }`}
       to={to}
     >
-      <div className="text-sm font-semibold">{title}</div>
+      <div className={`text-[11px] font-semibold uppercase tracking-[0.22em] ${isActive ? 'text-stone-400' : 'text-stone-500'}`}>
+        Capability
+      </div>
+      <div className="mt-2 text-lg font-semibold tracking-[-0.03em]">{title}</div>
       <div className={`mt-2 text-xs leading-5 ${isActive ? 'text-stone-300' : 'text-stone-500'}`}>{description}</div>
     </Link>
   )

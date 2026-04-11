@@ -75,9 +75,10 @@ func runPRDRun(cmd *cobra.Command, args []string) error {
 	stepStart := time.Now()
 
 	task, refineErr := prd.PrepareRefineTask(repoRoot, prd.RefineInput{
-		RawInput:  prdRunInput,
-		RepoPaths: prdRunRepos,
-		Now:       time.Now(),
+		RawInput:    prdRunInput,
+		RepoPaths:   prdRunRepos,
+		AutoAddRepo: true,
+		Now:         time.Now(),
 	})
 	if refineErr != nil {
 		return fmt.Errorf("refine 准备失败: %w", refineErr)

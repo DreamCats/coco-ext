@@ -56,6 +56,7 @@ type RefineInput struct {
 	Title        string
 	ExplicitTask string
 	RepoPaths    []string
+	AutoAddRepo  bool
 	Now          time.Time
 }
 
@@ -142,7 +143,7 @@ func PrepareRefineTask(repoRoot string, input RefineInput) (*RefineTask, error) 
 	if err := writeSourceArtifacts(task, input.Now); err != nil {
 		return nil, err
 	}
-	if err := initTaskRepos(taskDir, repoRoot, input.RepoPaths); err != nil {
+	if err := initTaskRepos(taskDir, repoRoot, input.RepoPaths, input.AutoAddRepo); err != nil {
 		return nil, fmt.Errorf("初始化 repos.json 失败: %w", err)
 	}
 
