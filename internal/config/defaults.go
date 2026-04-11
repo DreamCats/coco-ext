@@ -27,6 +27,12 @@ const (
 	// ContextPromptTimeout context init/update 专用超时，允许更长时间生成知识文件
 	ContextPromptTimeout = 5 * time.Minute
 
+	// RefinePromptTimeout prd refine 专用总超时上限
+	RefinePromptTimeout = 5 * time.Minute
+
+	// RefineChunkIdleTimeout prd refine 专用空闲超时，连续无 chunk 输出则判定超时
+	RefineChunkIdleTimeout = 75 * time.Second
+
 	// ReviewPromptTimeout review 专用超时，允许更长时间生成报告
 	ReviewPromptTimeout = 3 * time.Minute
 

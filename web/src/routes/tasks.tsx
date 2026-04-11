@@ -117,15 +117,15 @@ export function TasksLayout() {
 
   return (
     <>
-      <div className="grid gap-4 lg:h-[calc(100vh-235px)] lg:grid-cols-[360px_minmax(0,1fr)]">
+      <div className="grid gap-4 lg:h-[calc(100vh-235px)] lg:min-h-0 lg:grid-cols-[360px_minmax(0,1fr)]">
       <section
-        className="rounded-[24px] border border-stone-200 bg-stone-50/80 p-4 lg:overflow-hidden"
+        className="rounded-[24px] border border-stone-200 bg-stone-50/80 p-4 dark:border-white/10 dark:bg-white/5 lg:flex lg:min-h-0 lg:flex-col lg:overflow-hidden"
       >
         <div className="mb-4 flex items-start justify-between gap-3">
           <div>
-            <div className="text-xs font-semibold uppercase tracking-[0.22em] text-stone-500">Delivery Console</div>
-            <h2 className="mt-2 text-2xl font-semibold tracking-[-0.04em] text-stone-950">任务流与交付队列</h2>
-            <p className="mt-2 max-w-[280px] text-sm leading-6 text-stone-500">
+            <div className="text-xs font-semibold uppercase tracking-[0.22em] text-stone-500 dark:text-stone-400">Delivery Console</div>
+            <h2 className="mt-2 text-2xl font-semibold tracking-[-0.04em] text-stone-950 dark:text-stone-50">任务流与交付队列</h2>
+            <p className="mt-2 max-w-[280px] text-sm leading-6 text-stone-500 dark:text-stone-400">
               从这里看当前有哪些需求在流转、哪些已经进入多仓 code、哪些还在等待下一步。
             </p>
           </div>
@@ -137,8 +137,8 @@ export function TasksLayout() {
             >
               {showCreateForm ? '收起 New Task' : 'New Task'}
             </button>
-            <div className="rounded-2xl bg-stone-900 px-3 py-2 text-right text-white">
-              <div className="text-[11px] uppercase tracking-[0.24em] text-stone-400">Latest</div>
+            <div className="rounded-2xl bg-stone-900 px-3 py-2 text-right text-white dark:bg-stone-100 dark:text-stone-950">
+              <div className="text-[11px] uppercase tracking-[0.24em] text-stone-400 dark:text-stone-500">Latest</div>
               <div className="text-sm font-semibold">{tasks[0]?.updatedAt ?? '-'}</div>
             </div>
           </div>
@@ -158,7 +158,7 @@ export function TasksLayout() {
 
         <div className="mb-4 space-y-3">
           <input
-            className="w-full rounded-2xl border border-stone-200 bg-white px-3 py-3 text-sm text-stone-900 outline-none transition placeholder:text-stone-400 focus:border-stone-400"
+            className="w-full rounded-2xl border border-stone-200 bg-white px-3 py-3 text-sm text-stone-900 outline-none transition placeholder:text-stone-400 focus:border-stone-400 dark:border-white/10 dark:bg-stone-950/70 dark:text-stone-100 dark:placeholder:text-stone-500 dark:focus:border-white/20"
             onChange={(event) => setQuery(event.target.value)}
             placeholder="搜索 task / repo / task_id"
             type="text"
@@ -166,7 +166,7 @@ export function TasksLayout() {
           />
           <div className="grid grid-cols-2 gap-2">
             <select
-              className="rounded-2xl border border-stone-200 bg-white px-3 py-3 text-sm text-stone-700 outline-none focus:border-stone-400"
+              className="rounded-2xl border border-stone-200 bg-white px-3 py-3 text-sm text-stone-700 outline-none focus:border-stone-400 dark:border-white/10 dark:bg-stone-950/70 dark:text-stone-200 dark:focus:border-white/20"
               onChange={(event) => setStatusFilter(event.target.value as 'all' | TaskStatus)}
               value={statusFilter}
             >
@@ -179,7 +179,7 @@ export function TasksLayout() {
               <option value="failed">failed</option>
             </select>
             <select
-              className="rounded-2xl border border-stone-200 bg-white px-3 py-3 text-sm text-stone-700 outline-none focus:border-stone-400"
+              className="rounded-2xl border border-stone-200 bg-white px-3 py-3 text-sm text-stone-700 outline-none focus:border-stone-400 dark:border-white/10 dark:bg-stone-950/70 dark:text-stone-200 dark:focus:border-white/20"
               onChange={(event) => setRepoFilter(event.target.value)}
               value={repoFilter}
             >
@@ -202,7 +202,7 @@ export function TasksLayout() {
         ) : tasks.length === 0 ? (
           <PanelMessage>当前没有 task。</PanelMessage>
         ) : (
-          <div className="space-y-3 lg:max-h-[calc(100%-112px)] lg:overflow-y-auto lg:pr-1">
+          <div className="space-y-3 lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:pr-1">
             {filteredTasks.map((task) => (
               <TaskListItemCard key={task.id} task={task} />
             ))}
@@ -210,30 +210,30 @@ export function TasksLayout() {
         )}
       </section>
 
-      <div className="min-h-0 overflow-hidden">
+      <div className="min-h-0 overflow-hidden lg:min-h-0">
         <Outlet />
       </div>
       </div>
 
       {showCreateForm ? (
         <div
-          className="absolute inset-4 z-50 flex items-end rounded-[28px] bg-stone-950/30 backdrop-blur-sm transition sm:items-center sm:justify-center lg:inset-5"
+          className="absolute inset-4 z-50 flex items-end rounded-[28px] bg-stone-950/30 backdrop-blur-sm transition dark:bg-black/55 sm:items-center sm:justify-center lg:inset-5"
           onClick={closeCreateForm}
         >
           <div
-            className="mx-4 my-4 flex max-h-[calc(100%-32px)] w-full flex-col overflow-hidden rounded-[28px] border border-stone-200 bg-white shadow-[0_30px_80px_rgba(15,23,42,0.18)] transition duration-200 ease-out sm:mx-6 sm:my-6 sm:max-w-[900px] sm:max-h-[calc(100%-48px)]"
+            className="mx-4 my-4 flex max-h-[calc(100%-32px)] w-full flex-col overflow-hidden rounded-[28px] border border-stone-200 bg-white shadow-[0_30px_80px_rgba(15,23,42,0.18)] transition duration-200 ease-out dark:border-white/10 dark:bg-[#14171c] dark:shadow-[0_30px_80px_rgba(0,0,0,0.35)] sm:mx-6 sm:my-6 sm:max-w-[900px] sm:max-h-[calc(100%-48px)]"
             onClick={(event) => event.stopPropagation()}
           >
-            <div className="flex items-start justify-between gap-4 border-b border-stone-200 px-5 py-5 md:px-6">
+            <div className="flex items-start justify-between gap-4 border-b border-stone-200 px-5 py-5 dark:border-white/10 md:px-6">
               <div>
-                <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-stone-500">Create Task</div>
-                <h3 className="mt-2 text-[30px] font-semibold tracking-[-0.05em] text-stone-950">新建需求任务</h3>
-                <p className="mt-2 text-sm leading-6 text-stone-500">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-stone-500 dark:text-stone-400">Create Task</div>
+                <h3 className="mt-2 text-[30px] font-semibold tracking-[-0.05em] text-stone-950 dark:text-stone-50">新建需求任务</h3>
+                <p className="mt-2 text-sm leading-6 text-stone-500 dark:text-stone-400">
                   这里创建的是全局 task。先明确需求输入和 repo scope，再由后台异步执行 refine。
                 </p>
               </div>
               <button
-                className="rounded-full border border-stone-200 px-3 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-stone-500 transition hover:border-stone-300 hover:text-stone-900"
+                className="rounded-full border border-stone-200 px-3 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-stone-500 transition hover:border-stone-300 hover:text-stone-900 dark:border-white/10 dark:text-stone-400 dark:hover:border-white/20 dark:hover:text-stone-100"
                 onClick={closeCreateForm}
                 type="button"
               >
@@ -244,13 +244,13 @@ export function TasksLayout() {
             <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 md:px-6">
               <div className="space-y-4">
               <textarea
-                className="min-h-32 w-full rounded-[22px] border border-stone-200 px-4 py-4 text-sm text-stone-900 outline-none focus:border-stone-400"
+                className="min-h-32 w-full rounded-[22px] border border-stone-200 px-4 py-4 text-sm text-stone-900 outline-none focus:border-stone-400 dark:border-white/10 dark:bg-stone-950/70 dark:text-stone-100 dark:placeholder:text-stone-500 dark:focus:border-white/20"
                 onChange={(event) => setCreateInput(event.target.value)}
                 placeholder="输入需求描述、PRD 文本或飞书链接"
                 value={createInput}
               />
               <input
-                className="w-full rounded-[22px] border border-stone-200 px-4 py-4 text-sm text-stone-900 outline-none focus:border-stone-400"
+                className="w-full rounded-[22px] border border-stone-200 px-4 py-4 text-sm text-stone-900 outline-none focus:border-stone-400 dark:border-white/10 dark:bg-stone-950/70 dark:text-stone-100 dark:placeholder:text-stone-500 dark:focus:border-white/20"
                 onChange={(event) => setCreateTitle(event.target.value)}
                 placeholder="可选标题"
                 type="text"
@@ -260,7 +260,7 @@ export function TasksLayout() {
               {createError ? <div className="text-sm text-rose-600">{createError}</div> : null}
               </div>
             </div>
-            <div className="border-t border-stone-200 px-5 py-4 md:px-6">
+            <div className="border-t border-stone-200 px-5 py-4 dark:border-white/10 md:px-6">
               <div className="flex flex-wrap gap-2">
                 <button
                   className="rounded-2xl bg-stone-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-stone-800 disabled:cursor-not-allowed disabled:opacity-60"
@@ -271,7 +271,7 @@ export function TasksLayout() {
                   {creating ? 'Creating...' : 'Create'}
                 </button>
                 <button
-                  className="rounded-2xl border border-stone-200 px-5 py-3 text-sm text-stone-700 transition hover:border-stone-300 hover:bg-stone-50"
+                  className="rounded-2xl border border-stone-200 px-5 py-3 text-sm text-stone-700 transition hover:border-stone-300 hover:bg-stone-50 dark:border-white/10 dark:text-stone-300 dark:hover:border-white/20 dark:hover:bg-white/10"
                   onClick={closeCreateForm}
                   type="button"
                 >
@@ -460,7 +460,7 @@ export function TaskDetailPage() {
             </p>
             {task.status === 'initialized' ? (
               <div className="mt-3 rounded-2xl border border-amber-300/20 bg-amber-400/10 px-4 py-3 text-sm leading-6 text-amber-100">
-                Refine 正在后台执行。页面会自动轮询并在 task 进入 `refined` 后刷新列表。
+                Refine 正在后台执行。页面会自动轮询；如果长时间停留在当前状态，可以直接打开 `refine.log` 查看卡在哪一阶段。
               </div>
             ) : null}
             <div className="mt-4 rounded-2xl border border-emerald-200/20 bg-stone-950/50 px-4 py-3 font-mono text-sm text-emerald-100">
@@ -471,13 +471,13 @@ export function TaskDetailPage() {
       </section>
 
       <div className="grid gap-4 2xl:grid-cols-[minmax(0,1fr)_360px]">
-        <section className="rounded-[24px] border border-stone-200 bg-stone-50/70 p-4">
+        <section className="rounded-[24px] border border-stone-200 bg-stone-50/70 p-4 dark:border-white/10 dark:bg-white/5">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <div>
-              <div className="text-xs font-semibold uppercase tracking-[0.22em] text-stone-500">Artifacts</div>
-              <h4 className="mt-2 text-2xl font-semibold tracking-[-0.04em] text-stone-950">文档与结果产物</h4>
+              <div className="text-xs font-semibold uppercase tracking-[0.22em] text-stone-500 dark:text-stone-400">Artifacts</div>
+              <h4 className="mt-2 text-2xl font-semibold tracking-[-0.04em] text-stone-950 dark:text-stone-50">文档与结果产物</h4>
             </div>
-            <div className="text-sm text-stone-500">task 主目录下的真实文件内容与 code 日志</div>
+            <div className="text-sm text-stone-500 dark:text-stone-400">task 主目录下的真实文件内容与 code 日志</div>
           </div>
 
           <div className="mb-4 flex flex-wrap gap-2">
@@ -485,8 +485,8 @@ export function TaskDetailPage() {
               <button
                 className={`rounded-full border px-3 py-2 text-sm font-medium transition ${
                   artifact === name
-                    ? 'border-stone-900 bg-stone-900 text-white shadow-sm'
-                    : 'border-stone-200 bg-white text-stone-600 hover:border-stone-400 hover:text-stone-950'
+                    ? 'border-stone-900 bg-stone-900 text-white shadow-sm dark:border-stone-100 dark:bg-stone-100 dark:text-stone-950'
+                    : 'border-stone-200 bg-white text-stone-600 hover:border-stone-400 hover:text-stone-950 dark:border-white/10 dark:bg-stone-950/70 dark:text-stone-300 dark:hover:border-white/20 dark:hover:text-stone-100'
                 }`}
                 key={name}
                 onClick={() => setArtifact(name)}
@@ -506,13 +506,13 @@ export function TaskDetailPage() {
           <RepoScopeCard task={task} />
           <CodeResultCard task={task} />
           <DiffPanel repos={task.repos} selectedRepo={selectedDiffRepo} onSelectRepo={setSelectedDiffRepo} />
-          <section className="rounded-[24px] border border-stone-200 bg-white p-4">
-            <div className="text-xs font-semibold uppercase tracking-[0.22em] text-stone-500">Why This Matters</div>
-            <h4 className="mt-2 text-2xl font-semibold tracking-[-0.04em] text-stone-950">当前这一版的价值</h4>
-            <ul className="mt-4 space-y-3 text-sm leading-6 text-stone-600">
-              <li>把真实 task 数据接进现有样板，验证信息架构而不是继续靠 mock 想象。</li>
-              <li>把多仓 repo scope、分支、worktree、commit 和 code.log 放在一页里回看。</li>
-              <li>先做好只读工作台，再考虑后续的触发操作和控制面。</li>
+          <section className="rounded-[24px] border border-stone-200 bg-white p-4 dark:border-white/10 dark:bg-white/6">
+            <div className="text-xs font-semibold uppercase tracking-[0.22em] text-stone-500 dark:text-stone-400">Why This Matters</div>
+            <h4 className="mt-2 text-2xl font-semibold tracking-[-0.04em] text-stone-950 dark:text-stone-50">这版带来的直接价值</h4>
+            <ul className="mt-4 space-y-3 text-sm leading-6 text-stone-600 dark:text-stone-300">
+              <li>用户可以在一个页面里查看多仓 task 的关键状态，减少来回切换和沟通成本。</li>
+              <li>接入真实 task 数据后，页面展示和实际流程保持一致，更容易发现 repo scope、分支、worktree、commit 和 code.log 的问题。</li>
+              <li>先以只读工作台验证方案，投入更小、试错更快，再决定是否追加触发操作和控制能力。</li>
             </ul>
           </section>
         </aside>
@@ -529,14 +529,14 @@ function DeletePolicyCard({
   status: TaskStatus
 }) {
   return (
-    <section className="rounded-[24px] border border-stone-200 bg-white p-4">
-      <div className="mb-3 text-xs font-semibold uppercase tracking-[0.22em] text-stone-500">Delete Policy</div>
+    <section className="rounded-[24px] border border-stone-200 bg-white p-4 dark:border-white/10 dark:bg-white/6">
+      <div className="mb-3 text-xs font-semibold uppercase tracking-[0.22em] text-stone-500 dark:text-stone-400">Delete Policy</div>
       {canDelete ? (
-        <div className="rounded-[18px] border border-emerald-200 bg-emerald-50 px-3 py-3 text-sm leading-6 text-emerald-800">
+        <div className="rounded-[18px] border border-emerald-200 bg-emerald-50 px-3 py-3 text-sm leading-6 text-emerald-800 dark:border-emerald-300/20 dark:bg-emerald-400/10 dark:text-emerald-100">
           当前状态为 `{status}`，允许删除。删除动作只适用于未进入 code 的 task。
         </div>
       ) : (
-        <div className="rounded-[18px] border border-amber-200 bg-amber-50 px-3 py-3 text-sm leading-6 text-amber-900">
+        <div className="rounded-[18px] border border-amber-200 bg-amber-50 px-3 py-3 text-sm leading-6 text-amber-900 dark:border-amber-300/20 dark:bg-amber-400/10 dark:text-amber-100">
           当前状态为 `{status}`，已进入或完成 code 阶段，不允许直接删除。
         </div>
       )}
@@ -552,19 +552,19 @@ function TaskListItemCard({ task }: { task: TaskListItem }) {
     <Link
       className={`block rounded-[22px] border px-4 py-4 transition ${
         active
-          ? 'border-stone-900 bg-stone-900 text-white shadow-[0_16px_40px_rgba(15,23,42,0.2)]'
-          : 'border-stone-200 bg-white text-stone-900 hover:border-stone-300 hover:bg-stone-100/80'
+          ? 'border-stone-900 bg-stone-900 text-white shadow-[0_16px_40px_rgba(15,23,42,0.2)] dark:border-stone-100 dark:bg-stone-100 dark:text-stone-950'
+          : 'border-stone-200 bg-white text-stone-900 hover:border-stone-300 hover:bg-stone-100/80 dark:border-white/10 dark:bg-white/6 dark:text-stone-100 dark:hover:border-white/20 dark:hover:bg-white/10'
       }`}
       params={{ taskId: task.id }}
       to="/tasks/$taskId"
     >
       <div className="flex items-center justify-between gap-3">
         <StatusBadge status={task.status} />
-        <div className={`text-xs ${active ? 'text-stone-300' : 'text-stone-500'}`}>{task.updatedAt}</div>
+        <div className={`text-xs ${active ? 'text-stone-300 dark:text-stone-500' : 'text-stone-500 dark:text-stone-400'}`}>{task.updatedAt}</div>
       </div>
       <div className="mt-3 text-[17px] font-semibold leading-6 tracking-[-0.03em]">{task.title}</div>
-      <div className={`mt-2 text-xs font-mono ${active ? 'text-stone-400' : 'text-stone-500'}`}>{task.id}</div>
-      <div className={`mt-4 flex items-center justify-between text-xs ${active ? 'text-stone-300' : 'text-stone-500'}`}>
+      <div className={`mt-2 text-xs font-mono ${active ? 'text-stone-400 dark:text-stone-500' : 'text-stone-500 dark:text-stone-400'}`}>{task.id}</div>
+      <div className={`mt-4 flex items-center justify-between text-xs ${active ? 'text-stone-300 dark:text-stone-500' : 'text-stone-500 dark:text-stone-400'}`}>
         <span>{task.status === 'initialized' ? 'Refining…' : task.repoIds.slice(0, 2).join(', ') || '-'}</span>
         <span>{task.repoCount} repo(s)</span>
       </div>
@@ -574,8 +574,8 @@ function TaskListItemCard({ task }: { task: TaskListItem }) {
 
 function RepoScopeCard({ task }: { task: TaskRecord }) {
   return (
-    <section className="rounded-[24px] border border-stone-200 bg-white p-4">
-      <div className="mb-4 text-xs font-semibold uppercase tracking-[0.22em] text-stone-500">Repo Scope</div>
+    <section className="rounded-[24px] border border-stone-200 bg-white p-4 dark:border-white/10 dark:bg-white/6">
+      <div className="mb-4 text-xs font-semibold uppercase tracking-[0.22em] text-stone-500 dark:text-stone-400">Repo Scope</div>
       <div className="space-y-3">
         <KeyValue label="Repos Involved" value={`${task.repos.length}`} />
         <KeyValue label="Repo IDs" value={task.repos.map((repo) => repo.id).join(', ')} />
@@ -583,11 +583,11 @@ function RepoScopeCard({ task }: { task: TaskRecord }) {
 
       <div className="mt-4 space-y-2">
         {task.repos.map((repo) => (
-          <div className="rounded-[18px] border border-stone-200 bg-stone-50 px-3 py-3" key={repo.id}>
+          <div className="rounded-[18px] border border-stone-200 bg-stone-50 px-3 py-3 dark:border-white/10 dark:bg-white/5" key={repo.id}>
             <div className="flex items-center justify-between gap-3">
               <div>
-                <div className="text-sm font-semibold text-stone-950">{repo.displayName}</div>
-                <div className="mt-1 font-mono text-[11px] text-stone-500">{repo.path}</div>
+                <div className="text-sm font-semibold text-stone-950 dark:text-stone-50">{repo.displayName}</div>
+                <div className="mt-1 font-mono text-[11px] text-stone-500 dark:text-stone-400">{repo.path}</div>
               </div>
               <RepoStatusBadge status={repo.status} />
             </div>
@@ -600,8 +600,8 @@ function RepoScopeCard({ task }: { task: TaskRecord }) {
 
 function CodeResultCard({ task }: { task: TaskRecord }) {
   return (
-    <section className="rounded-[24px] border border-stone-200 bg-white p-4">
-      <div className="mb-4 text-xs font-semibold uppercase tracking-[0.22em] text-stone-500">Repo Code Results</div>
+    <section className="rounded-[24px] border border-stone-200 bg-white p-4 dark:border-white/10 dark:bg-white/6">
+      <div className="mb-4 text-xs font-semibold uppercase tracking-[0.22em] text-stone-500 dark:text-stone-400">Repo Code Results</div>
       <div className="space-y-4">
         {task.repos.map((repo) => (
           <RepoCodeResult key={repo.id} repo={repo} />
@@ -613,11 +613,11 @@ function CodeResultCard({ task }: { task: TaskRecord }) {
 
 function RepoCodeResult({ repo }: { repo: TaskRecord['repos'][number] }) {
   return (
-    <div className="rounded-[20px] border border-stone-200 bg-stone-50 p-4">
+    <div className="rounded-[20px] border border-stone-200 bg-stone-50 p-4 dark:border-white/10 dark:bg-white/5">
       <div className="mb-3 flex items-center justify-between gap-3">
         <div>
-          <div className="text-sm font-semibold text-stone-950">{repo.displayName}</div>
-          <div className="mt-1 text-[11px] uppercase tracking-[0.2em] text-stone-500">{repo.id}</div>
+          <div className="text-sm font-semibold text-stone-950 dark:text-stone-50">{repo.displayName}</div>
+          <div className="mt-1 text-[11px] uppercase tracking-[0.2em] text-stone-500 dark:text-stone-400">{repo.id}</div>
         </div>
         <RepoStatusBadge status={repo.status} />
       </div>
@@ -628,11 +628,11 @@ function RepoCodeResult({ repo }: { repo: TaskRecord['repos'][number] }) {
         <KeyValue label="Commit" mono value={repo.commit ?? '尚未提交'} />
       </div>
 
-      <div className="mt-4 rounded-[18px] border border-stone-200 bg-white px-3 py-3">
-        <div className="text-[11px] uppercase tracking-[0.2em] text-stone-500">Files Written</div>
+      <div className="mt-4 rounded-[18px] border border-stone-200 bg-white px-3 py-3 dark:border-white/10 dark:bg-stone-950/70">
+        <div className="text-[11px] uppercase tracking-[0.2em] text-stone-500 dark:text-stone-400">Files Written</div>
         <div className="mt-2 space-y-2">
           {(repo.filesWritten && repo.filesWritten.length > 0 ? repo.filesWritten : ['尚无写入结果']).map((file) => (
-            <div className="font-mono text-xs text-stone-800" key={file}>
+            <div className="font-mono text-xs text-stone-800 dark:text-stone-200" key={file}>
               {file}
             </div>
           ))}

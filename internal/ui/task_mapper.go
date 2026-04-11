@@ -89,10 +89,16 @@ func localOwner() string {
 }
 
 func missingArtifactPlaceholder(name string) string {
+	if name == "refine.log" {
+		return "当前没有可用的 refine.log。可能任务尚未启动 refine，或日志写入失败。"
+	}
 	return fmt.Sprintf("该 task 当前没有 `%s`。", name)
 }
 
 func emptyArtifactPlaceholder(name string) string {
+	if name == "refine.log" {
+		return "refine.log 当前为空。"
+	}
 	if name == "code.log" {
 		return "当前没有可用的 code.log。可能这个 task 是旧数据，或尚未进入 code 阶段。"
 	}

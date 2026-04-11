@@ -86,7 +86,7 @@ func runPRDRefine(cmd *cobra.Command, args []string) error {
 
 	color.Cyan("   [1/3] 正在检查并连接 coco daemon...")
 	connectStartedAt := time.Now()
-	gen, err := generator.New(repoRoot)
+	gen, err := generator.NewPromptOnly(repoRoot)
 	if err != nil {
 		color.Yellow("⚠ 连接 coco daemon 失败，使用本地兜底 refine: %v", err)
 		color.Yellow("  建议先执行：coco-ext doctor --fix")
@@ -128,7 +128,7 @@ func runPRDRefine(cmd *cobra.Command, args []string) error {
 			}
 		}
 	}()
-	refinedContent, err := gen.PromptWithTimeout(prompt, config.ReviewPromptTimeout, func(chunk string) {
+	refinedContent, err := gen.PromptWithIdleTimeout(prompt, config.RefinePromptTimeout, config.RefineChunkIdleTimeout, func(chunk string) {
 		streamBuffer.WriteString(chunk)
 		if streamStarted {
 			fmt.Print(chunk)
@@ -153,14 +153,14 @@ func runPRDRefine(cmd *cobra.Command, args []string) error {
 		clearRefineProgressLine()
 	}
 	if err != nil {
-		color.Yellow("⚠ AI refine 失败，使用本地兜底内容: %v", err)
-		refinedContent = prd.BuildFallbackRefinedContent(task.Title, task.Source.Content, err)
-	} else {
-		refinedContent = prd.ExtractRefinedContent(refinedContent)
-		if validateErr := prd.ValidateRefinedContent(refinedContent); validateErr != nil {
-			color.Yellow("⚠ AI refine 输出未通过校验，使用本地兜底内容: %v", validateErr)
-			refinedContent = prd.BuildFallbackRefinedContent(task.Title, task.Source.Content, validateErr)
-		}
+		color.Yellow("⚠ AI refine 发生异常，将优先尝试保留已输出内容: %v", err)
+	}
+	finalContent, usedFallback, note := prd.ResolveRefinedContent(task.Title, task.Source.Content, refinedContent, err)
+	refinedContent = finalContent
+	if usedFallback && note != nil {
+		color.Yellow("⚠ AI refine 回退到本地兜底内容: %v", note)
+	} else if !usedFallback && note != nil {
+		color.Yellow("⚠ AI refine 超时，但已保留可用的部分输出: %v", note)
 	}
 	clearRefineProgressLine()
 	color.Cyan("      生成耗时: %s", formatDurationSeconds(time.Since(generateStartedAt)))

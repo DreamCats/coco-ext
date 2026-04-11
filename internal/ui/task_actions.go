@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -81,35 +82,92 @@ func normalizeRepoPaths(paths []string) []string {
 	return normalized
 }
 
+func appendRefineLogLine(taskDir, line string) {
+	logPath := filepath.Join(taskDir, "refine.log")
+	logLine := fmt.Sprintf("%s %s\n", time.Now().Format("2006-01-02 15:04:05"), line)
+	file, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		return
+	}
+	defer file.Close()
+	_, _ = file.WriteString(logLine)
+}
+
 func (s *Server) runRefineTask(repoRoot string, task *prd.RefineTask) {
-	now := time.Now()
+	startedAt := time.Now()
+	appendRefineLogLine(task.TaskDir, "=== REFINE START ===")
+	appendRefineLogLine(task.TaskDir, fmt.Sprintf("task_id: %s", task.TaskID))
+	appendRefineLogLine(task.TaskDir, fmt.Sprintf("task_dir: %s", task.TaskDir))
+	appendRefineLogLine(task.TaskDir, fmt.Sprintf("source_type: %s", task.Source.Type))
+	appendRefineLogLine(task.TaskDir, fmt.Sprintf("supports_refine: %t", task.SupportsRefine))
 	if !task.SupportsRefine {
-		_ = prd.WriteRefinedContent(task, prd.BuildPendingRefinedContent(task), now, prd.TaskStatusInitialized)
+		appendRefineLogLine(task.TaskDir, "source_content_missing: skip AI refine and write pending refined content")
+		if err := prd.WriteRefinedContent(task, prd.BuildPendingRefinedContent(task), time.Now(), prd.TaskStatusInitialized); err != nil {
+			appendRefineLogLine(task.TaskDir, fmt.Sprintf("write_pending_refined_error: %v", err))
+			return
+		}
+		appendRefineLogLine(task.TaskDir, "status: initialized")
+		appendRefineLogLine(task.TaskDir, fmt.Sprintf("duration: %s", time.Since(startedAt).Round(time.Millisecond)))
 		return
 	}
 
-	gen, err := generator.New(repoRoot)
+	appendRefineLogLine(task.TaskDir, fmt.Sprintf("generator_init: begin (session timeout=%s)", config.ContextPromptTimeout))
+	gen, err := generator.NewPromptOnly(repoRoot)
 	if err != nil {
+		appendRefineLogLine(task.TaskDir, fmt.Sprintf("generator_init_error: %v", err))
 		fallback := prd.BuildFallbackRefinedContent(task.Title, task.Source.Content, err)
-		_ = prd.WriteRefinedContent(task, fallback, time.Now(), prd.TaskStatusRefined)
+		if writeErr := prd.WriteRefinedContent(task, fallback, time.Now(), prd.TaskStatusRefined); writeErr != nil {
+			appendRefineLogLine(task.TaskDir, fmt.Sprintf("write_fallback_refined_error: %v", writeErr))
+			return
+		}
+		appendRefineLogLine(task.TaskDir, "fallback_written: true")
+		appendRefineLogLine(task.TaskDir, "status: refined")
+		appendRefineLogLine(task.TaskDir, fmt.Sprintf("duration: %s", time.Since(startedAt).Round(time.Millisecond)))
 		return
 	}
 	defer gen.Close()
+	appendRefineLogLine(task.TaskDir, "generator_mode: prompt_only+yolo")
 
-	refinedContent, promptErr := gen.PromptWithTimeout(
+	appendRefineLogLine(task.TaskDir, fmt.Sprintf("prompt_start: total_timeout=%s idle_timeout=%s", config.RefinePromptTimeout, config.RefineChunkIdleTimeout))
+	firstChunkLogged := false
+	refinedContent, promptErr := gen.PromptWithIdleTimeout(
 		prd.BuildRefinedPrompt(task.Title, task.Source.Content),
-		config.ReviewPromptTimeout,
-		nil,
+		config.RefinePromptTimeout,
+		config.RefineChunkIdleTimeout,
+		func(chunk string) {
+			if firstChunkLogged {
+				return
+			}
+			firstChunkLogged = true
+			appendRefineLogLine(task.TaskDir, fmt.Sprintf("first_chunk_received: %d bytes", len(chunk)))
+		},
 	)
 	if promptErr != nil {
-		refinedContent = prd.BuildFallbackRefinedContent(task.Title, task.Source.Content, promptErr)
+		appendRefineLogLine(task.TaskDir, fmt.Sprintf("prompt_error: %v", promptErr))
+		appendRefineLogLine(task.TaskDir, fmt.Sprintf("prompt_partial_bytes: %d", len(refinedContent)))
 	} else {
-		refinedContent = prd.ExtractRefinedContent(refinedContent)
-		if validateErr := prd.ValidateRefinedContent(refinedContent); validateErr != nil {
-			refinedContent = prd.BuildFallbackRefinedContent(task.Title, task.Source.Content, validateErr)
+		appendRefineLogLine(task.TaskDir, fmt.Sprintf("prompt_ok: %d bytes", len(refinedContent)))
+	}
+	finalContent, usedFallback, note := prd.ResolveRefinedContent(task.Title, task.Source.Content, refinedContent, promptErr)
+	refinedContent = finalContent
+	if usedFallback {
+		appendRefineLogLine(task.TaskDir, "fallback_written: true")
+		if note != nil {
+			appendRefineLogLine(task.TaskDir, fmt.Sprintf("fallback_reason: %v", note))
+		}
+	} else {
+		appendRefineLogLine(task.TaskDir, "validate_ok: true")
+		if note != nil {
+			appendRefineLogLine(task.TaskDir, fmt.Sprintf("partial_output_preserved_after_error: %v", note))
 		}
 	}
-	_ = prd.WriteRefinedContent(task, refinedContent, time.Now(), prd.TaskStatusRefined)
+	if err := prd.WriteRefinedContent(task, refinedContent, time.Now(), prd.TaskStatusRefined); err != nil {
+		appendRefineLogLine(task.TaskDir, fmt.Sprintf("write_refined_error: %v", err))
+		return
+	}
+	appendRefineLogLine(task.TaskDir, "status: refined")
+	appendRefineLogLine(task.TaskDir, fmt.Sprintf("duration: %s", time.Since(startedAt).Round(time.Millisecond)))
+	appendRefineLogLine(task.TaskDir, "=== REFINE END ===")
 }
 
 func (s *Server) handleDeleteTask(w http.ResponseWriter, r *http.Request, taskID string) {

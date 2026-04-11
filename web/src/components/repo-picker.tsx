@@ -161,21 +161,21 @@ export function RepoPicker({
 
   return (
     <div className="space-y-4">
-      <div className="text-xs font-semibold uppercase tracking-[0.2em] text-stone-500">Repos</div>
+      <div className="text-xs font-semibold uppercase tracking-[0.2em] text-stone-500 dark:text-stone-400">Repos</div>
 
       <div className="space-y-2">
         {selectedRepos.length > 0 ? (
           selectedRepos.map((repo) => (
             <div
-              className="flex items-start justify-between gap-3 rounded-[18px] border border-stone-200 bg-stone-50 px-3 py-3"
+              className="flex items-start justify-between gap-3 rounded-[18px] border border-stone-200 bg-stone-50 px-3 py-3 dark:border-white/10 dark:bg-white/5"
               key={repo.path}
             >
               <div className="min-w-0">
-                <div className="text-sm font-semibold text-stone-950">{repo.displayName}</div>
-                <div className="mt-1 break-all font-mono text-xs leading-5 text-stone-500">{repo.path}</div>
+                <div className="text-sm font-semibold text-stone-950 dark:text-stone-50">{repo.displayName}</div>
+                <div className="mt-1 break-all font-mono text-xs leading-5 text-stone-500 dark:text-stone-400">{repo.path}</div>
               </div>
               <button
-                className="rounded-full border border-stone-200 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-stone-500 transition hover:border-stone-300 hover:text-stone-900"
+                className="rounded-full border border-stone-200 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-stone-500 transition hover:border-stone-300 hover:text-stone-900 dark:border-white/10 dark:text-stone-400 dark:hover:border-white/20 dark:hover:text-stone-100"
                 onClick={() => removeRepo(repo.path)}
                 type="button"
               >
@@ -184,7 +184,7 @@ export function RepoPicker({
             </div>
           ))
         ) : (
-          <div className="rounded-[18px] border border-dashed border-stone-300 bg-stone-50 px-4 py-4 text-sm text-stone-500">
+          <div className="rounded-[18px] border border-dashed border-stone-300 bg-stone-50 px-4 py-4 text-sm text-stone-500 dark:border-white/15 dark:bg-white/5 dark:text-stone-400">
             还没有选择 repo。可以从 recent repos 里加入，或者在右侧浏览远程开发机上的目录树。
           </div>
         )}
@@ -193,11 +193,11 @@ export function RepoPicker({
       {pickerError ? <div className="text-sm text-rose-600">{pickerError}</div> : null}
 
       <div className="grid gap-4 md:grid-cols-[0.95fr_1.05fr]">
-        <section className="rounded-[20px] border border-stone-200 bg-white p-4">
+        <section className="rounded-[20px] border border-stone-200 bg-white p-4 dark:border-white/10 dark:bg-white/6">
           <div className="flex items-center justify-between gap-3">
-            <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-stone-500">Recent Repos</div>
+            <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-stone-500 dark:text-stone-400">Recent Repos</div>
             <input
-              className="w-44 rounded-full border border-stone-200 px-3 py-2 text-xs text-stone-700 outline-none focus:border-stone-400"
+              className="w-44 rounded-full border border-stone-200 px-3 py-2 text-xs text-stone-700 outline-none focus:border-stone-400 dark:border-white/10 dark:bg-stone-950/70 dark:text-stone-200 dark:placeholder:text-stone-500 dark:focus:border-white/20"
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Filter recent repos"
               type="text"
@@ -206,7 +206,7 @@ export function RepoPicker({
           </div>
           <div className="mt-3 space-y-2">
             {loadingRecent ? (
-              <div className="rounded-[18px] border border-dashed border-stone-300 bg-stone-50 px-3 py-4 text-sm text-stone-500">
+              <div className="rounded-[18px] border border-dashed border-stone-300 bg-stone-50 px-3 py-4 text-sm text-stone-500 dark:border-white/15 dark:bg-white/5 dark:text-stone-400">
                 正在加载 recent repos...
               </div>
             ) : filteredRecent.length > 0 ? (
@@ -214,41 +214,41 @@ export function RepoPicker({
                 <button
                   className={`flex w-full items-start justify-between gap-3 rounded-[18px] border px-3 py-3 text-left transition ${
                     selectedPaths.has(repo.path)
-                      ? 'border-emerald-300 bg-emerald-50/80'
-                      : 'border-stone-200 bg-stone-50 hover:border-stone-300 hover:bg-stone-100'
+                      ? 'border-emerald-300 bg-emerald-50/80 dark:border-emerald-300/30 dark:bg-emerald-400/10'
+                      : 'border-stone-200 bg-stone-50 hover:border-stone-300 hover:bg-stone-100 dark:border-white/10 dark:bg-white/5 dark:hover:border-white/20 dark:hover:bg-white/10'
                   }`}
                   key={repo.path}
                   onClick={() => addRepo(repo)}
                   type="button"
                 >
                   <div className="min-w-0">
-                    <div className="text-sm font-semibold text-stone-950">{repo.displayName}</div>
-                    <div className="mt-1 break-all font-mono text-xs leading-5 text-stone-500">{repo.path}</div>
+                    <div className="text-sm font-semibold text-stone-950 dark:text-stone-50">{repo.displayName}</div>
+                    <div className="mt-1 break-all font-mono text-xs leading-5 text-stone-500 dark:text-stone-400">{repo.path}</div>
                   </div>
-                  <div className="shrink-0 text-right text-[11px] uppercase tracking-[0.18em] text-stone-500">
+                  <div className="shrink-0 text-right text-[11px] uppercase tracking-[0.18em] text-stone-500 dark:text-stone-400">
                     {repo.taskCount ? `${repo.taskCount} tasks` : 'recent'}
                     {repo.lastSeenAt ? <div className="mt-1 normal-case tracking-normal">{repo.lastSeenAt}</div> : null}
                   </div>
                 </button>
               ))
             ) : (
-              <div className="rounded-[18px] border border-dashed border-stone-300 bg-stone-50 px-3 py-4 text-sm text-stone-500">
+              <div className="rounded-[18px] border border-dashed border-stone-300 bg-stone-50 px-3 py-4 text-sm text-stone-500 dark:border-white/15 dark:bg-white/5 dark:text-stone-400">
                 {query ? '没有匹配的 recent repos。' : '还没有 recent repos。'}
               </div>
             )}
           </div>
         </section>
 
-        <section className="rounded-[20px] border border-stone-200 bg-white p-4">
+        <section className="rounded-[20px] border border-stone-200 bg-white p-4 dark:border-white/10 dark:bg-white/6">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-stone-500">Remote Browser</div>
+            <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-stone-500 dark:text-stone-400">Remote Browser</div>
             <div className="flex flex-wrap gap-2">
               {roots.map((root) => (
                 <button
                   className={`rounded-full border px-3 py-2 text-xs font-semibold uppercase tracking-[0.18em] transition ${
                     browserPath === root.path
-                      ? 'border-stone-900 bg-stone-900 text-white'
-                      : 'border-stone-200 text-stone-500 hover:border-stone-300 hover:text-stone-900'
+                      ? 'border-stone-900 bg-stone-900 text-white dark:border-stone-100 dark:bg-stone-100 dark:text-stone-950'
+                      : 'border-stone-200 text-stone-500 hover:border-stone-300 hover:text-stone-900 dark:border-white/10 dark:text-stone-400 dark:hover:border-white/20 dark:hover:text-stone-100'
                   }`}
                   key={root.path}
                   onClick={() => void loadBrowser(root.path)}
@@ -260,16 +260,16 @@ export function RepoPicker({
             </div>
           </div>
 
-          <div className="mt-3 rounded-[18px] border border-stone-200 bg-stone-50 px-3 py-3">
-            <div className="text-[11px] uppercase tracking-[0.18em] text-stone-500">Current Path</div>
-            <div className="mt-2 break-all font-mono text-xs text-stone-700">{browserPath || '-'}</div>
+          <div className="mt-3 rounded-[18px] border border-stone-200 bg-stone-50 px-3 py-3 dark:border-white/10 dark:bg-white/5">
+            <div className="text-[11px] uppercase tracking-[0.18em] text-stone-500 dark:text-stone-400">Current Path</div>
+            <div className="mt-2 break-all font-mono text-xs text-stone-700 dark:text-stone-300">{browserPath || '-'}</div>
             <div className="mt-3 flex flex-wrap gap-2">
               {breadcrumbs.map((item) => (
                 <button
                   className={`rounded-full border px-3 py-2 text-xs transition ${
                     browserPath === item.path
-                      ? 'border-stone-900 bg-stone-900 text-white'
-                      : 'border-stone-200 bg-white text-stone-600 hover:border-stone-300 hover:text-stone-900'
+                      ? 'border-stone-900 bg-stone-900 text-white dark:border-stone-100 dark:bg-stone-100 dark:text-stone-950'
+                      : 'border-stone-200 bg-white text-stone-600 hover:border-stone-300 hover:text-stone-900 dark:border-white/10 dark:bg-stone-950/70 dark:text-stone-300 dark:hover:border-white/20 dark:hover:text-stone-100'
                   }`}
                   key={item.path}
                   onClick={() => void loadBrowser(item.path)}
@@ -281,7 +281,7 @@ export function RepoPicker({
             </div>
             <div className="mt-3 flex gap-2">
               <button
-                className="rounded-full border border-stone-200 px-3 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-stone-500 transition hover:border-stone-300 hover:text-stone-900 disabled:cursor-not-allowed disabled:opacity-50"
+                className="rounded-full border border-stone-200 px-3 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-stone-500 transition hover:border-stone-300 hover:text-stone-900 disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/10 dark:text-stone-400 dark:hover:border-white/20 dark:hover:text-stone-100"
                 disabled={!parentPath}
                 onClick={() => void loadBrowser(parentPath)}
                 type="button"
@@ -293,7 +293,7 @@ export function RepoPicker({
 
           <div className="mt-3 flex gap-2">
             <input
-              className="min-w-0 flex-1 rounded-2xl border border-stone-200 px-3 py-3 font-mono text-sm text-stone-900 outline-none focus:border-stone-400"
+              className="min-w-0 flex-1 rounded-2xl border border-stone-200 px-3 py-3 font-mono text-sm text-stone-900 outline-none focus:border-stone-400 dark:border-white/10 dark:bg-stone-950/70 dark:text-stone-200 dark:placeholder:text-stone-500 dark:focus:border-white/20"
               onChange={(event) => setManualPath(event.target.value)}
               placeholder="/path/to/remote/repo"
               type="text"
@@ -308,20 +308,22 @@ export function RepoPicker({
               {validating ? 'Checking...' : 'Validate & Add'}
             </button>
           </div>
-          <div className="mt-2 text-xs leading-5 text-stone-500">
+          <div className="mt-2 text-xs leading-5 text-stone-500 dark:text-stone-400">
             这里浏览和校验的是运行 `coco-ext ui serve` 的那台机器上的目录，不是你本地浏览器电脑的文件系统。
           </div>
 
           <div className="mt-4 max-h-72 space-y-2 overflow-y-auto pr-1">
             {loadingBrowser ? (
-              <div className="rounded-[18px] border border-dashed border-stone-300 bg-stone-50 px-3 py-4 text-sm text-stone-500">
+              <div className="rounded-[18px] border border-dashed border-stone-300 bg-stone-50 px-3 py-4 text-sm text-stone-500 dark:border-white/15 dark:bg-white/5 dark:text-stone-400">
                 正在加载远程目录...
               </div>
             ) : entries.length > 0 ? (
               entries.map((entry) => (
                 <div
                   className={`flex items-center justify-between gap-3 rounded-[18px] border px-3 py-3 ${
-                    selectedPaths.has(entry.path) ? 'border-emerald-300 bg-emerald-50/80' : 'border-stone-200 bg-stone-50'
+                    selectedPaths.has(entry.path)
+                      ? 'border-emerald-300 bg-emerald-50/80 dark:border-emerald-300/30 dark:bg-emerald-400/10'
+                      : 'border-stone-200 bg-stone-50 dark:border-white/10 dark:bg-white/5'
                   }`}
                   key={entry.path}
                 >
@@ -330,8 +332,8 @@ export function RepoPicker({
                     onClick={() => void loadBrowser(entry.path)}
                     type="button"
                   >
-                    <div className="text-sm font-semibold text-stone-950">{entry.name}</div>
-                    <div className="mt-1 break-all font-mono text-xs leading-5 text-stone-500">{entry.path}</div>
+                    <div className="text-sm font-semibold text-stone-950 dark:text-stone-50">{entry.name}</div>
+                    <div className="mt-1 break-all font-mono text-xs leading-5 text-stone-500 dark:text-stone-400">{entry.path}</div>
                   </button>
                   {entry.isGitRepo ? (
                     <button
@@ -342,14 +344,14 @@ export function RepoPicker({
                       Add Repo
                     </button>
                   ) : (
-                    <div className="shrink-0 rounded-full border border-stone-200 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-stone-500">
+                    <div className="shrink-0 rounded-full border border-stone-200 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-stone-500 dark:border-white/10 dark:text-stone-400">
                       dir
                     </div>
                   )}
                 </div>
               ))
             ) : (
-              <div className="rounded-[18px] border border-dashed border-stone-300 bg-stone-50 px-3 py-4 text-sm text-stone-500">
+              <div className="rounded-[18px] border border-dashed border-stone-300 bg-stone-50 px-3 py-4 text-sm text-stone-500 dark:border-white/15 dark:bg-white/5 dark:text-stone-400">
                 目录下没有可展示的子目录。
               </div>
             )}
