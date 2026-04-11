@@ -74,6 +74,15 @@ type CodeResultReport struct {
 	FinishedAt   string   `json:"finished_at,omitempty"`
 }
 
+type CodeDiffSummary struct {
+	RepoID    string   `json:"repo_id"`
+	Commit    string   `json:"commit"`
+	Branch    string   `json:"branch"`
+	Files     []string `json:"files"`
+	Additions int      `json:"additions"`
+	Deletions int      `json:"deletions"`
+}
+
 // WriteCodeResultReport 将结果写入 task 目录的 code-result.json。
 func WriteCodeResultReport(taskDir string, report CodeResultReport) error {
 	if err := writeJSONFile(filepath.Join(taskDir, "code-result.json"), report); err != nil {
@@ -98,6 +107,93 @@ func ReadCodeResultReport(taskDir string) (*CodeResultReport, error) {
 		return nil, err
 	}
 	return &report, nil
+}
+
+// ReadRepoCodeResultReport 读取某个 repo 的 code result。
+func ReadRepoCodeResultReport(taskDir, repoID string) (*CodeResultReport, error) {
+	data, err := os.ReadFile(filepath.Join(taskDir, "code-results", sanitizeRepoResultFileName(repoID)+".json"))
+	if err != nil {
+		return nil, err
+	}
+	var report CodeResultReport
+	if err := json.Unmarshal(data, &report); err != nil {
+		return nil, err
+	}
+	return &report, nil
+}
+
+func repoDiffPatchPath(taskDir, repoID string) string {
+	return filepath.Join(taskDir, "diffs", sanitizeRepoResultFileName(repoID)+".patch")
+}
+
+func repoDiffSummaryPath(taskDir, repoID string) string {
+	return filepath.Join(taskDir, "diffs", sanitizeRepoResultFileName(repoID)+".json")
+}
+
+// WriteRepoDiffArtifacts 为某个 repo 落盘 diff patch 与结构化摘要。
+func WriteRepoDiffArtifacts(taskDir, repoID, branch, commit string, files []string, patch string) error {
+	repoID = strings.TrimSpace(repoID)
+	if repoID == "" || strings.TrimSpace(commit) == "" {
+		return nil
+	}
+
+	patchPath := repoDiffPatchPath(taskDir, repoID)
+	if err := os.MkdirAll(filepath.Dir(patchPath), 0755); err != nil {
+		return fmt.Errorf("创建 diffs 目录失败: %w", err)
+	}
+	if err := os.WriteFile(patchPath, []byte(patch), 0644); err != nil {
+		return fmt.Errorf("写入 diff patch 失败: %w", err)
+	}
+
+	additions, deletions := parseUnifiedDiffStats(patch)
+	summary := CodeDiffSummary{
+		RepoID:    repoID,
+		Commit:    commit,
+		Branch:    branch,
+		Files:     files,
+		Additions: additions,
+		Deletions: deletions,
+	}
+	if err := writeJSONFile(repoDiffSummaryPath(taskDir, repoID), summary); err != nil {
+		return fmt.Errorf("写入 diff summary 失败: %w", err)
+	}
+	return nil
+}
+
+func ReadRepoDiffPatch(taskDir, repoID string) (string, error) {
+	data, err := os.ReadFile(repoDiffPatchPath(taskDir, repoID))
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+
+func ReadRepoDiffSummary(taskDir, repoID string) (*CodeDiffSummary, error) {
+	data, err := os.ReadFile(repoDiffSummaryPath(taskDir, repoID))
+	if err != nil {
+		return nil, err
+	}
+	var summary CodeDiffSummary
+	if err := json.Unmarshal(data, &summary); err != nil {
+		return nil, err
+	}
+	return &summary, nil
+}
+
+func parseUnifiedDiffStats(patch string) (additions, deletions int) {
+	for _, line := range strings.Split(patch, "\n") {
+		if strings.HasPrefix(line, "+++") || strings.HasPrefix(line, "---") {
+			continue
+		}
+		if strings.HasPrefix(line, "+") {
+			additions++
+			continue
+		}
+		if strings.HasPrefix(line, "-") {
+			deletions++
+		}
+	}
+	return additions, deletions
 }
 
 func sanitizeRepoResultFileName(repoID string) string {

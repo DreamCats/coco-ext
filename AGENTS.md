@@ -73,6 +73,9 @@ coco-ext prd refine --prd "需求描述"
 coco-ext prd plan
 coco-ext prd code
 coco-ext prd list
+
+# 本地 Web UI
+coco-ext ui serve
 ```
 
 ## 目录与架构
@@ -88,6 +91,7 @@ coco-ext prd list
 - [`internal/knowledge/`](/Users/bytedance/go/src/coco-ext/internal/knowledge)：`.livecoding/context/` 读写
 - [`internal/review/`](/Users/bytedance/go/src/coco-ext/internal/review)：facts → scope → release → impact → quality → summary 管线
 - [`internal/prd/`](/Users/bytedance/go/src/coco-ext/internal/prd)：refine / plan / code / archive / status / list
+- [`internal/ui/`](/Users/bytedance/go/src/coco-ext/internal/ui)：本地只读 Web UI 的 HTTP API 与静态资源托管
 - [`internal/lint/`](/Users/bytedance/go/src/coco-ext/internal/lint)：`golangci-lint` 执行与结果落盘
 - [`internal/git/`](/Users/bytedance/go/src/coco-ext/internal/git)：diff、branch、commit 等 git 封装
 - [`internal/metrics/`](/Users/bytedance/go/src/coco-ext/internal/metrics)：本地事件采集
@@ -102,6 +106,7 @@ coco-ext prd list
 - [`cmd/lint.go`](/Users/bytedance/go/src/coco-ext/cmd/lint.go)
 - [`cmd/doctor.go`](/Users/bytedance/go/src/coco-ext/cmd/doctor.go)
 - [`cmd/install.go`](/Users/bytedance/go/src/coco-ext/cmd/install.go)
+- [`cmd/ui.go`](/Users/bytedance/go/src/coco-ext/cmd/ui.go)
 - [`cmd/agents.go`](/Users/bytedance/go/src/coco-ext/cmd/agents.go)
 - [`cmd/prd_refine.go`](/Users/bytedance/go/src/coco-ext/cmd/prd_refine.go)
 - [`cmd/prd_plan.go`](/Users/bytedance/go/src/coco-ext/cmd/prd_plan.go)
@@ -156,6 +161,15 @@ coco-ext prd list
 - `install` 会安装 `commit-msg`、`pre-commit` hook，同步 skills 到 `~/.trae/skills/`，并尝试写入 lint 配置
 - `agents` 会维护本文件中 `<!-- coco-ext-agents:start/end -->` 包裹的 section
 - `daemon` 提供 `start/status/stop`，默认配置目录为 `~/.config/coco-ext/`
+
+### ui
+
+- `ui serve` 会在当前仓库启动本地只读 HTTP 服务
+- 当前 API 入口：
+  - `GET /api/tasks`
+  - `GET /api/tasks/:task_id`
+  - `GET /api/workspace`
+- 正式安装态默认使用内嵌静态前端资源；开发态可通过 `--web-dir` 覆盖静态目录
 
 ## 关键约定
 

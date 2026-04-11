@@ -99,6 +99,10 @@ coco-ext daemon status      # 查看 daemon 状态
 coco-ext daemon start       # 前台启动 daemon（阻塞）
 coco-ext daemon start -d    # 后台启动 daemon
 coco-ext daemon stop        # 停止 daemon
+
+# 11. 本地 Web UI
+coco-ext ui serve           # 启动只读 Web UI（默认 http://127.0.0.1:4317）
+coco-ext ui serve --port 4318
 ```
 
 ## PRD 工作流
@@ -229,6 +233,20 @@ coco-ext prd run -i "需求描述或飞书链接"
 
 > coco daemon 会在首次调用时自动拉起，无需手动启动。
 > 更新 hook 行为后，请在目标仓库重新执行一次 `coco-ext install`。
+
+## Web UI
+
+- `coco-ext ui serve` 会在当前仓库启动本地只读 HTTP 服务
+- API 入口：
+  - `GET /api/tasks`
+  - `GET /api/tasks/:task_id`
+  - `GET /api/workspace`
+- 正式安装态默认使用内嵌静态前端资源，因此同事可直接通过 `go install` 安装后运行 `coco-ext ui serve`
+- 开发态可通过 `--web-dir` 覆盖静态目录
+- 开发期可以：
+  1. 在仓库根目录执行 `coco-ext ui serve`
+  2. 在 [`web/`](/Users/bytedance/go/src/coco-ext/web) 目录执行 `npm run dev`
+  3. 通过 Vite 代理访问 `/api`
 
 ## 开发
 
