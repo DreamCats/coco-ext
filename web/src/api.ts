@@ -14,6 +14,7 @@ export type SourceType = 'text' | 'file' | 'lark_doc'
 export type TaskArtifactName =
   | 'prd.source.md'
   | 'prd-refined.md'
+  | 'refine.log'
   | 'design.md'
   | 'plan.md'
   | 'code-result.json'

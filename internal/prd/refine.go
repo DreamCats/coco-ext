@@ -243,6 +243,29 @@ func ValidateRefinedContent(content string) error {
 	return nil
 }
 
+// ResolveRefinedContent 根据模型输出和错误信息，选出最终落盘的 refined 内容。
+// 若超时前已经拿到可用正文，则优先保留部分输出，而不是直接回退本地模板。
+func ResolveRefinedContent(sourceTitle, sourceContent, raw string, promptErr error) (content string, usedFallback bool, note error) {
+	filtered := ExtractRefinedContent(raw)
+	if strings.TrimSpace(filtered) != "" {
+		validateErr := ValidateRefinedContent(filtered)
+		if validateErr == nil {
+			return filtered, false, promptErr
+		}
+		if promptErr == nil {
+			return BuildFallbackRefinedContent(sourceTitle, sourceContent, validateErr), true, validateErr
+		}
+		return BuildFallbackRefinedContent(sourceTitle, sourceContent, fmt.Errorf("%w；部分输出未通过校验: %v", promptErr, validateErr)), true, promptErr
+	}
+
+	if promptErr != nil {
+		return BuildFallbackRefinedContent(sourceTitle, sourceContent, promptErr), true, promptErr
+	}
+
+	validateErr := ValidateRefinedContent(filtered)
+	return BuildFallbackRefinedContent(sourceTitle, sourceContent, validateErr), true, validateErr
+}
+
 // BuildFallbackRefinedContent 在 AI 不可用时生成结构化的本地兜底内容。
 func BuildFallbackRefinedContent(sourceTitle, sourceContent string, cause error) string {
 	causeText := "未知原因"

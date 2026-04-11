@@ -10,7 +10,7 @@ export function ArtifactViewer({
   content: string
   taskID: string
 }) {
-  const isLog = artifact === 'code.log'
+  const isLog = artifact.endsWith('.log')
   const isJSON = artifact.endsWith('.json')
   const isMarkdown = artifact.endsWith('.md')
   const lines = content.trim() === '' ? 0 : content.split('\n').length
@@ -318,6 +318,8 @@ export function artifactLabel(name: TaskArtifactName) {
       return 'Source'
     case 'prd-refined.md':
       return 'Refined PRD'
+    case 'refine.log':
+      return 'Refine Log'
     case 'design.md':
       return 'Design'
     case 'plan.md':

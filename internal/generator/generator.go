@@ -41,11 +41,13 @@ func New(repoPath string) (*Generator, error) {
 	return newGenerator(repoPath, nil)
 }
 
-// NewPromptOnly 创建禁用工具的生成器，适用于知识文件生成等纯文本输出场景。
+// NewPromptOnly 创建纯文本生成器，适用于知识文件、PRD refine 等不应调用工具的场景。
+// 这里同时开启 yolo 并禁用所有内置工具，避免 agent 卡在工具授权上。
 func NewPromptOnly(repoPath string) (*Generator, error) {
 	return newGenerator(repoPath, &daemon.DialOption{
 		ConfigDir: config.DefaultConfigDir(),
 		ServeFlags: &acp.ServeFlags{
+			Yolo:            true,
 			DisallowedTools: knowledgeDisallowedTools,
 		},
 	})

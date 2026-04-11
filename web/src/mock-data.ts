@@ -13,6 +13,7 @@ export type SourceType = 'text' | 'file' | 'lark_doc'
 export type TaskArtifactName =
   | 'prd.source.md'
   | 'prd-refined.md'
+  | 'refine.log'
   | 'design.md'
   | 'plan.md'
   | 'code-result.json'
@@ -119,6 +120,16 @@ export const tasks: TaskRecord[] = [
 - 业务行为不变
 - 日志噪音显著下降
 `,
+      'refine.log': `2026-04-11 10:32:00 === REFINE START ===
+2026-04-11 10:32:00 task_id: 20260411-103200-auction-observability-multi-repo
+2026-04-11 10:32:00 generator_init: begin (session timeout=5m0s)
+2026-04-11 10:32:02 prompt_start: timeout=3m0s
+2026-04-11 10:32:03 first_chunk_received: 128 bytes
+2026-04-11 10:32:08 validate_ok: true
+2026-04-11 10:32:08 status: refined
+2026-04-11 10:32:08 duration: 8s
+2026-04-11 10:32:08 === REFINE END ===
+`,
       'design.md': `# Design
 
 ## 总体方案
@@ -207,6 +218,15 @@ export const tasks: TaskRecord[] = [
 
 希望为商品卡逻辑新增实验能力，支持灰度、开关和回退。
 `,
+      'refine.log': `2026-04-11 09:42:20 === REFINE START ===
+2026-04-11 09:42:20 task_id: 20260411-094220-product-card-experiment
+2026-04-11 09:42:20 generator_init: begin (session timeout=5m0s)
+2026-04-11 09:42:24 prompt_start: timeout=3m0s
+2026-04-11 09:42:29 validate_ok: true
+2026-04-11 09:42:29 status: refined
+2026-04-11 09:42:29 duration: 9s
+2026-04-11 09:42:29 === REFINE END ===
+`,
       'design.md': `# Design
 
 - 扩展现有实验配置读取层
@@ -258,6 +278,7 @@ export const tasks: TaskRecord[] = [
     artifacts: {
       'prd.source.md': '# Source\n\n已归档 task，源文档略。',
       'prd-refined.md': '# PRD Refined\n\n已归档 task，refined 文档略。',
+      'refine.log': '2026-04-10 22:10:30 === REFINE START ===\n2026-04-10 22:10:37 status: refined\n2026-04-10 22:10:37 === REFINE END ===\n',
       'design.md': '# Design\n\n已归档 task，设计文档略。',
       'plan.md': '# Plan\n\n已归档 task，实施计划略。',
       'code-result.json': `{

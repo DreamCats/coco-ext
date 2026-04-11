@@ -13,10 +13,10 @@ export function MetricCard({
 }) {
   const toneClass =
     tone === 'emerald'
-      ? 'border-emerald-200 bg-[linear-gradient(180deg,_rgba(16,185,129,0.12),_rgba(236,253,245,0.9))] text-emerald-800'
+      ? 'border-emerald-200 bg-[linear-gradient(180deg,_rgba(16,185,129,0.12),_rgba(236,253,245,0.9))] text-emerald-800 dark:border-emerald-300/20 dark:bg-[linear-gradient(180deg,_rgba(16,185,129,0.18),_rgba(16,24,20,0.92))] dark:text-emerald-100'
       : tone === 'amber'
-        ? 'border-amber-200 bg-[linear-gradient(180deg,_rgba(245,158,11,0.12),_rgba(255,251,235,0.92))] text-amber-800'
-        : 'border-sky-200 bg-[linear-gradient(180deg,_rgba(14,165,233,0.12),_rgba(240,249,255,0.92))] text-sky-800'
+        ? 'border-amber-200 bg-[linear-gradient(180deg,_rgba(245,158,11,0.12),_rgba(255,251,235,0.92))] text-amber-800 dark:border-amber-300/20 dark:bg-[linear-gradient(180deg,_rgba(245,158,11,0.18),_rgba(24,19,12,0.92))] dark:text-amber-100'
+        : 'border-sky-200 bg-[linear-gradient(180deg,_rgba(14,165,233,0.12),_rgba(240,249,255,0.92))] text-sky-800 dark:border-sky-300/20 dark:bg-[linear-gradient(180deg,_rgba(14,165,233,0.18),_rgba(11,18,24,0.92))] dark:text-sky-100'
 
   return (
     <div className={`rounded-[22px] border px-4 py-3 shadow-[0_10px_25px_rgba(15,23,42,0.04)] ${toneClass}`}>
@@ -41,25 +41,25 @@ export function TopNavItem({
     <Link
       className={`block min-w-[260px] rounded-[22px] border px-4 py-4 transition ${
         isActive
-          ? 'border-stone-900 bg-stone-900 text-white shadow-[0_16px_30px_rgba(15,23,42,0.14)]'
-          : 'border-stone-200 bg-white text-stone-700 hover:border-stone-300 hover:bg-stone-50'
+          ? 'border-stone-900 bg-stone-900 text-white shadow-[0_16px_30px_rgba(15,23,42,0.14)] dark:border-stone-100 dark:bg-stone-100 dark:text-stone-950'
+          : 'border-stone-200 bg-white text-stone-700 hover:border-stone-300 hover:bg-stone-50 dark:border-white/10 dark:bg-white/6 dark:text-stone-300 dark:hover:border-white/20 dark:hover:bg-white/10'
       }`}
       to={to}
     >
-      <div className={`text-[11px] font-semibold uppercase tracking-[0.22em] ${isActive ? 'text-stone-400' : 'text-stone-500'}`}>
+      <div className={`text-[11px] font-semibold uppercase tracking-[0.22em] ${isActive ? 'text-stone-400 dark:text-stone-500' : 'text-stone-500 dark:text-stone-400'}`}>
         Capability
       </div>
       <div className="mt-2 text-lg font-semibold tracking-[-0.03em]">{title}</div>
-      <div className={`mt-2 text-xs leading-5 ${isActive ? 'text-stone-300' : 'text-stone-500'}`}>{description}</div>
+      <div className={`mt-2 text-xs leading-5 ${isActive ? 'text-stone-300 dark:text-stone-600' : 'text-stone-500 dark:text-stone-400'}`}>{description}</div>
     </Link>
   )
 }
 
 export function FilterChip({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-2xl border border-stone-200 bg-white px-3 py-3">
-      <div className="text-[11px] uppercase tracking-[0.2em] text-stone-500">{label}</div>
-      <div className="mt-1 text-lg font-semibold text-stone-950">{value}</div>
+    <div className="rounded-2xl border border-stone-200 bg-white px-3 py-3 dark:border-white/10 dark:bg-white/6">
+      <div className="text-[11px] uppercase tracking-[0.2em] text-stone-500 dark:text-stone-400">{label}</div>
+      <div className="mt-1 text-lg font-semibold text-stone-950 dark:text-stone-50">{value}</div>
     </div>
   )
 }
@@ -76,7 +76,7 @@ export function StatusBadge({ status }: { status: TaskStatus }) {
             ? 'border-sky-200 bg-sky-50 text-sky-700'
             : status === 'failed'
               ? 'border-rose-200 bg-rose-50 text-rose-700'
-              : 'border-stone-200 bg-stone-100 text-stone-700'
+              : 'border-stone-200 bg-stone-100 text-stone-700 dark:border-stone-700 dark:bg-stone-800 dark:text-stone-200'
 
   return <span className={`rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] ${tone}`}>{status}</span>
 }
@@ -91,7 +91,7 @@ export function RepoStatusBadge({ status }: { status: RepoResult['status'] }) {
           ? 'border-rose-200 bg-rose-50 text-rose-700'
           : status === 'archived'
             ? 'border-sky-200 bg-sky-50 text-sky-700'
-            : 'border-stone-200 bg-stone-100 text-stone-700'
+            : 'border-stone-200 bg-stone-100 text-stone-700 dark:border-stone-700 dark:bg-stone-800 dark:text-stone-200'
 
   return <span className={`rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] ${tone}`}>{status}</span>
 }
@@ -134,9 +134,9 @@ export function CompactField({ label, value }: { label: string; value: string })
 
 export function KeyValue({ label, mono, value }: { label: string; value: string; mono?: boolean }) {
   return (
-    <div className="rounded-[18px] border border-stone-200 bg-stone-50 px-3 py-3">
-      <div className="text-[11px] uppercase tracking-[0.2em] text-stone-500">{label}</div>
-      <div className={`mt-2 text-sm text-stone-900 ${mono ? 'font-mono text-xs' : ''}`}>{value}</div>
+    <div className="rounded-[18px] border border-stone-200 bg-stone-50 px-3 py-3 dark:border-white/10 dark:bg-white/6">
+      <div className="text-[11px] uppercase tracking-[0.2em] text-stone-500 dark:text-stone-400">{label}</div>
+      <div className={`mt-2 text-sm text-stone-900 dark:text-stone-100 ${mono ? 'font-mono text-xs' : ''}`}>{value}</div>
     </div>
   )
 }
@@ -151,7 +151,7 @@ export function MiniMeta({ label, value }: { label: string; value: string }) {
 
 export function PanelMessage({ children }: { children: ReactNode }) {
   return (
-    <section className="flex min-h-[720px] items-center justify-center rounded-[24px] border border-dashed border-stone-300 bg-stone-50 p-8 text-center text-stone-500">
+    <section className="flex min-h-[720px] items-center justify-center rounded-[24px] border border-dashed border-stone-300 bg-stone-50 p-8 text-center text-stone-500 dark:border-white/15 dark:bg-white/5 dark:text-stone-400">
       {children}
     </section>
   )

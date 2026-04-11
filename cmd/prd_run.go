@@ -95,7 +95,7 @@ func runPRDRun(cmd *cobra.Command, args []string) error {
 	}
 
 	// 连接 daemon 生成 refined PRD
-	gen, err := generator.New(repoRoot)
+	gen, err := generator.NewPromptOnly(repoRoot)
 	if err != nil {
 		color.Yellow("⚠ 连接 daemon 失败，使用本地兜底: %v", err)
 		fallbackContent := prd.BuildFallbackRefinedContent(task.Title, task.Source.Content, err)
@@ -104,19 +104,21 @@ func runPRDRun(cmd *cobra.Command, args []string) error {
 		}
 	} else {
 		defer gen.Close()
-		refinedContent, promptErr := gen.PromptWithTimeout(
+		refinedContent, promptErr := gen.PromptWithIdleTimeout(
 			prd.BuildRefinedPrompt(task.Title, task.Source.Content),
-			config.ReviewPromptTimeout,
+			config.RefinePromptTimeout,
+			config.RefineChunkIdleTimeout,
 			func(chunk string) { fmt.Print(chunk) },
 		)
 		if promptErr != nil {
-			color.Yellow("⚠ AI refine 失败，使用本地兜底: %v", promptErr)
-			refinedContent = prd.BuildFallbackRefinedContent(task.Title, task.Source.Content, promptErr)
-		} else {
-			refinedContent = prd.ExtractRefinedContent(refinedContent)
-			if validateErr := prd.ValidateRefinedContent(refinedContent); validateErr != nil {
-				refinedContent = prd.BuildFallbackRefinedContent(task.Title, task.Source.Content, validateErr)
-			}
+			color.Yellow("⚠ AI refine 发生异常，将优先尝试保留已输出内容: %v", promptErr)
+		}
+		finalContent, usedFallback, note := prd.ResolveRefinedContent(task.Title, task.Source.Content, refinedContent, promptErr)
+		refinedContent = finalContent
+		if usedFallback && note != nil {
+			color.Yellow("⚠ AI refine 回退到本地兜底: %v", note)
+		} else if !usedFallback && note != nil {
+			color.Yellow("⚠ AI refine 超时，但已保留可用的部分输出: %v", note)
 		}
 		if writeErr := prd.WriteRefinedContent(task, refinedContent, time.Now(), prd.TaskStatusRefined); writeErr != nil {
 			return writeErr
