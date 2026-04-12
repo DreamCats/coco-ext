@@ -163,6 +163,17 @@ export async function startPlan(taskId: string) {
   return response.json() as Promise<{ task_id: string; status: string }>
 }
 
+export async function startCode(taskId: string) {
+  const response = await fetch(`/api/tasks/${taskId}/code`, {
+    method: 'POST',
+  })
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { error?: string } | null
+    throw new Error(body?.error || '启动实现失败')
+  }
+  return response.json() as Promise<{ task_id: string; status: string }>
+}
+
 export async function listRecentRepos() {
   const response = await fetchJSON<{ repos: RepoCandidate[] }>('/api/repos/recent')
   return response.repos

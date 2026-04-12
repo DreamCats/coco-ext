@@ -4,6 +4,7 @@ import {
   createTask,
   deleteTask,
   getTask,
+  startCode,
   startPlan,
   type RepoCandidate,
   type TaskArtifactName,
@@ -333,6 +334,7 @@ export function TaskDetailPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [planStarting, setPlanStarting] = useState(false)
+  const [codeStarting, setCodeStarting] = useState(false)
   const [actionError, setActionError] = useState('')
 
   useEffect(() => {
@@ -368,7 +370,7 @@ export function TaskDetailPage() {
   }, [taskId])
 
   useEffect(() => {
-    if (!task || !new Set<TaskStatus>(['initialized', 'planning']).has(task.status)) {
+    if (!task || !new Set<TaskStatus>(['initialized', 'planning', 'coding']).has(task.status)) {
       return
     }
 
@@ -382,8 +384,9 @@ export function TaskDetailPage() {
           setTask(detail)
           const firstDiffRepo = detail.repos.find((repo) => repo.diffSummary)?.id ?? detail.repos[0]?.id ?? ''
           setSelectedDiffRepo(firstDiffRepo)
-          if (detail.status !== 'initialized' && detail.status !== 'planning') {
+          if (detail.status !== 'initialized' && detail.status !== 'planning' && detail.status !== 'coding') {
             setPlanStarting(false)
+            setCodeStarting(false)
             void reload()
           }
         })
@@ -405,10 +408,13 @@ export function TaskDetailPage() {
   if (!task) {
     return <PanelMessage>未找到对应 task。</PanelMessage>
   }
+  const hasGeneratedPlan = hasActionableArtifact(task.artifacts['design.md']) && hasActionableArtifact(task.artifacts['plan.md'])
   const deletableStatuses = new Set<TaskStatus>(['initialized', 'refined', 'planned', 'failed'])
   const canDelete = deletableStatuses.has(task.status)
   const canStartPlan = task.status === 'refined' || task.status === 'planned'
+  const canStartCode = task.repos.length === 1 && (task.status === 'planned' || (task.status === 'failed' && hasGeneratedPlan))
   const planActionLabel = task.status === 'planned' ? '重新 Plan' : '开始 Plan'
+  const codeActionLabel = task.status === 'failed' ? '重试实现' : '开始实现'
 
   return (
     <div className="space-y-4 lg:h-full lg:overflow-y-auto lg:pr-1">
@@ -480,10 +486,14 @@ export function TaskDetailPage() {
                 ? '确认结果后归档'
                 : task.status === 'partially_coded'
                   ? '继续推进剩余仓库'
+                  : task.status === 'coding'
+                    ? '等待实现完成'
                   : task.status === 'planning'
                     ? '等待方案生成完成'
                   : task.status === 'planned'
-                    ? '进入实现阶段'
+                    ? '开始生成实现'
+                    : task.status === 'failed' && canStartCode
+                      ? '调整后重新实现'
                     : task.status === 'refined'
                       ? '开始生成方案'
                       : '继续推进当前任务'}
@@ -501,42 +511,85 @@ export function TaskDetailPage() {
                 正在分析代码并生成方案。若停留时间过长，可打开 `plan.log` 查看进度。
               </div>
             ) : null}
+            {task.status === 'coding' ? (
+              <div className="mt-3 rounded-2xl border border-emerald-300/20 bg-emerald-400/10 px-4 py-3 text-sm leading-6 text-emerald-100">
+                正在后台生成实现并验证结果。若停留时间过长，可打开 `code.log` 查看进度。
+              </div>
+            ) : null}
+            {task.status === 'planned' && task.repos.length > 1 ? (
+              <div className="mt-3 rounded-2xl border border-amber-300/20 bg-amber-400/10 px-4 py-3 text-sm leading-6 text-amber-100">
+                当前 Web 端先支持单仓实现。多仓任务请先在终端按 repo 逐个推进。
+              </div>
+            ) : null}
             {actionError ? (
               <div className="mt-3 rounded-2xl border border-rose-300/20 bg-rose-400/10 px-4 py-3 text-sm leading-6 text-rose-100">
                 {actionError}
               </div>
             ) : null}
-            {canStartPlan ? (
+            {canStartCode || canStartPlan ? (
               <div className="mt-4 flex flex-wrap items-center gap-3">
-                <button
-                  className="rounded-2xl border border-emerald-200/30 bg-emerald-400/20 px-4 py-3 text-sm font-semibold text-emerald-50 transition hover:border-emerald-100/40 hover:bg-emerald-400/30 disabled:cursor-not-allowed disabled:opacity-60"
-                  disabled={planStarting}
-                  onClick={async () => {
-                    try {
-                      setPlanStarting(true)
-                      setActionError('')
-                      const result = await startPlan(task.id)
-                      setTask({
-                        ...task,
-                        status: result.status as TaskStatus,
-                        nextAction: '方案正在生成，请稍候刷新任务详情。',
-                      })
-                      setArtifact('plan.log')
-                      await reload()
-                    } catch (err) {
-                      setActionError(err instanceof Error ? err.message : '启动 plan 失败')
-                      setPlanStarting(false)
-                    }
-                  }}
-                  type="button"
-                >
-                  {planStarting ? '方案生成中...' : planActionLabel}
-                </button>
-                <span className="text-xs text-emerald-100/80">
-                  {task.status === 'planned'
-                    ? '会重新分析代码，并覆盖 `design.md` / `plan.md`'
-                    : '会在后台生成 `design.md` / `plan.md`'}
-                </span>
+                {canStartCode ? (
+                  <>
+                    <button
+                      className="rounded-2xl border border-emerald-200/30 bg-emerald-400/20 px-4 py-3 text-sm font-semibold text-emerald-50 transition hover:border-emerald-100/40 hover:bg-emerald-400/30 disabled:cursor-not-allowed disabled:opacity-60"
+                      disabled={codeStarting || planStarting}
+                      onClick={async () => {
+                        try {
+                          setCodeStarting(true)
+                          setActionError('')
+                          const result = await startCode(task.id)
+                          setTask({
+                            ...task,
+                            status: result.status as TaskStatus,
+                            nextAction: '实现正在执行，请稍候刷新任务详情。',
+                          })
+                          setArtifact('code.log')
+                          await reload()
+                        } catch (err) {
+                          setActionError(err instanceof Error ? err.message : '启动实现失败')
+                          setCodeStarting(false)
+                        }
+                      }}
+                      type="button"
+                    >
+                      {codeStarting ? '实现进行中...' : codeActionLabel}
+                    </button>
+                    <span className="text-xs text-emerald-100/80">会在后台创建隔离工作区、生成改动并尝试完成构建验证</span>
+                  </>
+                ) : null}
+                {canStartPlan ? (
+                  <>
+                    <button
+                      className="rounded-2xl border border-white/20 bg-white/8 px-4 py-3 text-sm font-semibold text-white transition hover:border-white/30 hover:bg-white/12 disabled:cursor-not-allowed disabled:opacity-60"
+                      disabled={planStarting || codeStarting}
+                      onClick={async () => {
+                        try {
+                          setPlanStarting(true)
+                          setActionError('')
+                          const result = await startPlan(task.id)
+                          setTask({
+                            ...task,
+                            status: result.status as TaskStatus,
+                            nextAction: '方案正在生成，请稍候刷新任务详情。',
+                          })
+                          setArtifact('plan.log')
+                          await reload()
+                        } catch (err) {
+                          setActionError(err instanceof Error ? err.message : '启动 plan 失败')
+                          setPlanStarting(false)
+                        }
+                      }}
+                      type="button"
+                    >
+                      {planStarting ? '方案生成中...' : planActionLabel}
+                    </button>
+                    <span className="text-xs text-emerald-100/80">
+                      {task.status === 'planned'
+                        ? '重新分析代码，并覆盖 `design.md` / `plan.md`'
+                        : '在后台生成 `design.md` / `plan.md`'}
+                    </span>
+                  </>
+                ) : null}
               </div>
             ) : null}
             <div className="mt-4 rounded-2xl border border-emerald-200/20 bg-stone-950/50 px-4 py-3 font-mono text-sm text-emerald-100">
@@ -586,6 +639,13 @@ export function TaskDetailPage() {
       </div>
     </div>
   )
+}
+
+function hasActionableArtifact(content?: string) {
+  if (!content) {
+    return false
+  }
+  return !content.includes("当前没有") && !content.includes("当前为空")
 }
 
 function DeletePolicyCard({

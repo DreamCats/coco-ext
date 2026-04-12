@@ -214,6 +214,8 @@ func (s *Server) handleTaskAction(w http.ResponseWriter, r *http.Request, taskID
 	switch action {
 	case "plan":
 		s.handleStartPlan(w, taskID)
+	case "code":
+		s.handleStartCode(w, taskID)
 	default:
 		writeJSONError(w, http.StatusNotFound, "unknown task action")
 	}
@@ -285,8 +287,16 @@ func appendPlanLogLine(taskDir, line string) {
 }
 
 func resolvePlanRepoRoot(report *prd.TaskStatusReport) (string, error) {
+	repo, err := resolveSingleRepo(report)
+	if err != nil {
+		return "", err
+	}
+	return repo.Path, nil
+}
+
+func resolveSingleRepo(report *prd.TaskStatusReport) (*prd.RepoBinding, error) {
 	if report == nil || report.Repos == nil || len(report.Repos.Repos) == 0 {
-		return "", fmt.Errorf("task 未绑定 repo，无法执行 plan")
+		return nil, fmt.Errorf("task 未绑定 repo，无法执行当前操作")
 	}
 
 	if len(report.Repos.Repos) > 1 {
@@ -294,14 +304,15 @@ func resolvePlanRepoRoot(report *prd.TaskStatusReport) (string, error) {
 		for _, repo := range report.Repos.Repos {
 			repoIDs = append(repoIDs, repo.ID)
 		}
-		return "", fmt.Errorf("当前 Web plan 暂不支持多 repo task；请先在目标仓库目录执行 `coco-ext prd plan --task %s`。关联 repo: %s", report.TaskID, strings.Join(repoIDs, ", "))
+		return nil, fmt.Errorf("当前 Web 操作暂不支持多 repo task；请先在目标仓库目录执行对应 CLI。关联 repo: %s", strings.Join(repoIDs, ", "))
 	}
 
-	repoRoot := strings.TrimSpace(report.Repos.Repos[0].Path)
-	if repoRoot == "" {
-		return "", fmt.Errorf("task 绑定的 repo path 为空，无法执行 plan")
+	repo := report.Repos.Repos[0]
+	repo.Path = strings.TrimSpace(repo.Path)
+	if repo.Path == "" {
+		return nil, fmt.Errorf("task 绑定的 repo path 为空，无法执行当前操作")
 	}
-	return repoRoot, nil
+	return &repo, nil
 }
 
 func (s *Server) runPlanTask(taskID, taskDir, repoRoot string) {
@@ -383,4 +394,63 @@ func formatPlanToolEvent(event generator.ToolEvent) string {
 		return base
 	}
 	return base + " input=" + input
+}
+
+func (s *Server) handleStartCode(w http.ResponseWriter, taskID string) {
+	report, err := prd.LoadTaskStatus(s.repoRoot, taskID)
+	if err != nil {
+		writeJSONError(w, http.StatusNotFound, err.Error())
+		return
+	}
+
+	if !canStartCode(report) {
+		writeJSONError(w, http.StatusConflict, fmt.Sprintf("当前状态为 %s，不能开始 code", report.Metadata.Status))
+		return
+	}
+
+	repo, err := resolveSingleRepo(report)
+	if err != nil {
+		writeJSONError(w, http.StatusConflict, err.Error())
+		return
+	}
+
+	branchName := buildWebPRDBranchName(taskID)
+	if err := prd.StartCodingRepoBinding(report.TaskDir, repo.ID, branchName, ""); err != nil {
+		writeJSONError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	go s.runCodeTask(taskID, report.TaskDir, repo.Path, repo.ID, branchName)
+
+	writeJSON(w, http.StatusAccepted, taskActionResponse{
+		TaskID: taskID,
+		Status: prd.TaskStatusCoding,
+	})
+}
+
+func canStartCode(report *prd.TaskStatusReport) bool {
+	switch report.Metadata.Status {
+	case prd.TaskStatusPlanned:
+		return true
+	case prd.TaskStatusFailed:
+		return taskHasArtifact(report.Artifacts, "prd-refined.md") && taskHasArtifact(report.Artifacts, "design.md") && taskHasArtifact(report.Artifacts, "plan.md")
+	default:
+		return false
+	}
+}
+
+func buildWebPRDBranchName(taskID string) string {
+	return "prd_" + taskID
+}
+
+func (s *Server) runCodeTask(taskID, taskDir, repoRoot, repoID, branchName string) {
+	if _, err := prd.ExecuteCodeForRepo(repoRoot, taskID, branchName, repoID, 2, nil, nil); err != nil {
+		// ExecuteCodeForRepo 已负责写 code.log 和失败状态，这里只在极早期失败时兜底补一行。
+		logPath := filepath.Join(taskDir, "code.log")
+		file, openErr := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+		if openErr == nil {
+			defer file.Close()
+			_, _ = file.WriteString(fmt.Sprintf("%s web_code_error: %v\n", time.Now().Format("2006-01-02 15:04:05"), err))
+		}
+	}
 }

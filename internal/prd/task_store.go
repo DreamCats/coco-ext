@@ -273,6 +273,22 @@ func ResetRepoBinding(taskDir, repoID string) error {
 	})
 }
 
+func StartCodingRepoBinding(taskDir, repoID, branchName, worktree string) error {
+	return updateRepoBinding(taskDir, repoID, func(repo *RepoBinding) {
+		repo.Status = TaskStatusCoding
+		repo.Branch = branchName
+		repo.Worktree = worktree
+	})
+}
+
+func MarkRepoBindingFailed(taskDir, repoID, branchName, worktree string) error {
+	return updateRepoBinding(taskDir, repoID, func(repo *RepoBinding) {
+		repo.Status = TaskStatusFailed
+		repo.Branch = firstNonEmpty(branchName, repo.Branch)
+		repo.Worktree = firstNonEmpty(worktree, repo.Worktree)
+	})
+}
+
 func ArchiveRepoBinding(taskDir, repoID string) error {
 	return updateRepoBinding(taskDir, repoID, func(repo *RepoBinding) {
 		repo.Status = TaskStatusArchived

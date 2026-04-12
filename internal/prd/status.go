@@ -154,6 +154,14 @@ func suggestNextCommand(taskDir, taskID, status string, artifacts []ArtifactStat
 		return fmt.Sprintf("task 部分仓库已进入 code 阶段，请查看 `coco-ext prd status --task %s` 中的 repo 状态后继续执行 `coco-ext prd code --task %s --repo <repo_id>`", taskID, taskID)
 	case status == TaskStatusPlanned:
 		return fmt.Sprintf("coco-ext prd code --task %s", taskID)
+	case status == TaskStatusFailed:
+		if nextRepo := suggestNextRepo(repos); nextRepo != "" && hasDesign && hasPlan {
+			return fmt.Sprintf("coco-ext prd code --task %s --repo %s", taskID, nextRepo)
+		}
+		if hasDesign && hasPlan {
+			return fmt.Sprintf("coco-ext prd code --task %s", taskID)
+		}
+		return fmt.Sprintf("coco-ext prd plan --task %s", taskID)
 	case status == TaskStatusCoded:
 		return fmt.Sprintf("coco-ext prd archive --task %s", taskID)
 	case status == TaskStatusArchived:

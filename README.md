@@ -250,15 +250,18 @@ coco-ext prd run -i "需求描述或飞书链接"
 - Web UI 当前已支持：
   - `Create Task`：通过弹层创建全局 task，后台异步执行 refine，前端轮询 `initialized -> refined`
   - `Start Plan`：在 `refined` 状态下触发后台异步 plan，前端轮询 `planning -> planned`
+  - `Start Code`：在 `planned` 状态下触发单 repo 后台异步 code，前端轮询 `coding -> coded/failed`
   - `Delete Task`：仅允许删除未进入 code 的 task（`initialized/refined/planned/failed`）
   - repo 选择：支持 `Recent Repos` 和 `Remote Browser`
 - Web UI 创建 task 时：
   - 不会自动把当前启动 `ui serve` 的仓库注入 repo 列表
   - 必须显式选择至少一个 repo
   - `Remote Browser` 浏览和校验的是运行 `coco-ext ui serve` 的那台机器上的文件系统
+  - 当前 `Start Code` 仅支持单 repo task；多 repo task 仍建议使用 CLI 按 repo 逐个推进
 - 扩展 API：
   - `POST /api/tasks`
   - `POST /api/tasks/:task_id/plan`
+  - `POST /api/tasks/:task_id/code`
   - `DELETE /api/tasks/:task_id`
   - `GET /api/repos/recent`
   - `POST /api/repos/validate`

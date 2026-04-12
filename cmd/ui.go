@@ -28,7 +28,7 @@ var uiCmd = &cobra.Command{
 var uiServeCmd = &cobra.Command{
 	Use:   "serve",
 	Short: "启动本地 Web UI 服务",
-	Long:  "启动本地 HTTP 服务，提供 PRD task 的 tasks/detail/workspace API，以及创建 task、触发 plan 等交互能力。默认优先使用内嵌静态前端；开发态可通过 --web-dir 覆盖。",
+	Long:  "启动本地 HTTP 服务，提供 PRD task 的 tasks/detail/workspace API，以及创建 task、触发 plan、单仓 code 等交互能力。默认优先使用内嵌静态前端；开发态可通过 --web-dir 覆盖。",
 	RunE:  runUIServe,
 }
 
