@@ -1,50 +1,131 @@
-export type ParsedDiffFile = {
-  path: string
-  lines: string[]
-  additions: number
-  deletions: number
+export type DiffLineKind = 'context' | 'add' | 'delete' | 'meta'
+
+export type ParsedDiffLine = {
+  kind: DiffLineKind
+  text: string
+  oldLine: number | null
+  newLine: number | null
 }
 
-export function parseDiffFiles(patch: string): ParsedDiffFile[] {
+export type ParsedDiffHunk = {
+  header: string
+  lines: ParsedDiffLine[]
+}
+
+export type ParsedDiffFile = {
+  path: string
+  rawLines: string[]
+  additions: number
+  deletions: number
+  hunks: ParsedDiffHunk[]
+}
+
+export type ParsedPatch = {
+  headerLines: string[]
+  files: ParsedDiffFile[]
+}
+
+export function parsePatch(patch: string): ParsedPatch {
   if (!patch.trim()) {
-    return []
+    return { headerLines: [], files: [] }
   }
 
   const lines = patch.split('\n')
   const files: ParsedDiffFile[] = []
-  let current: ParsedDiffFile | null = null
+  const headerLines: string[] = []
+  let currentFile: ParsedDiffFile | null = null
+  let currentHunk: ParsedDiffHunk | null = null
+  let oldLine = 0
+  let newLine = 0
 
   for (const line of lines) {
     if (line.startsWith('diff --git ')) {
-      if (current) {
-        files.push(current)
+      if (currentFile) {
+        files.push(currentFile)
       }
-      current = {
+      currentFile = {
         path: extractDiffPath(line),
-        lines: [line],
+        rawLines: [line],
         additions: 0,
         deletions: 0,
+        hunks: [],
       }
+      currentHunk = null
+      oldLine = 0
+      newLine = 0
       continue
     }
 
-    if (!current) {
-      current = { path: 'commit', lines: [], additions: 0, deletions: 0 }
+    if (!currentFile) {
+      headerLines.push(line)
+      continue
+    }
+
+    currentFile.rawLines.push(line)
+
+    if (line.startsWith('@@')) {
+      currentHunk = { header: line, lines: [] }
+      currentFile.hunks.push(currentHunk)
+      const positions = extractHunkPositions(line)
+      oldLine = positions.oldLine
+      newLine = positions.newLine
+      continue
+    }
+
+    if (!currentHunk) {
+      continue
     }
 
     if (!line.startsWith('+++') && line.startsWith('+')) {
-      current.additions += 1
-    } else if (!line.startsWith('---') && line.startsWith('-')) {
-      current.deletions += 1
+      currentFile.additions += 1
+      currentHunk.lines.push({
+        kind: 'add',
+        text: line.slice(1),
+        oldLine: null,
+        newLine,
+      })
+      newLine += 1
+      continue
     }
-    current.lines.push(line)
+
+    if (!line.startsWith('---') && line.startsWith('-')) {
+      currentFile.deletions += 1
+      currentHunk.lines.push({
+        kind: 'delete',
+        text: line.slice(1),
+        oldLine,
+        newLine: null,
+      })
+      oldLine += 1
+      continue
+    }
+
+    if (line.startsWith('\\ No newline at end of file')) {
+      currentHunk.lines.push({
+        kind: 'meta',
+        text: line,
+        oldLine: null,
+        newLine: null,
+      })
+      continue
+    }
+
+    const contextText = line.startsWith(' ') ? line.slice(1) : line
+    currentHunk.lines.push({
+      kind: 'context',
+      text: contextText,
+      oldLine,
+      newLine,
+    })
+    oldLine += 1
+    newLine += 1
   }
 
-  if (current) {
-    files.push(current)
+  if (currentFile) {
+    files.push(currentFile)
   }
 
-  return files
+  return { headerLines, files }
 }
 
 function extractDiffPath(line: string) {
@@ -56,15 +137,27 @@ function extractDiffPath(line: string) {
   return bPath || 'unknown'
 }
 
-export function diffLineTone(line: string) {
-  if (line.startsWith('+++') || line.startsWith('---') || line.startsWith('diff --git') || line.startsWith('@@')) {
-    return 'font-mono text-sky-300'
+function extractHunkPositions(header: string) {
+  const match = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(header)
+  if (!match) {
+    return { oldLine: 0, newLine: 0 }
   }
-  if (line.startsWith('+')) {
-    return 'font-mono text-emerald-300'
+
+  return {
+    oldLine: Number(match[1] ?? 0),
+    newLine: Number(match[2] ?? 0),
   }
-  if (line.startsWith('-')) {
-    return 'font-mono text-rose-300'
+}
+
+export function diffLineTone(kind: DiffLineKind) {
+  if (kind === 'add') {
+    return 'bg-emerald-500/12 text-emerald-200'
   }
-  return 'font-mono text-stone-200'
+  if (kind === 'delete') {
+    return 'bg-rose-500/12 text-rose-200'
+  }
+  if (kind === 'meta') {
+    return 'bg-sky-500/10 text-sky-200'
+  }
+  return 'text-stone-200'
 }

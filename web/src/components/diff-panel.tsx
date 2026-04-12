@@ -1,6 +1,6 @@
 import { useDeferredValue, useEffect, useMemo, useState } from 'react'
 import type { RepoResult } from '../api'
-import { diffLineTone, parseDiffFiles } from '../lib/diff'
+import { diffLineTone, parsePatch, type ParsedDiffFile } from '../lib/diff'
 import { FilterChip, KeyValue } from './ui-primitives'
 
 export function DiffPanel({
@@ -15,18 +15,32 @@ export function DiffPanel({
   const reposWithDiff = repos.filter((repo) => repo.diffSummary)
   const deferredSelectedRepo = useDeferredValue(selectedRepo)
   const activeRepo = reposWithDiff.find((repo) => repo.id === deferredSelectedRepo) ?? reposWithDiff[0]
-  const diffFiles = useMemo(() => parseDiffFiles(activeRepo?.diffSummary?.patch ?? ''), [activeRepo?.diffSummary?.patch])
-  const parsedFiles = useMemo(() => diffFiles.filter((file) => file.path !== 'commit'), [diffFiles])
+  const parsedPatch = useMemo(() => parsePatch(activeRepo?.diffSummary?.patch ?? ''), [activeRepo?.diffSummary?.patch])
+  const [viewMode, setViewMode] = useState<'unified' | 'raw'>('unified')
   const [selectedFile, setSelectedFile] = useState('')
 
-  useEffect(() => {
-    setSelectedFile(parsedFiles[0]?.path ?? '')
-  }, [activeRepo?.id, parsedFiles])
+  const fileButtons = useMemo(() => {
+    if (parsedPatch.files.length > 0) {
+      return parsedPatch.files
+    }
 
-  const fileButtons = parsedFiles.length > 0 ? parsedFiles : diffFiles.filter((file) => file.path)
+    return (activeRepo?.diffSummary?.files ?? []).map<ParsedDiffFile>((path) => ({
+      path,
+      rawLines: [],
+      additions: 0,
+      deletions: 0,
+      hunks: [],
+    }))
+  }, [activeRepo?.diffSummary?.files, parsedPatch.files])
+
+  useEffect(() => {
+    setSelectedFile(fileButtons[0]?.path ?? '')
+  }, [activeRepo?.id, fileButtons])
+
   const activeFile = fileButtons.find((file) => file.path === selectedFile) ?? fileButtons[0]
-  const additionsValue = activeFile?.additions ?? activeRepo?.diffSummary?.additions ?? 0
-  const deletionsValue = activeFile?.deletions ?? activeRepo?.diffSummary?.deletions ?? 0
+  const unifiedAvailable = Boolean(activeFile?.hunks.length)
+  const additionsValue = unifiedAvailable ? activeFile?.additions ?? 0 : activeRepo?.diffSummary?.additions ?? 0
+  const deletionsValue = unifiedAvailable ? activeFile?.deletions ?? 0 : activeRepo?.diffSummary?.deletions ?? 0
 
   return (
     <section className="rounded-[24px] border border-stone-200 bg-white p-4 dark:border-white/10 dark:bg-white/6">
@@ -65,52 +79,96 @@ export function DiffPanel({
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-2">
                 <FilterChip label="文件数" value={`${fileButtons.length || activeRepo.diffSummary.files.length}`} />
-                <FilterChip
-                  label="+ / -"
-                  value={`${additionsValue} / ${deletionsValue}`}
-                />
+                <FilterChip label="+ / -" value={`${additionsValue} / ${deletionsValue}`} />
               </div>
 
               <div className="rounded-[18px] border border-stone-200 bg-stone-50 px-3 py-3 dark:border-white/10 dark:bg-white/5">
-                <div className="grid gap-3 md:grid-cols-2">
+                <div className="grid gap-3 md:grid-cols-4">
                   <KeyValue label="分支" mono value={activeRepo.diffSummary.branch || '-'} />
                   <KeyValue label="提交" mono value={activeRepo.diffSummary.commit || '-'} />
+                  <KeyValue label="总新增" mono value={`${activeRepo.diffSummary.additions}`} />
+                  <KeyValue label="总删除" mono value={`${activeRepo.diffSummary.deletions}`} />
                 </div>
               </div>
 
-              <div className="rounded-[18px] border border-stone-200 bg-white px-3 py-3 dark:border-white/10 dark:bg-white/5">
-                <div className="mb-2 text-[11px] uppercase tracking-[0.2em] text-stone-500 dark:text-stone-400">涉及文件</div>
-                <div className="space-y-2">
-                  {fileButtons.map((file) => (
-                    <button
-                      className={`block w-full rounded-xl border px-3 py-2 text-left font-mono text-xs transition ${
-                        activeFile?.path === file.path
-                          ? 'border-stone-900 bg-stone-900 text-white dark:border-stone-100 dark:bg-stone-100 dark:text-stone-950'
-                          : 'border-stone-200 bg-stone-50 text-stone-800 hover:border-stone-300 hover:bg-white dark:border-white/10 dark:bg-stone-950/70 dark:text-stone-200 dark:hover:border-white/20 dark:hover:bg-stone-900'
-                      }`}
-                      key={file.path}
-                      onClick={() => setSelectedFile(file.path)}
-                      type="button"
-                    >
-                      {file.path}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="overflow-hidden rounded-[18px] border border-stone-200 bg-[#0d1014] shadow-[0_12px_30px_rgba(17,24,39,0.08)]">
-                <div className="flex items-center justify-between border-b border-white/8 px-4 py-3 text-sm text-stone-300">
-                  <div className="font-semibold text-stone-100">
-                    {activeFile?.path ? `Diff · ${activeFile.path}` : '提交差异'}
+              <div className="grid gap-4 xl:grid-cols-[280px_minmax(0,1fr)]">
+                <div className="rounded-[18px] border border-stone-200 bg-white px-3 py-3 dark:border-white/10 dark:bg-white/5">
+                  <div className="mb-2 text-[11px] uppercase tracking-[0.2em] text-stone-500 dark:text-stone-400">涉及文件</div>
+                  <div className="space-y-2">
+                    {fileButtons.map((file) => (
+                      <button
+                        className={`block w-full rounded-xl border px-3 py-2 text-left transition ${
+                          activeFile?.path === file.path
+                            ? 'border-stone-900 bg-stone-900 text-white dark:border-stone-100 dark:bg-stone-100 dark:text-stone-950'
+                            : 'border-stone-200 bg-stone-50 text-stone-800 hover:border-stone-300 hover:bg-white dark:border-white/10 dark:bg-stone-950/70 dark:text-stone-200 dark:hover:border-white/20 dark:hover:bg-stone-900'
+                        }`}
+                        key={file.path}
+                        onClick={() => setSelectedFile(file.path)}
+                        type="button"
+                      >
+                        <div className="truncate font-mono text-xs">{file.path}</div>
+                        <div className="mt-2 flex items-center gap-2 text-[11px]">
+                          <span className="rounded-full bg-emerald-500/15 px-2 py-1 text-emerald-600 dark:text-emerald-300">
+                            +{file.additions}
+                          </span>
+                          <span className="rounded-full bg-rose-500/15 px-2 py-1 text-rose-600 dark:text-rose-300">
+                            -{file.deletions}
+                          </span>
+                        </div>
+                      </button>
+                    ))}
                   </div>
-                  <div className="font-mono text-xs text-stone-500">diffs/{activeRepo.id}.patch</div>
                 </div>
-                <div className="max-h-[420px] overflow-auto px-4 py-4 text-[12px] leading-6">
-                  {(activeFile?.lines ?? activeRepo.diffSummary.patch.split('\n')).map((line, index) => (
-                    <div className={diffLineTone(line)} key={`${index}-${line}`}>
-                      <code>{line || ' '}</code>
+
+                <div className="overflow-hidden rounded-[18px] border border-stone-200 bg-[#0d1014] shadow-[0_12px_30px_rgba(17,24,39,0.08)]">
+                  <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/8 px-4 py-3 text-sm text-stone-300">
+                    <div>
+                      <div className="font-semibold text-stone-100">
+                        {activeFile?.path ? `Diff · ${activeFile.path}` : '提交差异'}
+                      </div>
+                      <div className="mt-1 text-xs text-stone-500">优先展示当前文件的变更；需要时可切回原始 patch。</div>
                     </div>
-                  ))}
+                    <div className="flex items-center gap-2">
+                      <button
+                        className={`rounded-full px-3 py-1.5 text-xs font-medium transition ${
+                          viewMode === 'unified'
+                            ? 'bg-stone-100 text-stone-950'
+                            : 'bg-white/5 text-stone-300 hover:bg-white/10'
+                        }`}
+                        onClick={() => setViewMode('unified')}
+                        type="button"
+                      >
+                        按文件查看
+                      </button>
+                      <button
+                        className={`rounded-full px-3 py-1.5 text-xs font-medium transition ${
+                          viewMode === 'raw'
+                            ? 'bg-stone-100 text-stone-950'
+                            : 'bg-white/5 text-stone-300 hover:bg-white/10'
+                        }`}
+                        onClick={() => setViewMode('raw')}
+                        type="button"
+                      >
+                        Raw Patch
+                      </button>
+                    </div>
+                  </div>
+                  <div className="max-h-[520px] overflow-auto">
+                    {viewMode === 'unified' ? (
+                      unifiedAvailable && activeFile ? (
+                        <UnifiedDiffView file={activeFile} />
+                      ) : (
+                        <div className="px-4 py-6 text-sm leading-6 text-stone-400">
+                          当前产物里没有可解析的文件级 diff。你仍然可以切到 `Raw Patch` 查看原始内容。
+                        </div>
+                      )
+                    ) : (
+                      <RawPatchView
+                        lines={activeFile?.rawLines.length ? activeFile.rawLines : activeRepo.diffSummary.patch.split('\n')}
+                        path={`diffs/${activeRepo.id}.patch`}
+                      />
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
@@ -119,4 +177,80 @@ export function DiffPanel({
       )}
     </section>
   )
+}
+
+function UnifiedDiffView({ file }: { file: ParsedDiffFile }) {
+  return (
+    <div>
+      <div className="grid grid-cols-[64px_64px_16px_1fr] gap-3 border-b border-white/8 px-4 py-2 text-[11px] uppercase tracking-[0.18em] text-stone-500">
+        <span className="text-right">旧</span>
+        <span className="text-right">新</span>
+        <span />
+        <span>内容</span>
+      </div>
+      {file.hunks.map((hunk, hunkIndex) => (
+        <div className="border-b border-white/6 last:border-b-0" key={`${file.path}-${hunk.header}-${hunkIndex}`}>
+          <div className="bg-sky-500/10 px-4 py-2 font-mono text-[11px] text-sky-200">{hunk.header}</div>
+          {hunk.lines.map((line, lineIndex) => (
+            <div
+              className={`grid grid-cols-[64px_64px_16px_1fr] gap-3 px-4 py-1.5 text-[12px] leading-6 ${diffLineTone(line.kind)}`}
+              key={`${hunkIndex}-${lineIndex}-${line.oldLine}-${line.newLine}`}
+            >
+              <span className="select-none text-right font-mono text-stone-500">{formatLineNumber(line.oldLine)}</span>
+              <span className="select-none text-right font-mono text-stone-500">{formatLineNumber(line.newLine)}</span>
+              <span className="select-none font-mono text-stone-500">{diffLineMarker(line.kind)}</span>
+              <code className="whitespace-pre-wrap break-all">{line.text || ' '}</code>
+            </div>
+          ))}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function RawPatchView({ lines, path }: { lines: string[]; path: string }) {
+  return (
+    <>
+      <div className="flex items-center justify-end px-4 py-3 text-xs text-stone-500">
+        <span className="font-mono">{path}</span>
+      </div>
+      <div className="border-t border-white/8 px-4 py-4 text-[12px] leading-6">
+        {lines.map((line, index) => (
+          <div className={`${rawPatchTone(line)} font-mono`} key={`${index}-${line}`}>
+            <code>{line || ' '}</code>
+          </div>
+        ))}
+      </div>
+    </>
+  )
+}
+
+function diffLineMarker(kind: 'context' | 'add' | 'delete' | 'meta') {
+  if (kind === 'add') {
+    return '+'
+  }
+  if (kind === 'delete') {
+    return '-'
+  }
+  if (kind === 'meta') {
+    return '@'
+  }
+  return ' '
+}
+
+function formatLineNumber(line: number | null) {
+  return line == null ? '' : `${line}`
+}
+
+function rawPatchTone(line: string) {
+  if (line.startsWith('+++') || line.startsWith('---') || line.startsWith('diff --git') || line.startsWith('@@')) {
+    return 'text-sky-300'
+  }
+  if (line.startsWith('+')) {
+    return 'text-emerald-300'
+  }
+  if (line.startsWith('-')) {
+    return 'text-rose-300'
+  }
+  return 'text-stone-200'
 }
