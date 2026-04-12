@@ -1,6 +1,7 @@
 export type TaskStatus =
   | 'initialized'
   | 'refined'
+  | 'planning'
   | 'planned'
   | 'coding'
   | 'partially_coded'
@@ -17,6 +18,7 @@ export type TaskArtifactName =
   | 'refine.log'
   | 'design.md'
   | 'plan.md'
+  | 'plan.log'
   | 'code-result.json'
   | 'code.log'
 
@@ -146,6 +148,17 @@ export async function deleteTask(taskId: string) {
   })
   if (!response.ok) {
     throw new Error(await response.text())
+  }
+  return response.json() as Promise<{ task_id: string; status: string }>
+}
+
+export async function startPlan(taskId: string) {
+  const response = await fetch(`/api/tasks/${taskId}/plan`, {
+    method: 'POST',
+  })
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { error?: string } | null
+    throw new Error(body?.error || '启动 plan 失败')
   }
   return response.json() as Promise<{ task_id: string; status: string }>
 }

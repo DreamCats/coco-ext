@@ -28,15 +28,15 @@ export function DiffPanel({
     <section className="rounded-[24px] border border-stone-200 bg-white p-4 dark:border-white/10 dark:bg-white/6">
       <div className="mb-4 flex items-center justify-between gap-3">
         <div>
-          <div className="text-xs font-semibold uppercase tracking-[0.22em] text-stone-500 dark:text-stone-400">Code Diff</div>
-          <h4 className="mt-2 text-2xl font-semibold tracking-[-0.04em] text-stone-950 dark:text-stone-50">repo 级 patch 回看</h4>
+          <div className="text-xs font-semibold uppercase tracking-[0.22em] text-stone-500 dark:text-stone-400">变更对比</div>
+          <h4 className="mt-2 text-2xl font-semibold tracking-[-0.04em] text-stone-950 dark:text-stone-50">提交差异回看</h4>
         </div>
-        <div className="text-xs text-stone-500 dark:text-stone-400">当前先展示 unified diff</div>
+        <div className="text-xs text-stone-500 dark:text-stone-400">按仓库查看本次提交的 patch</div>
       </div>
 
       {reposWithDiff.length === 0 ? (
         <div className="rounded-[18px] border border-dashed border-stone-300 bg-stone-50 px-4 py-6 text-sm leading-6 text-stone-500 dark:border-white/15 dark:bg-white/5 dark:text-stone-400">
-          当前还没有可展示的 diff。只有在 repo 成功 auto-commit 后，才会落盘 `diffs/&lt;repo-id&gt;.patch`。
+          暂时还没有可查看的提交差异。生成提交后，这里会自动展示对应 patch。
         </div>
       ) : (
         <>
@@ -75,7 +75,7 @@ export function DiffPanel({
               </div>
 
               <div className="rounded-[18px] border border-stone-200 bg-white px-3 py-3 dark:border-white/10 dark:bg-white/5">
-                <div className="mb-2 text-[11px] uppercase tracking-[0.2em] text-stone-500 dark:text-stone-400">Files In Diff</div>
+                <div className="mb-2 text-[11px] uppercase tracking-[0.2em] text-stone-500 dark:text-stone-400">涉及文件</div>
                 <div className="space-y-2">
                   {activeRepo.diffSummary.files.map((file) => (
                     <button

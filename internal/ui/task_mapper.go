@@ -39,6 +39,10 @@ func buildTimeline(status string) []TaskTimelineItem {
 		refineState, planState = "done", "current"
 		refineDetail = "已生成 refined PRD"
 		planDetail = "等待生成 design.md 与 plan.md"
+	case prd.TaskStatusPlanning:
+		refineState, planState = "done", "current"
+		refineDetail = "已生成 refined PRD"
+		planDetail = "正在调研代码并生成 design.md / plan.md"
 	case prd.TaskStatusPlanned:
 		refineState, planState, codeState = "done", "done", "current"
 		refineDetail = "已生成 refined PRD"
@@ -92,12 +96,18 @@ func missingArtifactPlaceholder(name string) string {
 	if name == "refine.log" {
 		return "当前没有可用的 refine.log。可能任务尚未启动 refine，或日志写入失败。"
 	}
+	if name == "plan.log" {
+		return "当前没有可用的 plan.log。可能任务尚未启动 plan，或日志写入失败。"
+	}
 	return fmt.Sprintf("该 task 当前没有 `%s`。", name)
 }
 
 func emptyArtifactPlaceholder(name string) string {
 	if name == "refine.log" {
 		return "refine.log 当前为空。"
+	}
+	if name == "plan.log" {
+		return "plan.log 当前为空。"
 	}
 	if name == "code.log" {
 		return "当前没有可用的 code.log。可能这个 task 是旧数据，或尚未进入 code 阶段。"

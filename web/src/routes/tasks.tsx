@@ -4,6 +4,7 @@ import {
   createTask,
   deleteTask,
   getTask,
+  startPlan,
   type RepoCandidate,
   type TaskArtifactName,
   type TaskListItem,
@@ -143,10 +144,10 @@ export function TasksLayout() {
       >
         <div className="mb-4 flex items-start justify-between gap-3">
           <div>
-            <div className="text-xs font-semibold uppercase tracking-[0.22em] text-stone-500 dark:text-stone-400">Delivery Console</div>
-            <h2 className="mt-2 text-2xl font-semibold tracking-[-0.04em] text-stone-950 dark:text-stone-50">任务流与交付队列</h2>
+            <div className="text-xs font-semibold uppercase tracking-[0.22em] text-stone-500 dark:text-stone-400">任务推进</div>
+            <h2 className="mt-2 text-2xl font-semibold tracking-[-0.04em] text-stone-950 dark:text-stone-50">任务队列</h2>
             <p className="mt-2 max-w-[280px] text-sm leading-6 text-stone-500 dark:text-stone-400">
-              从这里看当前有哪些需求在流转、哪些已经进入多仓 code、哪些还在等待下一步。
+              在这里查看每条需求的当前阶段、涉及仓库和下一步动作。
             </p>
           </div>
           <div className="flex flex-col gap-2">
@@ -155,24 +156,24 @@ export function TasksLayout() {
               onClick={() => setShowCreateForm((current) => !current)}
               type="button"
             >
-              {showCreateForm ? '收起 New Task' : 'New Task'}
+              {showCreateForm ? '收起新建入口' : '新建任务'}
             </button>
             <div className="rounded-2xl bg-stone-900 px-3 py-2 text-right text-white dark:bg-stone-100 dark:text-stone-950">
-              <div className="text-[11px] uppercase tracking-[0.24em] text-stone-400 dark:text-stone-500">Latest</div>
+              <div className="text-[11px] uppercase tracking-[0.24em] text-stone-400 dark:text-stone-500">最近更新</div>
               <div className="text-sm font-semibold">{tasks[0]?.updatedAt ?? '-'}</div>
             </div>
           </div>
         </div>
 
         <div className="mb-4 grid grid-cols-3 gap-2 text-xs">
-          <FilterChip label="All" value={loading ? '...' : `${tasks.length}`} />
+          <FilterChip label="全部任务" value={loading ? '...' : `${tasks.length}`} />
           <FilterChip
-            label="Coded"
+            label="已有结果"
             value={loading ? '...' : `${tasks.filter((task) => task.status === 'coded' || task.status === 'partially_coded').length}`}
           />
           <FilterChip
-            label="Planned"
-            value={loading ? '...' : `${tasks.filter((task) => task.status === 'planned').length}`}
+            label="待推进"
+            value={loading ? '...' : `${tasks.filter((task) => task.status === 'planned' || task.status === 'planning').length}`}
           />
         </div>
 
@@ -180,7 +181,7 @@ export function TasksLayout() {
           <input
             className="w-full rounded-2xl border border-stone-200 bg-white px-3 py-3 text-sm text-stone-900 outline-none transition placeholder:text-stone-400 focus:border-stone-400 dark:border-white/10 dark:bg-stone-950/70 dark:text-stone-100 dark:placeholder:text-stone-500 dark:focus:border-white/20"
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="搜索 task / repo / task_id"
+            placeholder="搜索任务标题、仓库或任务编号"
             type="text"
             value={query}
           />
@@ -191,12 +192,13 @@ export function TasksLayout() {
               value={statusFilter}
             >
               <option value="all">全部状态</option>
-              <option value="planned">planned</option>
-              <option value="coding">coding</option>
-              <option value="partially_coded">partially_coded</option>
-              <option value="coded">coded</option>
-              <option value="archived">archived</option>
-              <option value="failed">failed</option>
+              <option value="planned">待进入实现</option>
+              <option value="planning">方案生成中</option>
+              <option value="coding">实现进行中</option>
+              <option value="partially_coded">部分已完成</option>
+              <option value="coded">已产出结果</option>
+              <option value="archived">已归档</option>
+              <option value="failed">处理中断</option>
             </select>
             <select
               className="rounded-2xl border border-stone-200 bg-white px-3 py-3 text-sm text-stone-700 outline-none focus:border-stone-400 dark:border-white/10 dark:bg-stone-950/70 dark:text-stone-200 dark:focus:border-white/20"
@@ -247,10 +249,10 @@ export function TasksLayout() {
           >
             <div className="flex items-start justify-between gap-4 border-b border-stone-200 px-5 py-5 dark:border-white/10 md:px-6">
               <div>
-                <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-stone-500 dark:text-stone-400">Create Task</div>
+                <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-stone-500 dark:text-stone-400">新建任务</div>
                 <h3 className="mt-2 text-[30px] font-semibold tracking-[-0.05em] text-stone-950 dark:text-stone-50">新建需求任务</h3>
                 <p className="mt-2 text-sm leading-6 text-stone-500 dark:text-stone-400">
-                  这里创建的是全局 task。先明确需求输入和 repo scope，再由后台异步执行 refine。
+                  先确认需求内容和涉及仓库，系统会在后台整理需求，生成可继续推进的任务。
                 </p>
               </div>
               <button
@@ -258,7 +260,7 @@ export function TasksLayout() {
                 onClick={closeCreateForm}
                 type="button"
               >
-                Close
+                关闭
               </button>
             </div>
 
@@ -289,14 +291,14 @@ export function TasksLayout() {
                   onClick={() => void submitCreateTask()}
                   type="button"
                 >
-                  {creating ? 'Creating...' : 'Create'}
+                  {creating ? '创建中...' : '创建任务'}
                 </button>
                 <button
                   className="rounded-2xl border border-stone-200 px-5 py-3 text-sm text-stone-700 transition hover:border-stone-300 hover:bg-stone-50 dark:border-white/10 dark:text-stone-300 dark:hover:border-white/20 dark:hover:bg-white/10"
                   onClick={closeCreateForm}
                   type="button"
                 >
-                  Cancel
+                  取消
                 </button>
               </div>
             </div>
@@ -310,7 +312,7 @@ export function TasksLayout() {
 export function TasksIndexPage() {
   const { tasks, loading, error } = useAppData()
   if (loading) {
-    return <PanelMessage>正在加载 task...</PanelMessage>
+    return <PanelMessage>正在加载任务...</PanelMessage>
   }
   if (error) {
     return <PanelMessage>{error}</PanelMessage>
@@ -330,6 +332,8 @@ export function TaskDetailPage() {
   const [selectedDiffRepo, setSelectedDiffRepo] = useState('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [planStarting, setPlanStarting] = useState(false)
+  const [actionError, setActionError] = useState('')
 
   useEffect(() => {
     let cancelled = false
@@ -344,6 +348,7 @@ export function TaskDetailPage() {
         const firstDiffRepo = detail.repos.find((repo) => repo.diffSummary)?.id ?? detail.repos[0]?.id ?? ''
         setSelectedDiffRepo(firstDiffRepo)
         setError('')
+        setActionError('')
       } catch (err) {
         if (cancelled) {
           return
@@ -363,7 +368,7 @@ export function TaskDetailPage() {
   }, [taskId])
 
   useEffect(() => {
-    if (!task || task.status !== 'initialized') {
+    if (!task || !new Set<TaskStatus>(['initialized', 'planning']).has(task.status)) {
       return
     }
 
@@ -377,7 +382,8 @@ export function TaskDetailPage() {
           setTask(detail)
           const firstDiffRepo = detail.repos.find((repo) => repo.diffSummary)?.id ?? detail.repos[0]?.id ?? ''
           setSelectedDiffRepo(firstDiffRepo)
-          if (detail.status !== 'initialized') {
+          if (detail.status !== 'initialized' && detail.status !== 'planning') {
+            setPlanStarting(false)
             void reload()
           }
         })
@@ -391,7 +397,7 @@ export function TaskDetailPage() {
   }, [task, taskId, reload])
 
   if (loading) {
-    return <PanelMessage>正在加载 task 详情...</PanelMessage>
+    return <PanelMessage>正在加载任务详情...</PanelMessage>
   }
   if (error) {
     return <PanelMessage>{error}</PanelMessage>
@@ -401,6 +407,8 @@ export function TaskDetailPage() {
   }
   const deletableStatuses = new Set<TaskStatus>(['initialized', 'refined', 'planned', 'failed'])
   const canDelete = deletableStatuses.has(task.status)
+  const canStartPlan = task.status === 'refined' || task.status === 'planned'
+  const planActionLabel = task.status === 'planned' ? '重新 Plan' : '开始 Plan'
 
   return (
     <div className="space-y-4 lg:h-full lg:overflow-y-auto lg:pr-1">
@@ -420,7 +428,7 @@ export function TaskDetailPage() {
               <div className="text-xs font-semibold uppercase tracking-[0.24em] text-stone-400">Task Detail</div>
               <h3 className="mt-2 text-[30px] font-semibold tracking-[-0.05em] text-white">{task.title}</h3>
               <p className="mt-3 max-w-3xl text-sm leading-6 text-stone-300">
-                真实数据视图下，task 主记录、多仓 repo 状态、设计文档和 code 日志都在同一页汇总，方便回看和排障。
+                在这里查看需求文档、实施方案、涉及仓库和最新结果，让推进路径始终清晰。
               </p>
               {canDelete ? (
                 <div className="mt-4 flex flex-wrap items-center gap-3">
@@ -441,23 +449,23 @@ export function TaskDetailPage() {
                     }}
                     type="button"
                   >
-                    Delete Task
+                    删除任务
                   </button>
-                  <span className="text-xs text-stone-400">只适用于未进入 code 的 task</span>
+                  <span className="text-xs text-stone-400">仅限尚未进入实现阶段的任务</span>
                 </div>
               ) : null}
             </div>
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
-              <CompactField label="task_id" value={task.id} />
-              <CompactField label="updated" value={task.updatedAt} />
-              <CompactField label="owner" value={task.owner} />
-              <CompactField label="repos" value={`${task.repos.length}`} />
+              <CompactField label="任务编号" value={task.id} />
+              <CompactField label="最近更新" value={task.updatedAt} />
+              <CompactField label="负责人" value={task.owner} />
+              <CompactField label="涉及仓库" value={`${task.repos.length}`} />
             </div>
           </div>
         </div>
         <div className="grid gap-4 px-5 py-5 lg:grid-cols-[minmax(0,1fr)_360px]">
           <div className="rounded-[20px] border border-white/8 bg-white/3 p-4">
-            <div className="mb-3 text-xs font-semibold uppercase tracking-[0.22em] text-stone-400">Workflow Timeline</div>
+            <div className="mb-3 text-xs font-semibold uppercase tracking-[0.22em] text-stone-400">推进阶段</div>
             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
               {task.timeline.map((step) => (
                 <TimelineCard key={step.label} detail={step.detail} label={step.label} state={step.state} />
@@ -466,22 +474,69 @@ export function TaskDetailPage() {
           </div>
 
           <div className="rounded-[20px] border border-emerald-300/20 bg-emerald-400/10 p-4">
-            <div className="text-xs font-semibold uppercase tracking-[0.22em] text-emerald-200">Recommended Next</div>
+            <div className="text-xs font-semibold uppercase tracking-[0.22em] text-emerald-200">下一步建议</div>
             <div className="mt-3 text-xl font-semibold tracking-[-0.04em] text-white">
               {task.status === 'coded'
                 ? '确认结果后归档'
                 : task.status === 'partially_coded'
                   ? '继续推进剩余仓库'
+                  : task.status === 'planning'
+                    ? '等待方案生成完成'
                   : task.status === 'planned'
-                    ? '进入隔离 code 阶段'
-                    : '继续推进 task'}
+                    ? '进入实现阶段'
+                    : task.status === 'refined'
+                      ? '开始生成方案'
+                      : '继续推进当前任务'}
             </div>
             <p className="mt-3 text-sm leading-6 text-emerald-100/85">
-              下一步来源于 task 当前状态和 repo 子状态聚合，不再是静态 mock 文案。
+              系统会根据当前阶段给出建议动作，帮助你把任务继续往前推进。
             </p>
             {task.status === 'initialized' ? (
               <div className="mt-3 rounded-2xl border border-amber-300/20 bg-amber-400/10 px-4 py-3 text-sm leading-6 text-amber-100">
-                Refine 正在后台执行。页面会自动轮询；如果长时间停留在当前状态，可以直接打开 `refine.log` 查看卡在哪一阶段。
+                需求正在整理成可执行任务。若停留时间过长，可打开 `refine.log` 查看进度。
+              </div>
+            ) : null}
+            {task.status === 'planning' ? (
+              <div className="mt-3 rounded-2xl border border-sky-300/20 bg-sky-400/10 px-4 py-3 text-sm leading-6 text-sky-100">
+                正在分析代码并生成方案。若停留时间过长，可打开 `plan.log` 查看进度。
+              </div>
+            ) : null}
+            {actionError ? (
+              <div className="mt-3 rounded-2xl border border-rose-300/20 bg-rose-400/10 px-4 py-3 text-sm leading-6 text-rose-100">
+                {actionError}
+              </div>
+            ) : null}
+            {canStartPlan ? (
+              <div className="mt-4 flex flex-wrap items-center gap-3">
+                <button
+                  className="rounded-2xl border border-emerald-200/30 bg-emerald-400/20 px-4 py-3 text-sm font-semibold text-emerald-50 transition hover:border-emerald-100/40 hover:bg-emerald-400/30 disabled:cursor-not-allowed disabled:opacity-60"
+                  disabled={planStarting}
+                  onClick={async () => {
+                    try {
+                      setPlanStarting(true)
+                      setActionError('')
+                      const result = await startPlan(task.id)
+                      setTask({
+                        ...task,
+                        status: result.status as TaskStatus,
+                        nextAction: '方案正在生成，请稍候刷新任务详情。',
+                      })
+                      setArtifact('plan.log')
+                      await reload()
+                    } catch (err) {
+                      setActionError(err instanceof Error ? err.message : '启动 plan 失败')
+                      setPlanStarting(false)
+                    }
+                  }}
+                  type="button"
+                >
+                  {planStarting ? '方案生成中...' : planActionLabel}
+                </button>
+                <span className="text-xs text-emerald-100/80">
+                  {task.status === 'planned'
+                    ? '会重新分析代码，并覆盖 `design.md` / `plan.md`'
+                    : '会在后台生成 `design.md` / `plan.md`'}
+                </span>
               </div>
             ) : null}
             <div className="mt-4 rounded-2xl border border-emerald-200/20 bg-stone-950/50 px-4 py-3 font-mono text-sm text-emerald-100">
@@ -498,7 +553,7 @@ export function TaskDetailPage() {
               <div className="text-xs font-semibold uppercase tracking-[0.22em] text-stone-500 dark:text-stone-400">Artifacts</div>
               <h4 className="mt-2 text-2xl font-semibold tracking-[-0.04em] text-stone-950 dark:text-stone-50">文档与结果产物</h4>
             </div>
-            <div className="text-sm text-stone-500 dark:text-stone-400">task 主目录下的真实文件内容与 code 日志</div>
+            <div className="text-sm text-stone-500 dark:text-stone-400">查看需求、方案、日志和结果产物</div>
           </div>
 
           <div className="mb-4 flex flex-wrap gap-2">
@@ -523,19 +578,10 @@ export function TaskDetailPage() {
 
         <aside className="space-y-4">
           <ActionPanel task={task} />
-          <DeletePolicyCard canDelete={canDelete} status={task.status} />
+          <DeletePolicyCard canDelete={canDelete} />
           <RepoScopeCard task={task} />
           <CodeResultCard task={task} />
           <DiffPanel repos={task.repos} selectedRepo={selectedDiffRepo} onSelectRepo={setSelectedDiffRepo} />
-          <section className="rounded-[24px] border border-stone-200 bg-white p-4 dark:border-white/10 dark:bg-white/6">
-            <div className="text-xs font-semibold uppercase tracking-[0.22em] text-stone-500 dark:text-stone-400">Why This Matters</div>
-            <h4 className="mt-2 text-2xl font-semibold tracking-[-0.04em] text-stone-950 dark:text-stone-50">这版带来的直接价值</h4>
-            <ul className="mt-4 space-y-3 text-sm leading-6 text-stone-600 dark:text-stone-300">
-              <li>用户可以在一个页面里查看多仓 task 的关键状态，减少来回切换和沟通成本。</li>
-              <li>接入真实 task 数据后，页面展示和实际流程保持一致，更容易发现 repo scope、分支、worktree、commit 和 code.log 的问题。</li>
-              <li>先以只读工作台验证方案，投入更小、试错更快，再决定是否追加触发操作和控制能力。</li>
-            </ul>
-          </section>
         </aside>
       </div>
     </div>
@@ -544,21 +590,19 @@ export function TaskDetailPage() {
 
 function DeletePolicyCard({
   canDelete,
-  status,
 }: {
   canDelete: boolean
-  status: TaskStatus
 }) {
   return (
     <section className="rounded-[24px] border border-stone-200 bg-white p-4 dark:border-white/10 dark:bg-white/6">
       <div className="mb-3 text-xs font-semibold uppercase tracking-[0.22em] text-stone-500 dark:text-stone-400">Delete Policy</div>
       {canDelete ? (
         <div className="rounded-[18px] border border-emerald-200 bg-emerald-50 px-3 py-3 text-sm leading-6 text-emerald-800 dark:border-emerald-300/20 dark:bg-emerald-400/10 dark:text-emerald-100">
-          当前状态为 `{status}`，允许删除。删除动作只适用于未进入 code 的 task。
+          当前阶段支持直接删除。如果这条需求不再继续，可以在这里移除。
         </div>
       ) : (
         <div className="rounded-[18px] border border-amber-200 bg-amber-50 px-3 py-3 text-sm leading-6 text-amber-900 dark:border-amber-300/20 dark:bg-amber-400/10 dark:text-amber-100">
-          当前状态为 `{status}`，已进入或完成 code 阶段，不允许直接删除。
+          当前任务已经进入实现流程。如需回退，建议先处理已有结果后再操作。
         </div>
       )}
     </section>
@@ -586,8 +630,14 @@ function TaskListItemCard({ task }: { task: TaskListItem }) {
       <div className="mt-3 text-[17px] font-semibold leading-6 tracking-[-0.03em]">{task.title}</div>
       <div className={`mt-2 text-xs font-mono ${active ? 'text-stone-400 dark:text-stone-500' : 'text-stone-500 dark:text-stone-400'}`}>{task.id}</div>
       <div className={`mt-4 flex items-center justify-between text-xs ${active ? 'text-stone-300 dark:text-stone-500' : 'text-stone-500 dark:text-stone-400'}`}>
-        <span>{task.status === 'initialized' ? 'Refining…' : task.repoIds.slice(0, 2).join(', ') || '-'}</span>
-        <span>{task.repoCount} repo(s)</span>
+        <span>
+          {task.status === 'initialized'
+            ? 'Refining…'
+            : task.status === 'planning'
+              ? 'Planning…'
+              : task.repoIds.slice(0, 2).join(', ') || '-'}
+        </span>
+        <span>{task.repoCount} 个仓库</span>
       </div>
     </Link>
   )
@@ -596,10 +646,10 @@ function TaskListItemCard({ task }: { task: TaskListItem }) {
 function RepoScopeCard({ task }: { task: TaskRecord }) {
   return (
     <section className="rounded-[24px] border border-stone-200 bg-white p-4 dark:border-white/10 dark:bg-white/6">
-      <div className="mb-4 text-xs font-semibold uppercase tracking-[0.22em] text-stone-500 dark:text-stone-400">Repo Scope</div>
+      <div className="mb-4 text-xs font-semibold uppercase tracking-[0.22em] text-stone-500 dark:text-stone-400">涉及仓库</div>
       <div className="space-y-3">
-        <KeyValue label="Repos Involved" value={`${task.repos.length}`} />
-        <KeyValue label="Repo IDs" value={task.repos.map((repo) => repo.id).join(', ')} />
+        <KeyValue label="仓库数量" value={`${task.repos.length}`} />
+        <KeyValue label="仓库标识" value={task.repos.map((repo) => repo.id).join(', ')} />
       </div>
 
       <div className="mt-4 space-y-2">
@@ -622,7 +672,7 @@ function RepoScopeCard({ task }: { task: TaskRecord }) {
 function CodeResultCard({ task }: { task: TaskRecord }) {
   return (
     <section className="rounded-[24px] border border-stone-200 bg-white p-4 dark:border-white/10 dark:bg-white/6">
-      <div className="mb-4 text-xs font-semibold uppercase tracking-[0.22em] text-stone-500 dark:text-stone-400">Repo Code Results</div>
+      <div className="mb-4 text-xs font-semibold uppercase tracking-[0.22em] text-stone-500 dark:text-stone-400">仓库结果</div>
       <div className="space-y-4">
         {task.repos.map((repo) => (
           <RepoCodeResult key={repo.id} repo={repo} />
@@ -643,14 +693,14 @@ function RepoCodeResult({ repo }: { repo: TaskRecord['repos'][number] }) {
         <RepoStatusBadge status={repo.status} />
       </div>
       <div className="space-y-3">
-        <KeyValue label="Build" value={repo.build === 'passed' ? 'Passed' : repo.build === 'failed' ? 'Failed' : 'Pending'} />
-        <KeyValue label="Branch" mono value={repo.branch ?? '尚未创建'} />
-        <KeyValue label="Worktree" mono value={repo.worktree ?? '尚未创建'} />
-        <KeyValue label="Commit" mono value={repo.commit ?? '尚未提交'} />
+        <KeyValue label="构建结果" value={repo.build === 'passed' ? '已通过' : repo.build === 'failed' ? '未通过' : '待生成'} />
+        <KeyValue label="分支" mono value={repo.branch ?? '尚未创建'} />
+        <KeyValue label="工作区" mono value={repo.worktree ?? '尚未创建'} />
+        <KeyValue label="提交" mono value={repo.commit ?? '尚未提交'} />
       </div>
 
       <div className="mt-4 rounded-[18px] border border-stone-200 bg-white px-3 py-3 dark:border-white/10 dark:bg-stone-950/70">
-        <div className="text-[11px] uppercase tracking-[0.2em] text-stone-500 dark:text-stone-400">Files Written</div>
+        <div className="text-[11px] uppercase tracking-[0.2em] text-stone-500 dark:text-stone-400">变更文件</div>
         <div className="mt-2 space-y-2">
           {(repo.filesWritten && repo.filesWritten.length > 0 ? repo.filesWritten : ['尚无写入结果']).map((file) => (
             <div className="font-mono text-xs text-stone-800 dark:text-stone-200" key={file}>

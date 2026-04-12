@@ -15,6 +15,7 @@ import (
 const (
 	TaskStatusInitialized    = "initialized"
 	TaskStatusRefined        = "refined"
+	TaskStatusPlanning       = "planning"
 	TaskStatusPlanned        = "planned"
 	TaskStatusCoding         = "coding"
 	TaskStatusPartiallyCoded = "partially_coded"

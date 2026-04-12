@@ -107,7 +107,7 @@ coco-ext daemon start -d    # 后台启动 daemon
 coco-ext daemon stop        # 停止 daemon
 
 # 11. 本地 Web UI
-coco-ext ui serve           # 启动只读 Web UI（默认 http://127.0.0.1:4317）
+coco-ext ui serve           # 启动 Web UI（默认 http://127.0.0.1:4317）
 coco-ext ui serve --port 4318
 ```
 
@@ -249,6 +249,7 @@ coco-ext prd run -i "需求描述或飞书链接"
   - `GET /api/workspace`
 - Web UI 当前已支持：
   - `Create Task`：通过弹层创建全局 task，后台异步执行 refine，前端轮询 `initialized -> refined`
+  - `Start Plan`：在 `refined` 状态下触发后台异步 plan，前端轮询 `planning -> planned`
   - `Delete Task`：仅允许删除未进入 code 的 task（`initialized/refined/planned/failed`）
   - repo 选择：支持 `Recent Repos` 和 `Remote Browser`
 - Web UI 创建 task 时：
@@ -257,6 +258,7 @@ coco-ext prd run -i "需求描述或飞书链接"
   - `Remote Browser` 浏览和校验的是运行 `coco-ext ui serve` 的那台机器上的文件系统
 - 扩展 API：
   - `POST /api/tasks`
+  - `POST /api/tasks/:task_id/plan`
   - `DELETE /api/tasks/:task_id`
   - `GET /api/repos/recent`
   - `POST /api/repos/validate`

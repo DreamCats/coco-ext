@@ -88,6 +88,7 @@ var uiArtifactOrder = []string{
 	"refine.log",
 	"design.md",
 	"plan.md",
+	"plan.log",
 	"code-result.json",
 	"code.log",
 }

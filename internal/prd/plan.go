@@ -958,6 +958,16 @@ func ArchiveTask(taskDir string, now time.Time) error {
 	return updateTaskStatus(taskDir, TaskStatusArchived, now)
 }
 
+// StartPlanningTask 将 task 状态更新为 planning。
+func StartPlanningTask(taskDir string, now time.Time) error {
+	return updateTaskStatus(taskDir, TaskStatusPlanning, now)
+}
+
+// MarkTaskFailed 将 task 状态更新为 failed。
+func MarkTaskFailed(taskDir string, now time.Time) error {
+	return updateTaskStatus(taskDir, TaskStatusFailed, now)
+}
+
 // ResetTaskToPlanned 将 task 状态回退为 planned（用于重新执行 prd code）。
 func ResetTaskToPlanned(taskDir string, now time.Time) error {
 	return updateTaskStatus(taskDir, TaskStatusPlanned, now)

@@ -2,6 +2,54 @@ import { Link } from '@tanstack/react-router'
 import type { ReactNode } from 'react'
 import type { RepoResult, TaskStatus } from '../api'
 
+function taskStatusLabel(status: TaskStatus) {
+  switch (status) {
+    case 'initialized':
+      return '需求整理中'
+    case 'refined':
+      return '待生成方案'
+    case 'planning':
+      return '方案生成中'
+    case 'planned':
+      return '待进入实现'
+    case 'coding':
+      return '实现进行中'
+    case 'partially_coded':
+      return '部分已完成'
+    case 'coded':
+      return '已产出结果'
+    case 'archived':
+      return '已归档'
+    case 'failed':
+      return '处理中断'
+    default:
+      return status
+  }
+}
+
+function repoStatusLabel(status: RepoResult['status']) {
+  switch (status) {
+    case 'pending':
+      return '待推进'
+    case 'initialized':
+      return '已创建'
+    case 'refined':
+      return '已整理'
+    case 'planned':
+      return '待实现'
+    case 'coding':
+      return '实现中'
+    case 'coded':
+      return '已完成'
+    case 'failed':
+      return '失败'
+    case 'archived':
+      return '已归档'
+    default:
+      return status
+  }
+}
+
 export function MetricCard({
   label,
   tone,
@@ -47,7 +95,7 @@ export function TopNavItem({
       to={to}
     >
       <div className={`text-[11px] font-semibold uppercase tracking-[0.22em] ${isActive ? 'text-stone-400 dark:text-stone-500' : 'text-stone-500 dark:text-stone-400'}`}>
-        Capability
+        导航
       </div>
       <div className="mt-2 text-lg font-semibold tracking-[-0.03em]">{title}</div>
       <div className={`mt-2 text-xs leading-5 ${isActive ? 'text-stone-300 dark:text-stone-600' : 'text-stone-500 dark:text-stone-400'}`}>{description}</div>
@@ -70,6 +118,8 @@ export function StatusBadge({ status }: { status: TaskStatus }) {
       ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
       : status === 'partially_coded'
         ? 'border-orange-200 bg-orange-50 text-orange-700'
+        : status === 'planning'
+          ? 'border-sky-200 bg-sky-50 text-sky-700'
         : status === 'planned'
           ? 'border-amber-200 bg-amber-50 text-amber-700'
           : status === 'archived'
@@ -78,7 +128,7 @@ export function StatusBadge({ status }: { status: TaskStatus }) {
               ? 'border-rose-200 bg-rose-50 text-rose-700'
               : 'border-stone-200 bg-stone-100 text-stone-700 dark:border-stone-700 dark:bg-stone-800 dark:text-stone-200'
 
-  return <span className={`rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] ${tone}`}>{status}</span>
+  return <span className={`rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] ${tone}`}>{taskStatusLabel(status)}</span>
 }
 
 export function RepoStatusBadge({ status }: { status: RepoResult['status'] }) {
@@ -93,7 +143,7 @@ export function RepoStatusBadge({ status }: { status: RepoResult['status'] }) {
             ? 'border-sky-200 bg-sky-50 text-sky-700'
             : 'border-stone-200 bg-stone-100 text-stone-700 dark:border-stone-700 dark:bg-stone-800 dark:text-stone-200'
 
-  return <span className={`rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] ${tone}`}>{status}</span>
+  return <span className={`rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] ${tone}`}>{repoStatusLabel(status)}</span>
 }
 
 export function TimelineCard({
@@ -116,7 +166,7 @@ export function TimelineCard({
     <div className={`rounded-[18px] border p-4 ${tone}`}>
       <div className="flex items-center justify-between">
         <div className="text-sm font-semibold text-white">{label}</div>
-        <div className="text-[11px] uppercase tracking-[0.2em] text-stone-400">{state}</div>
+        <div className="text-[11px] uppercase tracking-[0.2em] text-stone-400">{state === 'done' ? '已完成' : state === 'current' ? '进行中' : '待开始'}</div>
       </div>
       <div className="mt-3 text-sm leading-6 text-stone-300">{detail}</div>
     </div>

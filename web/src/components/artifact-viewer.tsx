@@ -324,6 +324,8 @@ export function artifactLabel(name: TaskArtifactName) {
       return 'Design'
     case 'plan.md':
       return 'Plan'
+    case 'plan.log':
+      return 'Plan Log'
     case 'code-result.json':
       return 'Code Result'
     case 'code.log':
