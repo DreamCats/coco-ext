@@ -1,6 +1,6 @@
 import { useDeferredValue, useEffect, useMemo, useState } from 'react'
 import type { RepoResult } from '../api'
-import { diffLineTone, parsePatch, type ParsedDiffFile } from '../lib/diff'
+import { buildSplitRows, diffLineTone, parsePatch, type ParsedDiffFile, type DiffLineKind } from '../lib/diff'
 import { FilterChip, KeyValue } from './ui-primitives'
 
 export function DiffPanel({
@@ -16,7 +16,7 @@ export function DiffPanel({
   const deferredSelectedRepo = useDeferredValue(selectedRepo)
   const activeRepo = reposWithDiff.find((repo) => repo.id === deferredSelectedRepo) ?? reposWithDiff[0]
   const parsedPatch = useMemo(() => parsePatch(activeRepo?.diffSummary?.patch ?? ''), [activeRepo?.diffSummary?.patch])
-  const [viewMode, setViewMode] = useState<'unified' | 'raw'>('unified')
+  const [viewMode, setViewMode] = useState<'split' | 'unified' | 'raw'>('split')
   const [selectedFile, setSelectedFile] = useState('')
 
   const fileButtons = useMemo(() => {
@@ -131,6 +131,17 @@ export function DiffPanel({
                     <div className="flex items-center gap-2">
                       <button
                         className={`rounded-full px-3 py-1.5 text-xs font-medium transition ${
+                          viewMode === 'split'
+                            ? 'bg-stone-100 text-stone-950'
+                            : 'bg-white/5 text-stone-300 hover:bg-white/10'
+                        }`}
+                        onClick={() => setViewMode('split')}
+                        type="button"
+                      >
+                        Split
+                      </button>
+                      <button
+                        className={`rounded-full px-3 py-1.5 text-xs font-medium transition ${
                           viewMode === 'unified'
                             ? 'bg-stone-100 text-stone-950'
                             : 'bg-white/5 text-stone-300 hover:bg-white/10'
@@ -138,7 +149,7 @@ export function DiffPanel({
                         onClick={() => setViewMode('unified')}
                         type="button"
                       >
-                        按文件查看
+                        Unified
                       </button>
                       <button
                         className={`rounded-full px-3 py-1.5 text-xs font-medium transition ${
@@ -154,7 +165,15 @@ export function DiffPanel({
                     </div>
                   </div>
                   <div className="max-h-[520px] overflow-auto">
-                    {viewMode === 'unified' ? (
+                    {viewMode === 'split' ? (
+                      unifiedAvailable && activeFile ? (
+                        <SplitDiffView file={activeFile} />
+                      ) : (
+                        <div className="px-4 py-6 text-sm leading-6 text-stone-400">
+                          当前产物里没有可解析的文件级 diff。你仍然可以切到 `Raw Patch` 查看原始内容。
+                        </div>
+                      )
+                    ) : viewMode === 'unified' ? (
                       unifiedAvailable && activeFile ? (
                         <UnifiedDiffView file={activeFile} />
                       ) : (
@@ -176,6 +195,36 @@ export function DiffPanel({
         </>
       )}
     </section>
+  )
+}
+
+function SplitDiffView({ file }: { file: ParsedDiffFile }) {
+  return (
+    <div>
+      <div className="grid grid-cols-2 border-b border-white/8 text-[11px] uppercase tracking-[0.18em] text-stone-500">
+        <div className="grid grid-cols-[56px_16px_1fr] gap-3 border-r border-white/8 px-4 py-2">
+          <span className="text-right">旧</span>
+          <span />
+          <span>Before</span>
+        </div>
+        <div className="grid grid-cols-[56px_16px_1fr] gap-3 px-4 py-2">
+          <span className="text-right">新</span>
+          <span />
+          <span>After</span>
+        </div>
+      </div>
+      {file.hunks.map((hunk, hunkIndex) => (
+        <div className="border-b border-white/6 last:border-b-0" key={`${file.path}-${hunk.header}-${hunkIndex}`}>
+          <div className="bg-sky-500/10 px-4 py-2 font-mono text-[11px] text-sky-200">{hunk.header}</div>
+          {buildSplitRows(hunk.lines).map((row, rowIndex) => (
+            <div className="grid grid-cols-2" key={`${hunkIndex}-${rowIndex}-${row.left.lineNumber}-${row.right.lineNumber}`}>
+              <SplitCell side="left" cell={row.left} />
+              <SplitCell side="right" cell={row.right} />
+            </div>
+          ))}
+        </div>
+      ))}
+    </div>
   )
 }
 
@@ -204,6 +253,28 @@ function UnifiedDiffView({ file }: { file: ParsedDiffFile }) {
           ))}
         </div>
       ))}
+    </div>
+  )
+}
+
+function SplitCell({
+  cell,
+  side,
+}: {
+  cell: { kind: DiffLineKind; text: string; lineNumber: number | null }
+  side: 'left' | 'right'
+}) {
+  const isEmpty = cell.lineNumber == null && cell.text === ''
+  const sideBorder = side === 'left' ? 'border-r border-white/8' : ''
+  const cellTone = splitCellTone(cell.kind, side)
+
+  return (
+    <div className={`grid grid-cols-[56px_16px_1fr] gap-3 px-4 py-1.5 text-[12px] leading-6 ${sideBorder} ${cellTone}`}>
+      <span className="select-none text-right font-mono text-stone-500">{formatLineNumber(cell.lineNumber)}</span>
+      <span className="select-none font-mono text-stone-500">
+        {isEmpty ? '' : side === 'left' ? splitMarker(cell.kind, 'left') : splitMarker(cell.kind, 'right')}
+      </span>
+      <code className="whitespace-pre-wrap break-all">{isEmpty ? ' ' : cell.text || ' '}</code>
     </div>
   )
 }
@@ -253,4 +324,33 @@ function rawPatchTone(line: string) {
     return 'text-rose-300'
   }
   return 'text-stone-200'
+}
+
+function splitCellTone(kind: DiffLineKind, side: 'left' | 'right') {
+  if (kind === 'delete' && side === 'left') {
+    return 'bg-rose-500/12 text-rose-200'
+  }
+  if (kind === 'add' && side === 'right') {
+    return 'bg-emerald-500/12 text-emerald-200'
+  }
+  if (kind === 'context') {
+    return 'text-stone-200'
+  }
+  if (kind === 'meta') {
+    return 'bg-sky-500/10 text-sky-200'
+  }
+  return 'bg-white/[0.03] text-stone-400'
+}
+
+function splitMarker(kind: DiffLineKind, side: 'left' | 'right') {
+  if (kind === 'delete' && side === 'left') {
+    return '-'
+  }
+  if (kind === 'add' && side === 'right') {
+    return '+'
+  }
+  if (kind === 'meta') {
+    return '@'
+  }
+  return ' '
 }

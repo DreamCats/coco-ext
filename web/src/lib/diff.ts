@@ -25,6 +25,17 @@ export type ParsedPatch = {
   files: ParsedDiffFile[]
 }
 
+export type SplitDiffCell = {
+  kind: DiffLineKind
+  text: string
+  lineNumber: number | null
+}
+
+export type SplitDiffRow = {
+  left: SplitDiffCell
+  right: SplitDiffCell
+}
+
 export function parsePatch(patch: string): ParsedPatch {
   if (!patch.trim()) {
     return { headerLines: [], files: [] }
@@ -160,4 +171,65 @@ export function diffLineTone(kind: DiffLineKind) {
     return 'bg-sky-500/10 text-sky-200'
   }
   return 'text-stone-200'
+}
+
+export function buildSplitRows(lines: ParsedDiffLine[]): SplitDiffRow[] {
+  const rows: SplitDiffRow[] = []
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const current = lines[index]
+    if (!current) {
+      continue
+    }
+
+    if (current.kind === 'delete') {
+      const next = lines[index + 1]
+      if (next?.kind === 'add') {
+        rows.push({
+          left: buildSplitCell(current),
+          right: buildSplitCell(next),
+        })
+        index += 1
+        continue
+      }
+
+      rows.push({
+        left: buildSplitCell(current),
+        right: emptySplitCell(),
+      })
+      continue
+    }
+
+    if (current.kind === 'add') {
+      rows.push({
+        left: emptySplitCell(),
+        right: buildSplitCell(current),
+      })
+      continue
+    }
+
+    const cell = buildSplitCell(current)
+    rows.push({
+      left: cell,
+      right: cell,
+    })
+  }
+
+  return rows
+}
+
+function buildSplitCell(line: ParsedDiffLine): SplitDiffCell {
+  return {
+    kind: line.kind,
+    text: line.text,
+    lineNumber: line.oldLine ?? line.newLine,
+  }
+}
+
+function emptySplitCell(): SplitDiffCell {
+  return {
+    kind: 'context',
+    text: '',
+    lineNumber: null,
+  }
 }
