@@ -1,9 +1,11 @@
 import { Link, Navigate, Outlet, useLocation, useNavigate, useParams } from '@tanstack/react-router'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
+  archiveCode,
   createTask,
   deleteTask,
   getTask,
+  resetCode,
   startCode,
   startPlan,
   type RepoCandidate,
@@ -346,6 +348,8 @@ export function TaskDetailPage() {
   const [error, setError] = useState('')
   const [planStarting, setPlanStarting] = useState(false)
   const [codeStarting, setCodeStarting] = useState(false)
+  const [resetting, setResetting] = useState(false)
+  const [archiving, setArchiving] = useState(false)
   const [actionError, setActionError] = useState('')
 
   useEffect(() => {
@@ -398,6 +402,8 @@ export function TaskDetailPage() {
           if (detail.status !== 'initialized' && detail.status !== 'planning' && detail.status !== 'coding') {
             setPlanStarting(false)
             setCodeStarting(false)
+            setResetting(false)
+            setArchiving(false)
             void reload()
           }
         })
@@ -424,6 +430,8 @@ export function TaskDetailPage() {
   const canDelete = deletableStatuses.has(task.status)
   const canStartPlan = task.status === 'refined' || task.status === 'planned'
   const canStartCode = task.repos.length === 1 && (task.status === 'planned' || (task.status === 'failed' && hasGeneratedPlan))
+  const canResetCode = task.repos.length === 1 && (task.status === 'coded' || task.status === 'failed')
+  const canArchiveCode = task.repos.length === 1 && task.status === 'coded'
   const planActionLabel = task.status === 'planned' ? '重新 Plan' : '开始 Plan'
   const codeActionLabel = task.status === 'failed' ? '重试实现' : '开始实现'
 
@@ -494,7 +502,7 @@ export function TaskDetailPage() {
             <div className="text-xs font-semibold uppercase tracking-[0.22em] text-emerald-200">下一步建议</div>
             <div className="mt-3 text-xl font-semibold tracking-[-0.04em] text-white">
               {task.status === 'coded'
-                ? '确认结果后归档'
+                ? '归档并完成收尾'
                 : task.status === 'partially_coded'
                   ? '继续推进剩余仓库'
                   : task.status === 'coding'
@@ -503,6 +511,8 @@ export function TaskDetailPage() {
                     ? '等待方案生成完成'
                   : task.status === 'planned'
                     ? '开始生成实现'
+                    : task.status === 'failed' && canResetCode
+                      ? '回退这次实现'
                     : task.status === 'failed' && canStartCode
                       ? '调整后重新实现'
                     : task.status === 'refined'
@@ -537,13 +547,13 @@ export function TaskDetailPage() {
                 {actionError}
               </div>
             ) : null}
-            {canStartCode || canStartPlan ? (
+            {canStartCode || canStartPlan || canResetCode || canArchiveCode ? (
               <div className="mt-4 flex flex-wrap items-center gap-3">
                 {canStartCode ? (
                   <>
                     <button
                       className="rounded-2xl border border-emerald-200/30 bg-emerald-400/20 px-4 py-3 text-sm font-semibold text-emerald-50 transition hover:border-emerald-100/40 hover:bg-emerald-400/30 disabled:cursor-not-allowed disabled:opacity-60"
-                      disabled={codeStarting || planStarting}
+                      disabled={codeStarting || planStarting || resetting || archiving}
                       onClick={async () => {
                         try {
                           setCodeStarting(true)
@@ -568,11 +578,76 @@ export function TaskDetailPage() {
                     <span className="text-xs text-emerald-100/80">会在后台创建隔离工作区、生成改动并尝试完成构建验证</span>
                   </>
                 ) : null}
+                {canResetCode ? (
+                  <>
+                    <button
+                      className="rounded-2xl border border-rose-200/30 bg-rose-400/15 px-4 py-3 text-sm font-semibold text-rose-50 transition hover:border-rose-100/40 hover:bg-rose-400/25 disabled:cursor-not-allowed disabled:opacity-60"
+                      disabled={resetting || codeStarting || planStarting || archiving}
+                      onClick={async () => {
+                        const confirmed = window.confirm('回退后会删除这次生成的分支、worktree、diff 和结果记录。确认继续吗？')
+                        if (!confirmed) {
+                          return
+                        }
+                        try {
+                          setResetting(true)
+                          setActionError('')
+                          const result = await resetCode(task.id)
+                          setTask({
+                            ...task,
+                            status: result.status as TaskStatus,
+                            nextAction: '实现结果已回退，可重新生成方案或再次开始实现。',
+                          })
+                          setArtifact('plan.md')
+                          await reload()
+                        } catch (err) {
+                          setActionError(err instanceof Error ? err.message : '回退实现失败')
+                          setResetting(false)
+                        }
+                      }}
+                      type="button"
+                    >
+                      {resetting ? '回退中...' : '回退实现'}
+                    </button>
+                    <span className="text-xs text-emerald-100/80">会丢弃当前这次实现结果，并把任务退回到可重新开始实现的状态</span>
+                  </>
+                ) : null}
+                {canArchiveCode ? (
+                  <>
+                    <button
+                      className="rounded-2xl border border-sky-200/30 bg-sky-400/15 px-4 py-3 text-sm font-semibold text-sky-50 transition hover:border-sky-100/40 hover:bg-sky-400/25 disabled:cursor-not-allowed disabled:opacity-60"
+                      disabled={archiving || resetting || codeStarting || planStarting}
+                      onClick={async () => {
+                        const confirmed = window.confirm('归档后会清理这次实现产生的分支和 worktree，但会保留结果记录。确认继续吗？')
+                        if (!confirmed) {
+                          return
+                        }
+                        try {
+                          setArchiving(true)
+                          setActionError('')
+                          const result = await archiveCode(task.id)
+                          setTask({
+                            ...task,
+                            status: result.status as TaskStatus,
+                            nextAction: '任务已归档，无后续操作。',
+                          })
+                          await reload()
+                        } catch (err) {
+                          setActionError(err instanceof Error ? err.message : '归档失败')
+                          setArchiving(false)
+                        }
+                      }}
+                      type="button"
+                    >
+                      {archiving ? '归档中...' : '归档任务'}
+                    </button>
+                    <span className="text-xs text-emerald-100/80">会清理分支和工作区，并把当前任务标记为已归档</span>
+                  </>
+                ) : null}
                 {canStartPlan ? (
                   <>
                     <button
                       className="rounded-2xl border border-white/20 bg-white/8 px-4 py-3 text-sm font-semibold text-white transition hover:border-white/30 hover:bg-white/12 disabled:cursor-not-allowed disabled:opacity-60"
-                      disabled={planStarting || codeStarting}
+                      disabled={planStarting || codeStarting || resetting || archiving}
                       onClick={async () => {
                         try {
                           setPlanStarting(true)

@@ -216,6 +216,10 @@ func (s *Server) handleTaskAction(w http.ResponseWriter, r *http.Request, taskID
 		s.handleStartPlan(w, taskID)
 	case "code":
 		s.handleStartCode(w, taskID)
+	case "reset":
+		s.handleResetCode(w, taskID)
+	case "archive":
+		s.handleArchiveCode(w, taskID)
 	default:
 		writeJSONError(w, http.StatusNotFound, "unknown task action")
 	}
@@ -453,4 +457,75 @@ func (s *Server) runCodeTask(taskID, taskDir, repoRoot, repoID, branchName strin
 			_, _ = file.WriteString(fmt.Sprintf("%s web_code_error: %v\n", time.Now().Format("2006-01-02 15:04:05"), err))
 		}
 	}
+}
+
+func (s *Server) handleResetCode(w http.ResponseWriter, taskID string) {
+	report, err := prd.LoadTaskStatus(s.repoRoot, taskID)
+	if err != nil {
+		writeJSONError(w, http.StatusNotFound, err.Error())
+		return
+	}
+
+	if !canResetCode(report) {
+		writeJSONError(w, http.StatusConflict, fmt.Sprintf("当前状态为 %s，不能执行 reset", report.Metadata.Status))
+		return
+	}
+
+	repo, err := resolveSingleRepo(report)
+	if err != nil {
+		writeJSONError(w, http.StatusConflict, err.Error())
+		return
+	}
+
+	if _, err := prd.ResetCodeForRepo(repo.Path, taskID, repo.ID); err != nil {
+		writeJSONError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, taskActionResponse{
+		TaskID: taskID,
+		Status: prd.TaskStatusPlanned,
+	})
+}
+
+func canResetCode(report *prd.TaskStatusReport) bool {
+	switch report.Metadata.Status {
+	case prd.TaskStatusCoded, prd.TaskStatusFailed:
+		return true
+	default:
+		return false
+	}
+}
+
+func (s *Server) handleArchiveCode(w http.ResponseWriter, taskID string) {
+	report, err := prd.LoadTaskStatus(s.repoRoot, taskID)
+	if err != nil {
+		writeJSONError(w, http.StatusNotFound, err.Error())
+		return
+	}
+
+	if !canArchiveCode(report) {
+		writeJSONError(w, http.StatusConflict, fmt.Sprintf("当前状态为 %s，不能执行 archive", report.Metadata.Status))
+		return
+	}
+
+	repo, err := resolveSingleRepo(report)
+	if err != nil {
+		writeJSONError(w, http.StatusConflict, err.Error())
+		return
+	}
+
+	if _, err := prd.ArchiveCodeForRepo(repo.Path, taskID, repo.ID); err != nil {
+		writeJSONError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, taskActionResponse{
+		TaskID: taskID,
+		Status: prd.TaskStatusArchived,
+	})
+}
+
+func canArchiveCode(report *prd.TaskStatusReport) bool {
+	return report.Metadata.Status == prd.TaskStatusCoded
 }

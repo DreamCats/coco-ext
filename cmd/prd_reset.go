@@ -4,9 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/fatih/color"
@@ -80,7 +78,7 @@ func runPRDReset(cmd *cobra.Command, args []string) error {
 			}
 
 			if repo.Branch != "" {
-				deleted := deleteBranchQuiet(repoRoot, repo.Branch)
+				deleted := prd.DeleteBranchQuiet(repoRoot, repo.Branch)
 				branchDeleted = branchDeleted || deleted
 				if deleted {
 					color.Green("   ✓ 已删除分支 %s（改动已丢弃）", repo.Branch)
@@ -94,31 +92,21 @@ func runPRDReset(cmd *cobra.Command, args []string) error {
 		}
 		color.Green("   ✓ 状态已回退为 planned")
 	} else {
-		repo, err := prd.ResolveTaskRepo(task.TaskDir, repoRoot, prdResetRepoID)
+		result, err := prd.ResetCodeForRepo(repoRoot, taskID, prdResetRepoID)
 		if err != nil {
 			return err
 		}
-		branchName = repo.Branch
-		worktreePath = repo.Worktree
-		if repo.Worktree != "" {
-			if err := prd.CleanupCodeWorktree(repoRoot, repo.Worktree); err != nil {
-				color.Yellow("   ⚠ 删除 worktree 失败: %v", err)
-			} else {
-				worktreeDeleted = true
-				color.Green("   ✓ 已删除 worktree %s", repo.Worktree)
-			}
+		branchName = result.Branch
+		worktreePath = result.Worktree
+		worktreeDeleted = result.WorktreeDeleted
+		branchDeleted = result.BranchDeleted
+		if worktreeDeleted {
+			color.Green("   ✓ 已删除 worktree %s", worktreePath)
 		}
-		if repo.Branch != "" {
-			branchDeleted = deleteBranchQuiet(repoRoot, repo.Branch)
-			if branchDeleted {
-				color.Green("   ✓ 已删除分支 %s（改动已丢弃）", repo.Branch)
-			}
+		if branchDeleted {
+			color.Green("   ✓ 已删除分支 %s（改动已丢弃）", branchName)
 		}
-		_ = prd.RemoveRepoCodeResult(task.TaskDir, repo.ID)
-		if err := prd.ResetRepoBinding(task.TaskDir, repo.ID); err != nil {
-			return err
-		}
-		color.Green("   ✓ repo %s 状态已回退为 planned", repo.ID)
+		color.Green("   ✓ repo %s 状态已回退为 planned", result.RepoID)
 	}
 
 	result := map[string]any{
@@ -135,18 +123,4 @@ func runPRDReset(cmd *cobra.Command, args []string) error {
 	fmt.Println(string(data))
 
 	return nil
-}
-
-func deleteBranchQuiet(repoRoot, branchName string) bool {
-	if strings.TrimSpace(branchName) == "" {
-		return false
-	}
-	checkCmd := exec.Command("git", "rev-parse", "--verify", branchName)
-	checkCmd.Dir = repoRoot
-	if checkCmd.Run() != nil {
-		return true
-	}
-	delCmd := exec.Command("git", "branch", "-D", branchName)
-	delCmd.Dir = repoRoot
-	return delCmd.Run() == nil
 }

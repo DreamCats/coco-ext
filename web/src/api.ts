@@ -174,6 +174,28 @@ export async function startCode(taskId: string) {
   return response.json() as Promise<{ task_id: string; status: string }>
 }
 
+export async function resetCode(taskId: string) {
+	const response = await fetch(`/api/tasks/${taskId}/reset`, {
+		method: 'POST',
+	})
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { error?: string } | null
+    throw new Error(body?.error || '回退实现失败')
+	}
+	return response.json() as Promise<{ task_id: string; status: string }>
+}
+
+export async function archiveCode(taskId: string) {
+	const response = await fetch(`/api/tasks/${taskId}/archive`, {
+		method: 'POST',
+	})
+	if (!response.ok) {
+		const body = (await response.json().catch(() => null)) as { error?: string } | null
+		throw new Error(body?.error || '归档失败')
+	}
+	return response.json() as Promise<{ task_id: string; status: string }>
+}
+
 export async function listRecentRepos() {
   const response = await fetchJSON<{ repos: RepoCandidate[] }>('/api/repos/recent')
   return response.repos

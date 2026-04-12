@@ -180,6 +180,19 @@ func ReadRepoDiffSummary(taskDir, repoID string) (*CodeDiffSummary, error) {
 	return &summary, nil
 }
 
+func RemoveRepoDiffArtifacts(taskDir, repoID string) error {
+	patchPath := repoDiffPatchPath(taskDir, repoID)
+	if err := os.Remove(patchPath); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+
+	summaryPath := repoDiffSummaryPath(taskDir, repoID)
+	if err := os.Remove(summaryPath); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
+}
+
 func parseUnifiedDiffStats(patch string) (additions, deletions int) {
 	for _, line := range strings.Split(patch, "\n") {
 		if strings.HasPrefix(line, "+++") || strings.HasPrefix(line, "---") {
