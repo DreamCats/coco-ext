@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/DreamCats/coco-ext/internal/config"
 )
@@ -366,6 +367,7 @@ func syncTaskMetadataFromRepos(taskDir string) error {
 	}
 
 	meta.RepoCount = len(reposMeta.Repos)
+	meta.UpdatedAt = time.Now()
 	if aggregate := aggregateTaskStatus(meta.Status, reposMeta); aggregate != "" {
 		meta.Status = aggregate
 	}
@@ -381,14 +383,17 @@ func aggregateTaskStatus(current string, repos *ReposMetadata) string {
 	allPlannedLike := true
 	hasCoding := false
 	hasCoded := false
+	hasCompleted := false
 	hasFailed := false
 
 	for _, repo := range repos.Repos {
 		switch repo.Status {
 		case TaskStatusArchived:
+			hasCompleted = true
 			allPlannedLike = false
 		case TaskStatusCoded:
 			hasCoded = true
+			hasCompleted = true
 			allArchived = false
 			allPlannedLike = false
 		case TaskStatusCoding:
@@ -414,6 +419,8 @@ func aggregateTaskStatus(current string, repos *ReposMetadata) string {
 		return TaskStatusFailed
 	case hasCoding:
 		return TaskStatusCoding
+	case hasCompleted && !allCodedOrArchived(repos):
+		return TaskStatusPartiallyCoded
 	case hasCoded && !allCodedOrArchived(repos):
 		return TaskStatusPartiallyCoded
 	case hasCoded && allCodedOrArchived(repos):

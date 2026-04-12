@@ -250,23 +250,22 @@ coco-ext prd run -i "需求描述或飞书链接"
 - Web UI 当前已支持：
   - `Create Task`：通过弹层创建全局 task，后台异步执行 refine，前端轮询 `initialized -> refined`
   - `Start Plan`：在 `refined` 状态下触发后台异步 plan，前端轮询 `planning -> planned`
-  - `Start Code`：在 `planned` 状态下触发单 repo 后台异步 code，前端轮询 `coding -> coded/failed`
-  - `Reset Code`：在 `coded/failed` 状态下回退单 repo code 结果，清理分支/worktree/diff 后返回 `planned`
-  - `Archive Code`：在 `coded` 状态下归档单 repo 任务，清理分支/worktree 后返回 `archived`
+  - `Start Code`：单 repo task 可直接从详情页启动；多 repo task 可在仓库卡片上按 repo 逐个启动后台异步 code
+  - `Reset Code`：单 repo task 可直接回退；多 repo task 可在仓库卡片上按 repo 回退 code 结果，清理分支/worktree/diff
+  - `Archive Code`：单 repo task 可直接归档；多 repo task 可在仓库卡片上按 repo 归档结果并清理分支/worktree
   - `Delete Task`：仅允许删除未进入 code 的 task（`initialized/refined/planned/failed`）
   - repo 选择：支持 `Recent Repos` 和 `Remote Browser`
 - Web UI 创建 task 时：
   - 不会自动把当前启动 `ui serve` 的仓库注入 repo 列表
   - 必须显式选择至少一个 repo
   - `Remote Browser` 浏览和校验的是运行 `coco-ext ui serve` 的那台机器上的文件系统
-  - 当前 `Start Code` / `Reset Code` / `Archive Code` 仅支持单 repo task；多 repo task 仍建议使用 CLI 按 repo 逐个推进
   - 当前 `Reset Code` 只支持 `coded/failed` 状态，暂不支持在 `coding` 中途直接中断
 - 扩展 API：
   - `POST /api/tasks`
   - `POST /api/tasks/:task_id/plan`
-  - `POST /api/tasks/:task_id/code`
-  - `POST /api/tasks/:task_id/reset`
-  - `POST /api/tasks/:task_id/archive`
+  - `POST /api/tasks/:task_id/code`（多 repo task 时支持 `?repo=<repo_id>`）
+  - `POST /api/tasks/:task_id/reset`（多 repo task 时支持 `?repo=<repo_id>`）
+  - `POST /api/tasks/:task_id/archive`（多 repo task 时支持 `?repo=<repo_id>`）
   - `DELETE /api/tasks/:task_id`
   - `GET /api/repos/recent`
   - `POST /api/repos/validate`

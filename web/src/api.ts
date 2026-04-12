@@ -163,8 +163,8 @@ export async function startPlan(taskId: string) {
   return response.json() as Promise<{ task_id: string; status: string }>
 }
 
-export async function startCode(taskId: string) {
-  const response = await fetch(`/api/tasks/${taskId}/code`, {
+export async function startCode(taskId: string, repoId?: string) {
+  const response = await fetch(buildTaskActionPath(taskId, 'code', repoId), {
     method: 'POST',
   })
   if (!response.ok) {
@@ -174,8 +174,8 @@ export async function startCode(taskId: string) {
   return response.json() as Promise<{ task_id: string; status: string }>
 }
 
-export async function resetCode(taskId: string) {
-	const response = await fetch(`/api/tasks/${taskId}/reset`, {
+export async function resetCode(taskId: string, repoId?: string) {
+	const response = await fetch(buildTaskActionPath(taskId, 'reset', repoId), {
 		method: 'POST',
 	})
   if (!response.ok) {
@@ -185,8 +185,8 @@ export async function resetCode(taskId: string) {
 	return response.json() as Promise<{ task_id: string; status: string }>
 }
 
-export async function archiveCode(taskId: string) {
-	const response = await fetch(`/api/tasks/${taskId}/archive`, {
+export async function archiveCode(taskId: string, repoId?: string) {
+	const response = await fetch(buildTaskActionPath(taskId, 'archive', repoId), {
 		method: 'POST',
 	})
 	if (!response.ok) {
@@ -194,6 +194,14 @@ export async function archiveCode(taskId: string) {
 		throw new Error(body?.error || '归档失败')
 	}
 	return response.json() as Promise<{ task_id: string; status: string }>
+}
+
+function buildTaskActionPath(taskId: string, action: 'code' | 'reset' | 'archive', repoId?: string) {
+  const path = `/api/tasks/${taskId}/${action}`
+  if (!repoId) {
+    return path
+  }
+  return `${path}?repo=${encodeURIComponent(repoId)}`
 }
 
 export async function listRecentRepos() {

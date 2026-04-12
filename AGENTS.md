@@ -176,15 +176,15 @@ coco-ext ui serve
 - 当前写操作与 repo 选择能力：
   - `POST /api/tasks`：Web UI 创建 task，后台异步 refine
   - `POST /api/tasks/:task_id/plan`：Web UI 触发后台异步 plan，产出 `design.md`、`plan.md` 与 `plan.log`
-  - `POST /api/tasks/:task_id/code`：Web UI 触发后台异步单 repo code，产出 `code.log`、`code-result.json`、diff 与 commit 信息
-  - `POST /api/tasks/:task_id/reset`：Web UI 回退单 repo code 结果，清理分支/worktree/diff 并返回 planned
-  - `POST /api/tasks/:task_id/archive`：Web UI 归档单 repo code 结果，清理分支/worktree 并返回 archived
+  - `POST /api/tasks/:task_id/code`：Web UI 触发后台异步 code；单 repo task 直接执行，多 repo task 通过 `?repo=<repo_id>` 按仓库推进，产出 `code.log`、`code-result.json`、diff 与 commit 信息
+  - `POST /api/tasks/:task_id/reset`：Web UI 回退 code 结果；多 repo task 通过 `?repo=<repo_id>` 按仓库清理分支/worktree/diff，并按 repo 状态重新聚合 task
+  - `POST /api/tasks/:task_id/archive`：Web UI 归档 code 结果；多 repo task 通过 `?repo=<repo_id>` 按仓库清理分支/worktree，并按 repo 状态重新聚合 task
   - `DELETE /api/tasks/:task_id`：仅允许删除未进入 code 的 task
   - `GET /api/repos/recent`：recent repos
   - `POST /api/repos/validate`：手动路径校验并加入 repo
   - `GET /api/fs/roots` / `GET /api/fs/list?path=...`：远程开发机上的目录浏览
 - Web UI 创建 task 时不会自动把当前仓库加入 repo scope，必须显式选择至少一个 repo
-- Web UI 当前的 `code` / `reset` / `archive` 动作仅支持单 repo task；多 repo task 仍需通过 CLI 按 repo 逐个推进
+- Web UI 当前支持在多 repo task 中按 repo 逐个执行 `code` / `reset` / `archive`
 - Web UI 当前的 `reset` 只支持 `coded/failed` 状态，暂不支持在 `coding` 中途直接中断
 - 正式安装态默认使用内嵌静态前端资源；开发态可通过 `--web-dir` 覆盖静态目录
 

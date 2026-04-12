@@ -215,14 +215,21 @@ func (s *Server) handleTaskAction(w http.ResponseWriter, r *http.Request, taskID
 	case "plan":
 		s.handleStartPlan(w, taskID)
 	case "code":
-		s.handleStartCode(w, taskID)
+		s.handleStartCode(w, taskID, requestedRepoID(r))
 	case "reset":
-		s.handleResetCode(w, taskID)
+		s.handleResetCode(w, taskID, requestedRepoID(r))
 	case "archive":
-		s.handleArchiveCode(w, taskID)
+		s.handleArchiveCode(w, taskID, requestedRepoID(r))
 	default:
 		writeJSONError(w, http.StatusNotFound, "unknown task action")
 	}
+}
+
+func requestedRepoID(r *http.Request) string {
+	if r == nil || r.URL == nil {
+		return ""
+	}
+	return strings.TrimSpace(r.URL.Query().Get("repo"))
 }
 
 func (s *Server) handleStartPlan(w http.ResponseWriter, taskID string) {
@@ -319,6 +326,32 @@ func resolveSingleRepo(report *prd.TaskStatusReport) (*prd.RepoBinding, error) {
 	return &repo, nil
 }
 
+func resolveActionRepo(report *prd.TaskStatusReport, requestedRepoID string) (*prd.RepoBinding, error) {
+	if report == nil || report.Repos == nil || len(report.Repos.Repos) == 0 {
+		return nil, fmt.Errorf("task 未绑定 repo，无法执行当前操作")
+	}
+
+	repoID := strings.TrimSpace(requestedRepoID)
+	if repoID == "" {
+		return resolveSingleRepo(report)
+	}
+
+	repoIDs := make([]string, 0, len(report.Repos.Repos))
+	for _, repo := range report.Repos.Repos {
+		repoIDs = append(repoIDs, repo.ID)
+		if repo.ID != repoID {
+			continue
+		}
+		repo.Path = strings.TrimSpace(repo.Path)
+		if repo.Path == "" {
+			return nil, fmt.Errorf("task 绑定的 repo %s path 为空，无法执行当前操作", repo.ID)
+		}
+		return &repo, nil
+	}
+
+	return nil, fmt.Errorf("task 未绑定 repo %s。可选 repo: %s", repoID, strings.Join(repoIDs, ", "))
+}
+
 func (s *Server) runPlanTask(taskID, taskDir, repoRoot string) {
 	startedAt := time.Now()
 	appendPlanLogLine(taskDir, "=== PLAN START ===")
@@ -400,25 +433,25 @@ func formatPlanToolEvent(event generator.ToolEvent) string {
 	return base + " input=" + input
 }
 
-func (s *Server) handleStartCode(w http.ResponseWriter, taskID string) {
+func (s *Server) handleStartCode(w http.ResponseWriter, taskID, requestedRepoID string) {
 	report, err := prd.LoadTaskStatus(s.repoRoot, taskID)
 	if err != nil {
 		writeJSONError(w, http.StatusNotFound, err.Error())
 		return
 	}
 
-	if !canStartCode(report) {
-		writeJSONError(w, http.StatusConflict, fmt.Sprintf("当前状态为 %s，不能开始 code", report.Metadata.Status))
-		return
-	}
-
-	repo, err := resolveSingleRepo(report)
+	repo, err := resolveActionRepo(report, requestedRepoID)
 	if err != nil {
 		writeJSONError(w, http.StatusConflict, err.Error())
 		return
 	}
 
-	branchName := buildWebPRDBranchName(taskID)
+	if !canStartCode(report, repo) {
+		writeJSONError(w, http.StatusConflict, fmt.Sprintf("repo %s 当前状态为 %s，不能开始 code", repo.ID, repo.Status))
+		return
+	}
+
+	branchName := buildWebPRDBranchName(taskID, repo.ID, len(report.Repos.Repos) > 1)
 	if err := prd.StartCodingRepoBinding(report.TaskDir, repo.ID, branchName, ""); err != nil {
 		writeJSONError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -426,25 +459,53 @@ func (s *Server) handleStartCode(w http.ResponseWriter, taskID string) {
 
 	go s.runCodeTask(taskID, report.TaskDir, repo.Path, repo.ID, branchName)
 
+	updatedReport, err := prd.LoadTaskStatus(s.repoRoot, taskID)
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
 	writeJSON(w, http.StatusAccepted, taskActionResponse{
 		TaskID: taskID,
-		Status: prd.TaskStatusCoding,
+		Status: updatedReport.Metadata.Status,
 	})
 }
 
-func canStartCode(report *prd.TaskStatusReport) bool {
-	switch report.Metadata.Status {
-	case prd.TaskStatusPlanned:
+func canStartCode(report *prd.TaskStatusReport, repo *prd.RepoBinding) bool {
+	if report == nil || repo == nil {
+		return false
+	}
+	if !taskHasArtifact(report.Artifacts, "prd-refined.md") || !taskHasArtifact(report.Artifacts, "design.md") || !taskHasArtifact(report.Artifacts, "plan.md") {
+		return false
+	}
+
+	switch repo.Status {
+	case prd.TaskStatusPlanned, prd.TaskStatusFailed:
 		return true
-	case prd.TaskStatusFailed:
-		return taskHasArtifact(report.Artifacts, "prd-refined.md") && taskHasArtifact(report.Artifacts, "design.md") && taskHasArtifact(report.Artifacts, "plan.md")
 	default:
 		return false
 	}
 }
 
-func buildWebPRDBranchName(taskID string) string {
-	return "prd_" + taskID
+func buildWebPRDBranchName(taskID, repoID string, multiRepo bool) string {
+	if !multiRepo || strings.TrimSpace(repoID) == "" {
+		return "prd_" + taskID
+	}
+	return "prd_" + taskID + "_" + sanitizeBranchSegment(repoID)
+}
+
+func sanitizeBranchSegment(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "repo"
+	}
+	replacer := strings.NewReplacer("/", "-", "\\", "-", " ", "-", ":", "-", "@", "-", "..", "-")
+	value = replacer.Replace(value)
+	value = strings.Trim(value, "-")
+	if value == "" {
+		return "repo"
+	}
+	return value
 }
 
 func (s *Server) runCodeTask(taskID, taskDir, repoRoot, repoID, branchName string) {
@@ -459,21 +520,21 @@ func (s *Server) runCodeTask(taskID, taskDir, repoRoot, repoID, branchName strin
 	}
 }
 
-func (s *Server) handleResetCode(w http.ResponseWriter, taskID string) {
+func (s *Server) handleResetCode(w http.ResponseWriter, taskID, requestedRepoID string) {
 	report, err := prd.LoadTaskStatus(s.repoRoot, taskID)
 	if err != nil {
 		writeJSONError(w, http.StatusNotFound, err.Error())
 		return
 	}
 
-	if !canResetCode(report) {
-		writeJSONError(w, http.StatusConflict, fmt.Sprintf("当前状态为 %s，不能执行 reset", report.Metadata.Status))
+	repo, err := resolveActionRepo(report, requestedRepoID)
+	if err != nil {
+		writeJSONError(w, http.StatusConflict, err.Error())
 		return
 	}
 
-	repo, err := resolveSingleRepo(report)
-	if err != nil {
-		writeJSONError(w, http.StatusConflict, err.Error())
+	if !canResetCode(repo) {
+		writeJSONError(w, http.StatusConflict, fmt.Sprintf("repo %s 当前状态为 %s，不能执行 reset", repo.ID, repo.Status))
 		return
 	}
 
@@ -482,14 +543,23 @@ func (s *Server) handleResetCode(w http.ResponseWriter, taskID string) {
 		return
 	}
 
+	updatedReport, err := prd.LoadTaskStatus(s.repoRoot, taskID)
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
 	writeJSON(w, http.StatusOK, taskActionResponse{
 		TaskID: taskID,
-		Status: prd.TaskStatusPlanned,
+		Status: updatedReport.Metadata.Status,
 	})
 }
 
-func canResetCode(report *prd.TaskStatusReport) bool {
-	switch report.Metadata.Status {
+func canResetCode(repo *prd.RepoBinding) bool {
+	if repo == nil {
+		return false
+	}
+	switch repo.Status {
 	case prd.TaskStatusCoded, prd.TaskStatusFailed:
 		return true
 	default:
@@ -497,21 +567,21 @@ func canResetCode(report *prd.TaskStatusReport) bool {
 	}
 }
 
-func (s *Server) handleArchiveCode(w http.ResponseWriter, taskID string) {
+func (s *Server) handleArchiveCode(w http.ResponseWriter, taskID, requestedRepoID string) {
 	report, err := prd.LoadTaskStatus(s.repoRoot, taskID)
 	if err != nil {
 		writeJSONError(w, http.StatusNotFound, err.Error())
 		return
 	}
 
-	if !canArchiveCode(report) {
-		writeJSONError(w, http.StatusConflict, fmt.Sprintf("当前状态为 %s，不能执行 archive", report.Metadata.Status))
+	repo, err := resolveActionRepo(report, requestedRepoID)
+	if err != nil {
+		writeJSONError(w, http.StatusConflict, err.Error())
 		return
 	}
 
-	repo, err := resolveSingleRepo(report)
-	if err != nil {
-		writeJSONError(w, http.StatusConflict, err.Error())
+	if !canArchiveCode(repo) {
+		writeJSONError(w, http.StatusConflict, fmt.Sprintf("repo %s 当前状态为 %s，不能执行 archive", repo.ID, repo.Status))
 		return
 	}
 
@@ -520,12 +590,18 @@ func (s *Server) handleArchiveCode(w http.ResponseWriter, taskID string) {
 		return
 	}
 
+	updatedReport, err := prd.LoadTaskStatus(s.repoRoot, taskID)
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
 	writeJSON(w, http.StatusOK, taskActionResponse{
 		TaskID: taskID,
-		Status: prd.TaskStatusArchived,
+		Status: updatedReport.Metadata.Status,
 	})
 }
 
-func canArchiveCode(report *prd.TaskStatusReport) bool {
-	return report.Metadata.Status == prd.TaskStatusCoded
+func canArchiveCode(repo *prd.RepoBinding) bool {
+	return repo != nil && repo.Status == prd.TaskStatusCoded
 }

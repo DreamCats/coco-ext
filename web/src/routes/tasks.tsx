@@ -347,9 +347,9 @@ export function TaskDetailPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [planStarting, setPlanStarting] = useState(false)
-  const [codeStarting, setCodeStarting] = useState(false)
-  const [resetting, setResetting] = useState(false)
-  const [archiving, setArchiving] = useState(false)
+  const [codeStartingRepo, setCodeStartingRepo] = useState<string | null>(null)
+  const [resettingRepo, setResettingRepo] = useState<string | null>(null)
+  const [archivingRepo, setArchivingRepo] = useState<string | null>(null)
   const [actionError, setActionError] = useState('')
 
   useEffect(() => {
@@ -401,9 +401,9 @@ export function TaskDetailPage() {
           setSelectedDiffRepo(firstDiffRepo)
           if (detail.status !== 'initialized' && detail.status !== 'planning' && detail.status !== 'coding') {
             setPlanStarting(false)
-            setCodeStarting(false)
-            setResetting(false)
-            setArchiving(false)
+            setCodeStartingRepo(null)
+            setResettingRepo(null)
+            setArchivingRepo(null)
             void reload()
           }
         })
@@ -429,11 +429,13 @@ export function TaskDetailPage() {
   const deletableStatuses = new Set<TaskStatus>(['initialized', 'refined', 'planned', 'failed'])
   const canDelete = deletableStatuses.has(task.status)
   const canStartPlan = task.status === 'refined' || task.status === 'planned'
-  const canStartCode = task.repos.length === 1 && (task.status === 'planned' || (task.status === 'failed' && hasGeneratedPlan))
-  const canResetCode = task.repos.length === 1 && (task.status === 'coded' || task.status === 'failed')
-  const canArchiveCode = task.repos.length === 1 && task.status === 'coded'
+  const singleRepo = task.repos.length === 1 ? task.repos[0] : null
+  const canStartCode = singleRepo ? canStartCodeForRepo(singleRepo, hasGeneratedPlan) : false
+  const canResetCode = singleRepo ? canResetCodeForRepo(singleRepo) : false
+  const canArchiveCode = singleRepo ? canArchiveCodeForRepo(singleRepo) : false
   const planActionLabel = task.status === 'planned' ? '重新 Plan' : '开始 Plan'
-  const codeActionLabel = task.status === 'failed' ? '重试实现' : '开始实现'
+  const codeActionLabel = singleRepo?.status === 'failed' ? '重试实现' : '开始实现'
+  const actionBusy = Boolean(planStarting || codeStartingRepo || resettingRepo || archivingRepo)
 
   return (
     <div className="space-y-4 lg:h-full lg:overflow-y-auto lg:pr-1">
@@ -537,9 +539,9 @@ export function TaskDetailPage() {
                 正在后台生成实现并验证结果。若停留时间过长，可打开 `code.log` 查看进度。
               </div>
             ) : null}
-            {task.status === 'planned' && task.repos.length > 1 ? (
+            {task.repos.length > 1 && (task.status === 'planned' || task.status === 'partially_coded' || task.status === 'failed' || task.status === 'coded') ? (
               <div className="mt-3 rounded-2xl border border-amber-300/20 bg-amber-400/10 px-4 py-3 text-sm leading-6 text-amber-100">
-                当前 Web 端先支持单仓实现。多仓任务请先在终端按 repo 逐个推进。
+                这是一条多仓任务。请在下方按仓库逐个推进实现、回退或归档。
               </div>
             ) : null}
             {actionError ? (
@@ -553,12 +555,12 @@ export function TaskDetailPage() {
                   <>
                     <button
                       className="rounded-2xl border border-emerald-200/30 bg-emerald-400/20 px-4 py-3 text-sm font-semibold text-emerald-50 transition hover:border-emerald-100/40 hover:bg-emerald-400/30 disabled:cursor-not-allowed disabled:opacity-60"
-                      disabled={codeStarting || planStarting || resetting || archiving}
+                      disabled={actionBusy}
                       onClick={async () => {
                         try {
-                          setCodeStarting(true)
+                          setCodeStartingRepo(singleRepo?.id ?? task.id)
                           setActionError('')
-                          const result = await startCode(task.id)
+                          const result = await startCode(task.id, singleRepo?.id)
                           setTask({
                             ...task,
                             status: result.status as TaskStatus,
@@ -568,12 +570,12 @@ export function TaskDetailPage() {
                           await reload()
                         } catch (err) {
                           setActionError(err instanceof Error ? err.message : '启动实现失败')
-                          setCodeStarting(false)
+                          setCodeStartingRepo(null)
                         }
                       }}
                       type="button"
                     >
-                      {codeStarting ? '实现进行中...' : codeActionLabel}
+                      {codeStartingRepo ? '实现进行中...' : codeActionLabel}
                     </button>
                     <span className="text-xs text-emerald-100/80">会在后台创建隔离工作区、生成改动并尝试完成构建验证</span>
                   </>
@@ -582,16 +584,16 @@ export function TaskDetailPage() {
                   <>
                     <button
                       className="rounded-2xl border border-rose-200/30 bg-rose-400/15 px-4 py-3 text-sm font-semibold text-rose-50 transition hover:border-rose-100/40 hover:bg-rose-400/25 disabled:cursor-not-allowed disabled:opacity-60"
-                      disabled={resetting || codeStarting || planStarting || archiving}
+                      disabled={actionBusy}
                       onClick={async () => {
                         const confirmed = window.confirm('回退后会删除这次生成的分支、worktree、diff 和结果记录。确认继续吗？')
                         if (!confirmed) {
                           return
                         }
                         try {
-                          setResetting(true)
+                          setResettingRepo(singleRepo?.id ?? task.id)
                           setActionError('')
-                          const result = await resetCode(task.id)
+                          const result = await resetCode(task.id, singleRepo?.id)
                           setTask({
                             ...task,
                             status: result.status as TaskStatus,
@@ -601,12 +603,12 @@ export function TaskDetailPage() {
                           await reload()
                         } catch (err) {
                           setActionError(err instanceof Error ? err.message : '回退实现失败')
-                          setResetting(false)
+                          setResettingRepo(null)
                         }
                       }}
                       type="button"
                     >
-                      {resetting ? '回退中...' : '回退实现'}
+                      {resettingRepo ? '回退中...' : '回退实现'}
                     </button>
                     <span className="text-xs text-emerald-100/80">会丢弃当前这次实现结果，并把任务退回到可重新开始实现的状态</span>
                   </>
@@ -615,16 +617,16 @@ export function TaskDetailPage() {
                   <>
                     <button
                       className="rounded-2xl border border-sky-200/30 bg-sky-400/15 px-4 py-3 text-sm font-semibold text-sky-50 transition hover:border-sky-100/40 hover:bg-sky-400/25 disabled:cursor-not-allowed disabled:opacity-60"
-                      disabled={archiving || resetting || codeStarting || planStarting}
+                      disabled={actionBusy}
                       onClick={async () => {
                         const confirmed = window.confirm('归档后会清理这次实现产生的分支和 worktree，但会保留结果记录。确认继续吗？')
                         if (!confirmed) {
                           return
                         }
                         try {
-                          setArchiving(true)
+                          setArchivingRepo(singleRepo?.id ?? task.id)
                           setActionError('')
-                          const result = await archiveCode(task.id)
+                          const result = await archiveCode(task.id, singleRepo?.id)
                           setTask({
                             ...task,
                             status: result.status as TaskStatus,
@@ -633,12 +635,12 @@ export function TaskDetailPage() {
                           await reload()
                         } catch (err) {
                           setActionError(err instanceof Error ? err.message : '归档失败')
-                          setArchiving(false)
+                          setArchivingRepo(null)
                         }
                       }}
                       type="button"
                     >
-                      {archiving ? '归档中...' : '归档任务'}
+                      {archivingRepo ? '归档中...' : '归档任务'}
                     </button>
                     <span className="text-xs text-emerald-100/80">会清理分支和工作区，并把当前任务标记为已归档</span>
                   </>
@@ -647,7 +649,7 @@ export function TaskDetailPage() {
                   <>
                     <button
                       className="rounded-2xl border border-white/20 bg-white/8 px-4 py-3 text-sm font-semibold text-white transition hover:border-white/30 hover:bg-white/12 disabled:cursor-not-allowed disabled:opacity-60"
-                      disabled={planStarting || codeStarting || resetting || archiving}
+                      disabled={actionBusy}
                       onClick={async () => {
                         try {
                           setPlanStarting(true)
@@ -719,7 +721,72 @@ export function TaskDetailPage() {
           <ActionPanel task={task} />
           <DeletePolicyCard canDelete={canDelete} />
           <RepoScopeCard task={task} />
-          <CodeResultCard task={task} />
+          <CodeResultCard
+            actionBusy={actionBusy}
+            archivingRepo={archivingRepo}
+            codeStartingRepo={codeStartingRepo}
+            hasGeneratedPlan={hasGeneratedPlan}
+            onArchive={async (repoId) => {
+              const confirmed = window.confirm('归档后会清理这次实现产生的分支和 worktree，但会保留结果记录。确认继续吗？')
+              if (!confirmed) {
+                return
+              }
+              try {
+                setArchivingRepo(repoId)
+                setActionError('')
+                const result = await archiveCode(task.id, repoId)
+                setTask({
+                  ...task,
+                  status: result.status as TaskStatus,
+                  nextAction: `仓库 ${repoId} 已归档。`,
+                })
+                await reload()
+              } catch (err) {
+                setActionError(err instanceof Error ? err.message : '归档失败')
+                setArchivingRepo(null)
+              }
+            }}
+            onStartCode={async (repoId) => {
+              try {
+                setCodeStartingRepo(repoId)
+                setActionError('')
+                const result = await startCode(task.id, repoId)
+                setTask({
+                  ...task,
+                  status: result.status as TaskStatus,
+                  nextAction: `仓库 ${repoId} 正在生成实现，请稍候刷新任务详情。`,
+                })
+                setArtifact('code.log')
+                await reload()
+              } catch (err) {
+                setActionError(err instanceof Error ? err.message : '启动实现失败')
+                setCodeStartingRepo(null)
+              }
+            }}
+            onReset={async (repoId) => {
+              const confirmed = window.confirm('回退后会删除这次生成的分支、worktree、diff 和结果记录。确认继续吗？')
+              if (!confirmed) {
+                return
+              }
+              try {
+                setResettingRepo(repoId)
+                setActionError('')
+                const result = await resetCode(task.id, repoId)
+                setTask({
+                  ...task,
+                  status: result.status as TaskStatus,
+                  nextAction: `仓库 ${repoId} 的实现结果已回退。`,
+                })
+                setArtifact('plan.md')
+                await reload()
+              } catch (err) {
+                setActionError(err instanceof Error ? err.message : '回退实现失败')
+                setResettingRepo(null)
+              }
+            }}
+            resettingRepo={resettingRepo}
+            task={task}
+          />
           <DiffPanel repos={task.repos} selectedRepo={selectedDiffRepo} onSelectRepo={setSelectedDiffRepo} />
         </aside>
       </div>
@@ -732,6 +799,21 @@ function hasActionableArtifact(content?: string) {
     return false
   }
   return !content.includes("当前没有") && !content.includes("当前为空")
+}
+
+function canStartCodeForRepo(repo: TaskRecord['repos'][number], hasGeneratedPlan: boolean) {
+  if (!hasGeneratedPlan) {
+    return false
+  }
+  return repo.status === 'planned' || repo.status === 'failed'
+}
+
+function canResetCodeForRepo(repo: TaskRecord['repos'][number]) {
+  return repo.status === 'coded' || repo.status === 'failed'
+}
+
+function canArchiveCodeForRepo(repo: TaskRecord['repos'][number]) {
+  return repo.status === 'coded'
 }
 
 function DeletePolicyCard({
@@ -815,20 +897,77 @@ function RepoScopeCard({ task }: { task: TaskRecord }) {
   )
 }
 
-function CodeResultCard({ task }: { task: TaskRecord }) {
+function CodeResultCard({
+  task,
+  hasGeneratedPlan,
+  actionBusy,
+  codeStartingRepo,
+  resettingRepo,
+  archivingRepo,
+  onStartCode,
+  onReset,
+  onArchive,
+}: {
+  task: TaskRecord
+  hasGeneratedPlan: boolean
+  actionBusy: boolean
+  codeStartingRepo: string | null
+  resettingRepo: string | null
+  archivingRepo: string | null
+  onStartCode: (repoId: string) => Promise<void>
+  onReset: (repoId: string) => Promise<void>
+  onArchive: (repoId: string) => Promise<void>
+}) {
   return (
     <section className="rounded-[24px] border border-stone-200 bg-white p-4 dark:border-white/10 dark:bg-white/6">
       <div className="mb-4 text-xs font-semibold uppercase tracking-[0.22em] text-stone-500 dark:text-stone-400">仓库结果</div>
       <div className="space-y-4">
         {task.repos.map((repo) => (
-          <RepoCodeResult key={repo.id} repo={repo} />
+          <RepoCodeResult
+            actionBusy={actionBusy}
+            archiving={archivingRepo === repo.id}
+            canArchive={task.repos.length > 1 && canArchiveCodeForRepo(repo)}
+            canReset={task.repos.length > 1 && canResetCodeForRepo(repo)}
+            canStartCode={task.repos.length > 1 && canStartCodeForRepo(repo, hasGeneratedPlan)}
+            codeStarting={codeStartingRepo === repo.id}
+            key={repo.id}
+            onArchive={onArchive}
+            onReset={onReset}
+            onStartCode={onStartCode}
+            repo={repo}
+            resetting={resettingRepo === repo.id}
+          />
         ))}
       </div>
     </section>
   )
 }
 
-function RepoCodeResult({ repo }: { repo: TaskRecord['repos'][number] }) {
+function RepoCodeResult({
+  repo,
+  canStartCode,
+  canReset,
+  canArchive,
+  codeStarting,
+  resetting,
+  archiving,
+  actionBusy,
+  onStartCode,
+  onReset,
+  onArchive,
+}: {
+  repo: TaskRecord['repos'][number]
+  canStartCode: boolean
+  canReset: boolean
+  canArchive: boolean
+  codeStarting: boolean
+  resetting: boolean
+  archiving: boolean
+  actionBusy: boolean
+  onStartCode: (repoId: string) => Promise<void>
+  onReset: (repoId: string) => Promise<void>
+  onArchive: (repoId: string) => Promise<void>
+}) {
   return (
     <div className="rounded-[20px] border border-stone-200 bg-stone-50 p-4 dark:border-white/10 dark:bg-white/5">
       <div className="mb-3 flex items-center justify-between gap-3">
@@ -844,6 +983,41 @@ function RepoCodeResult({ repo }: { repo: TaskRecord['repos'][number] }) {
         <KeyValue label="工作区" mono value={repo.worktree ?? '尚未创建'} />
         <KeyValue label="提交" mono value={repo.commit ?? '尚未提交'} />
       </div>
+
+      {canStartCode || canReset || canArchive ? (
+        <div className="mt-4 flex flex-wrap gap-2">
+          {canStartCode ? (
+            <button
+              className="rounded-2xl border border-emerald-200/50 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-emerald-300/20 dark:bg-emerald-400/10 dark:text-emerald-100 dark:hover:bg-emerald-400/20"
+              disabled={actionBusy}
+              onClick={() => void onStartCode(repo.id)}
+              type="button"
+            >
+              {codeStarting ? '实现进行中...' : repo.status === 'failed' ? '重试实现' : '开始实现'}
+            </button>
+          ) : null}
+          {canReset ? (
+            <button
+              className="rounded-2xl border border-rose-200/60 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-rose-300/20 dark:bg-rose-400/10 dark:text-rose-100 dark:hover:bg-rose-400/20"
+              disabled={actionBusy}
+              onClick={() => void onReset(repo.id)}
+              type="button"
+            >
+              {resetting ? '回退中...' : '回退实现'}
+            </button>
+          ) : null}
+          {canArchive ? (
+            <button
+              className="rounded-2xl border border-sky-200/60 bg-sky-50 px-3 py-2 text-sm font-semibold text-sky-700 transition hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-sky-300/20 dark:bg-sky-400/10 dark:text-sky-100 dark:hover:bg-sky-400/20"
+              disabled={actionBusy}
+              onClick={() => void onArchive(repo.id)}
+              type="button"
+            >
+              {archiving ? '归档中...' : '归档任务'}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
 
       <div className="mt-4 rounded-[18px] border border-stone-200 bg-white px-3 py-3 dark:border-white/10 dark:bg-stone-950/70">
         <div className="text-[11px] uppercase tracking-[0.2em] text-stone-500 dark:text-stone-400">变更文件</div>

@@ -17,13 +17,13 @@ func ArchiveCodeForRepo(repoRoot, taskID, repoID string) (*ArchiveCodeResult, er
 		return nil, err
 	}
 
-	if task.Metadata.Status != TaskStatusCoded {
-		return nil, fmt.Errorf("task 状态为 %s，仅 coded 状态可归档", task.Metadata.Status)
-	}
-
 	repo, err := ResolveTaskRepo(task.TaskDir, repoRoot, repoID)
 	if err != nil {
 		return nil, err
+	}
+
+	if repo.Status != TaskStatusCoded {
+		return nil, fmt.Errorf("repo %s 当前状态为 %s，仅 coded 状态可归档", repo.ID, repo.Status)
 	}
 
 	result := &ArchiveCodeResult{

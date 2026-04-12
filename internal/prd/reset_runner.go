@@ -6,7 +6,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"time"
 )
 
 type ResetCodeResult struct {
@@ -24,15 +23,15 @@ func ResetCodeForRepo(repoRoot, taskID, repoID string) (*ResetCodeResult, error)
 		return nil, err
 	}
 
-	switch task.Metadata.Status {
-	case TaskStatusCoded, TaskStatusFailed:
-	default:
-		return nil, fmt.Errorf("task 状态为 %s，仅 coded / failed 状态可重置", task.Metadata.Status)
-	}
-
 	repo, err := ResolveTaskRepo(task.TaskDir, repoRoot, repoID)
 	if err != nil {
 		return nil, err
+	}
+
+	switch repo.Status {
+	case TaskStatusCoded, TaskStatusFailed:
+	default:
+		return nil, fmt.Errorf("repo %s 当前状态为 %s，仅 coded / failed 状态可重置", repo.ID, repo.Status)
 	}
 
 	result := &ResetCodeResult{
@@ -58,9 +57,6 @@ func ResetCodeForRepo(repoRoot, taskID, repoID string) (*ResetCodeResult, error)
 	_ = os.Remove(filepath.Join(task.TaskDir, "code.log"))
 
 	if err := ResetRepoBinding(task.TaskDir, repo.ID); err != nil {
-		return nil, err
-	}
-	if err := ResetTaskToPlanned(task.TaskDir, time.Now()); err != nil {
 		return nil, err
 	}
 
