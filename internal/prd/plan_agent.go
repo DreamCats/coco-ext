@@ -159,7 +159,7 @@ func CheckPlanPrerequisites(repoRoot, taskID string) error {
 	if err != nil {
 		return err
 	}
-	if task.Metadata.Status != TaskStatusRefined && task.Metadata.Status != TaskStatusPlanned {
+	if task.Metadata.Status != TaskStatusRefined && task.Metadata.Status != TaskStatusPlanning && task.Metadata.Status != TaskStatusPlanned {
 		return fmt.Errorf("task 状态为 %s，需要先执行 coco-ext prd refine", task.Metadata.Status)
 	}
 	for _, name := range []string{"prd-refined.md"} {

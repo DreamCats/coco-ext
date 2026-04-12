@@ -1,6 +1,7 @@
 export type TaskStatus =
   | 'initialized'
   | 'refined'
+  | 'planning'
   | 'planned'
   | 'coding'
   | 'partially_coded'
@@ -16,6 +17,7 @@ export type TaskArtifactName =
   | 'refine.log'
   | 'design.md'
   | 'plan.md'
+  | 'plan.log'
   | 'code-result.json'
 
 export type TaskTimelineItem = {
@@ -160,6 +162,14 @@ export const tasks: TaskRecord[] = [
 - sdk/observability/logger.go：统一默认级别
 - sdk/observability/helper.go：补齐可容忍退化策略
 `,
+      'plan.log': `2026-04-11 10:32:10 === PLAN START ===
+2026-04-11 10:32:10 task_id: 20260411-103200-auction-observability-multi-repo
+2026-04-11 10:32:10 generator_mode: explorer(readonly)
+2026-04-11 10:32:12 first_chunk_received: 684 bytes
+2026-04-11 10:32:15 status: planned
+2026-04-11 10:32:15 duration: 5s
+2026-04-11 10:32:15 === PLAN END ===
+`,
       'code-result.json': `{
   "status": "partially_coded",
   "task_id": "20260411-103200-auction-observability-multi-repo",
@@ -241,6 +251,14 @@ export const tasks: TaskRecord[] = [
 - service/product_card_service.go：接入实验判断
 - converter/product_card_converter.go：处理回退逻辑
 `,
+      'plan.log': `2026-04-11 09:42:31 === PLAN START ===
+2026-04-11 09:42:31 task_id: 20260411-094220-product-card-experiment
+2026-04-11 09:42:31 generator_mode: explorer(readonly)
+2026-04-11 09:42:34 first_chunk_received: 512 bytes
+2026-04-11 09:42:38 status: planned
+2026-04-11 09:42:38 duration: 7s
+2026-04-11 09:42:38 === PLAN END ===
+`,
       'code-result.json': `{
   "status": "planned"
 }`,
@@ -281,6 +299,7 @@ export const tasks: TaskRecord[] = [
       'refine.log': '2026-04-10 22:10:30 === REFINE START ===\n2026-04-10 22:10:37 status: refined\n2026-04-10 22:10:37 === REFINE END ===\n',
       'design.md': '# Design\n\n已归档 task，设计文档略。',
       'plan.md': '# Plan\n\n已归档 task，实施计划略。',
+      'plan.log': '2026-04-10 22:10:39 === PLAN START ===\n2026-04-10 22:10:46 status: planned\n2026-04-10 22:10:46 === PLAN END ===\n',
       'code-result.json': `{
   "status": "success",
   "task_id": "20260410-221030-review-trigger-cleanup",

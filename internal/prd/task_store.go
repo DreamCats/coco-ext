@@ -403,7 +403,7 @@ func aggregateTaskStatus(current string, repos *ReposMetadata) string {
 	case hasCoded && allCodedOrArchived(repos):
 		return TaskStatusCoded
 	case allPlannedLike:
-		if current == TaskStatusInitialized || current == TaskStatusRefined || current == TaskStatusPlanned {
+		if current == TaskStatusInitialized || current == TaskStatusRefined || current == TaskStatusPlanning || current == TaskStatusPlanned {
 			return current
 		}
 		return TaskStatusPlanned

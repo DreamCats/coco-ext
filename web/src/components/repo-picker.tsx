@@ -161,7 +161,7 @@ export function RepoPicker({
 
   return (
     <div className="space-y-4">
-      <div className="text-xs font-semibold uppercase tracking-[0.2em] text-stone-500 dark:text-stone-400">Repos</div>
+      <div className="text-xs font-semibold uppercase tracking-[0.2em] text-stone-500 dark:text-stone-400">已选仓库</div>
 
       <div className="space-y-2">
         {selectedRepos.length > 0 ? (
@@ -179,13 +179,13 @@ export function RepoPicker({
                 onClick={() => removeRepo(repo.path)}
                 type="button"
               >
-                Remove
+                移除
               </button>
             </div>
           ))
         ) : (
           <div className="rounded-[18px] border border-dashed border-stone-300 bg-stone-50 px-4 py-4 text-sm text-stone-500 dark:border-white/15 dark:bg-white/5 dark:text-stone-400">
-            还没有选择 repo。可以从 recent repos 里加入，或者在右侧浏览远程开发机上的目录树。
+            还没有选择仓库。可以从最近使用中挑选，或在右侧浏览服务器目录。
           </div>
         )}
       </div>
@@ -195,11 +195,11 @@ export function RepoPicker({
       <div className="grid gap-4 md:grid-cols-[0.95fr_1.05fr]">
         <section className="rounded-[20px] border border-stone-200 bg-white p-4 dark:border-white/10 dark:bg-white/6">
           <div className="flex items-center justify-between gap-3">
-            <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-stone-500 dark:text-stone-400">Recent Repos</div>
+            <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-stone-500 dark:text-stone-400">最近使用</div>
             <input
               className="w-44 rounded-full border border-stone-200 px-3 py-2 text-xs text-stone-700 outline-none focus:border-stone-400 dark:border-white/10 dark:bg-stone-950/70 dark:text-stone-200 dark:placeholder:text-stone-500 dark:focus:border-white/20"
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Filter recent repos"
+              placeholder="搜索仓库"
               type="text"
               value={query}
             />
@@ -207,7 +207,7 @@ export function RepoPicker({
           <div className="mt-3 space-y-2">
             {loadingRecent ? (
               <div className="rounded-[18px] border border-dashed border-stone-300 bg-stone-50 px-3 py-4 text-sm text-stone-500 dark:border-white/15 dark:bg-white/5 dark:text-stone-400">
-                正在加载 recent repos...
+                正在加载最近使用的仓库...
               </div>
             ) : filteredRecent.length > 0 ? (
               filteredRecent.map((repo) => (
@@ -226,14 +226,14 @@ export function RepoPicker({
                     <div className="mt-1 break-all font-mono text-xs leading-5 text-stone-500 dark:text-stone-400">{repo.path}</div>
                   </div>
                   <div className="shrink-0 text-right text-[11px] uppercase tracking-[0.18em] text-stone-500 dark:text-stone-400">
-                    {repo.taskCount ? `${repo.taskCount} tasks` : 'recent'}
+                    {repo.taskCount ? `${repo.taskCount} 个任务` : '最近使用'}
                     {repo.lastSeenAt ? <div className="mt-1 normal-case tracking-normal">{repo.lastSeenAt}</div> : null}
                   </div>
                 </button>
               ))
             ) : (
               <div className="rounded-[18px] border border-dashed border-stone-300 bg-stone-50 px-3 py-4 text-sm text-stone-500 dark:border-white/15 dark:bg-white/5 dark:text-stone-400">
-                {query ? '没有匹配的 recent repos。' : '还没有 recent repos。'}
+                {query ? '没有找到匹配的仓库。' : '暂时还没有最近使用的仓库。'}
               </div>
             )}
           </div>
@@ -241,7 +241,7 @@ export function RepoPicker({
 
         <section className="rounded-[20px] border border-stone-200 bg-white p-4 dark:border-white/10 dark:bg-white/6">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-stone-500 dark:text-stone-400">Remote Browser</div>
+            <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-stone-500 dark:text-stone-400">远程目录</div>
             <div className="flex flex-wrap gap-2">
               {roots.map((root) => (
                 <button
@@ -261,7 +261,7 @@ export function RepoPicker({
           </div>
 
           <div className="mt-3 rounded-[18px] border border-stone-200 bg-stone-50 px-3 py-3 dark:border-white/10 dark:bg-white/5">
-            <div className="text-[11px] uppercase tracking-[0.18em] text-stone-500 dark:text-stone-400">Current Path</div>
+            <div className="text-[11px] uppercase tracking-[0.18em] text-stone-500 dark:text-stone-400">当前位置</div>
             <div className="mt-2 break-all font-mono text-xs text-stone-700 dark:text-stone-300">{browserPath || '-'}</div>
             <div className="mt-3 flex flex-wrap gap-2">
               {breadcrumbs.map((item) => (
@@ -286,7 +286,7 @@ export function RepoPicker({
                 onClick={() => void loadBrowser(parentPath)}
                 type="button"
               >
-                Up
+                上一级
               </button>
             </div>
           </div>
@@ -295,7 +295,7 @@ export function RepoPicker({
             <input
               className="min-w-0 flex-1 rounded-2xl border border-stone-200 px-3 py-3 font-mono text-sm text-stone-900 outline-none focus:border-stone-400 dark:border-white/10 dark:bg-stone-950/70 dark:text-stone-200 dark:placeholder:text-stone-500 dark:focus:border-white/20"
               onChange={(event) => setManualPath(event.target.value)}
-              placeholder="/path/to/remote/repo"
+              placeholder="输入仓库路径"
               type="text"
               value={manualPath}
             />
@@ -305,17 +305,17 @@ export function RepoPicker({
               onClick={() => void addManualRepo()}
               type="button"
             >
-              {validating ? 'Checking...' : 'Validate & Add'}
+              {validating ? '校验中...' : '校验并加入'}
             </button>
           </div>
           <div className="mt-2 text-xs leading-5 text-stone-500 dark:text-stone-400">
-            这里浏览和校验的是运行 `coco-ext ui serve` 的那台机器上的目录，不是你本地浏览器电脑的文件系统。
+            这里浏览的是运行 `coco-ext ui serve` 那台机器上的目录。
           </div>
 
           <div className="mt-4 max-h-72 space-y-2 overflow-y-auto pr-1">
             {loadingBrowser ? (
               <div className="rounded-[18px] border border-dashed border-stone-300 bg-stone-50 px-3 py-4 text-sm text-stone-500 dark:border-white/15 dark:bg-white/5 dark:text-stone-400">
-                正在加载远程目录...
+                正在加载目录...
               </div>
             ) : entries.length > 0 ? (
               entries.map((entry) => (
@@ -341,18 +341,18 @@ export function RepoPicker({
                       onClick={() => addBrowserRepo(entry)}
                       type="button"
                     >
-                      Add Repo
+                      加入
                     </button>
                   ) : (
                     <div className="shrink-0 rounded-full border border-stone-200 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-stone-500 dark:border-white/10 dark:text-stone-400">
-                      dir
+                      目录
                     </div>
                   )}
                 </div>
               ))
             ) : (
               <div className="rounded-[18px] border border-dashed border-stone-300 bg-stone-50 px-3 py-4 text-sm text-stone-500 dark:border-white/15 dark:bg-white/5 dark:text-stone-400">
-                目录下没有可展示的子目录。
+                当前目录下没有可用子目录。
               </div>
             )}
           </div>

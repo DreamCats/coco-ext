@@ -3,6 +3,7 @@ package ui
 import (
 	"net/http"
 	"os"
+	"strings"
 
 	"github.com/DreamCats/coco-ext/internal/prd"
 )
@@ -45,9 +46,13 @@ func (s *Server) handleTasks(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleTaskDetail(w http.ResponseWriter, r *http.Request) {
-	taskID := parseTaskIDFromPath(r.URL.Path)
+	taskID, action := parseTaskPath(r.URL.Path)
 	if taskID == "" {
 		writeJSONError(w, http.StatusBadRequest, "missing task id")
+		return
+	}
+	if action != "" {
+		s.handleTaskAction(w, r, taskID, action)
 		return
 	}
 	if r.Method == http.MethodDelete {
@@ -88,4 +93,17 @@ func (s *Server) handleTaskDetail(w http.ResponseWriter, r *http.Request) {
 		Timeline:   buildTimeline(report.Metadata.Status),
 		Artifacts:  readTaskArtifacts(report.TaskDir),
 	})
+}
+
+func parseTaskPath(path string) (taskID string, action string) {
+	trimmed := strings.Trim(strings.TrimPrefix(path, "/api/tasks/"), "/")
+	if trimmed == "" {
+		return "", ""
+	}
+	parts := strings.Split(trimmed, "/")
+	taskID = strings.TrimSpace(parts[0])
+	if len(parts) > 1 {
+		action = strings.TrimSpace(parts[1])
+	}
+	return taskID, action
 }

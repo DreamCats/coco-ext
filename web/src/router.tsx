@@ -21,8 +21,9 @@ const taskStatusPriority: Record<string, number> = {
   partially_coded: 0,
   coding: 1,
   planned: 2,
-  refined: 3,
-  initialized: 4,
+  planning: 3,
+  refined: 4,
+  initialized: 5,
   failed: 5,
   coded: 6,
   archived: 7,
@@ -42,21 +43,46 @@ function pickSpotlightTask(tasks: ReturnType<typeof useAppData>['tasks']) {
 function taskNarrative(status: string) {
   switch (status) {
     case 'partially_coded':
-      return '多仓任务已经部分落地，系统正在等待剩余仓库继续进入 code。'
+      return '已有仓库完成实现，剩余范围还需要继续推进。'
     case 'coding':
-      return '当前任务正在隔离 worktree 中执行 code，适合展示 agent 驱动的真实交付。'
+      return '任务正在生成实现并验证结果，适合优先跟进。'
     case 'planned':
-      return '设计与计划已经形成，下一步就是进入隔离执行阶段。'
+      return '实施方案已经准备好，可以安排进入实现阶段。'
+    case 'planning':
+      return '系统正在分析代码并整理实施方案，稍后就能进入下一步。'
     case 'refined':
-      return '需求已经整理成正式 task，可以继续进入 plan。'
+      return '需求已经整理完成，接下来可以生成实施方案。'
     case 'initialized':
-      return '任务刚创建，refine 正在后台收敛输入和 repo scope。'
+      return '任务刚创建，系统正在整理输入内容和涉及仓库。'
     case 'coded':
-      return '代码结果已经产出，下一步通常是 review、确认和 archive。'
+      return '实现结果已经产出，接下来适合确认结果并收尾。'
     case 'failed':
-      return '任务执行出现异常，当前页面更适合演示可回看和可恢复能力。'
+      return '这次推进中断了，建议先看日志，再决定如何继续。'
     default:
-      return '当前系统已经沉淀 task、产物、repo scope 和执行结果。'
+      return '这里会持续展示任务推进、涉及仓库和最新产物。'
+  }
+}
+
+function taskHeadline(status: string) {
+  switch (status) {
+    case 'partially_coded':
+      return '部分结果已产出'
+    case 'coding':
+      return '实现推进中'
+    case 'planned':
+      return '待进入实现'
+    case 'planning':
+      return '方案生成中'
+    case 'refined':
+      return '待生成方案'
+    case 'initialized':
+      return '需求整理中'
+    case 'coded':
+      return '已产出结果'
+    case 'failed':
+      return '处理中断'
+    default:
+      return '持续推进中'
   }
 }
 
@@ -133,20 +159,20 @@ function AppShell() {
             <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
               <div className="max-w-4xl">
                 <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-emerald-700 dark:border-emerald-300/20 dark:bg-emerald-400/10 dark:text-emerald-200">
-                  AI Delivery Workbench
+                  需求交付工作台
                 </div>
                 <h1 className="text-[42px] font-semibold tracking-[-0.06em] text-stone-950 dark:text-stone-50 md:text-[52px]">
-                  From PRD To Code
+                  从需求到交付
                 </h1>
                 <p className="mt-3 max-w-3xl text-base leading-7 text-stone-600 dark:text-stone-300">
-                  把需求整理、方案沉淀、多仓执行和 code 结果收进同一个工作台。现在看到的不只是任务列表，而是一条可回看、可讲清楚、可继续扩成控制面的交付系统。
+                  在一个界面里查看需求整理、方案生成、实现推进和结果沉淀。你随时都能知道任务走到哪一步，下一步该推进什么。
                 </p>
                 {error ? <p className="mt-3 text-sm text-rose-600">{error}</p> : null}
               </div>
               <div className="flex flex-col gap-3">
                 <div className="flex items-center justify-end gap-2">
                   <span className="text-[11px] font-semibold uppercase tracking-[0.22em] text-stone-500 dark:text-stone-400">
-                    Theme
+                    主题
                   </span>
                   <div className="inline-flex rounded-full border border-stone-200 bg-white p-1 dark:border-white/10 dark:bg-white/6">
                     {(['system', 'light', 'dark'] as ThemeMode[]).map((mode) => {
@@ -172,11 +198,11 @@ function AppShell() {
                   当前主题：{activeTheme === 'dark' ? '暗色' : '浅色'}
                 </div>
                 <div className="grid gap-3 text-sm text-stone-600 dark:text-stone-300 sm:grid-cols-2 xl:grid-cols-4">
-                  <MetricCard label="Tasks In Flight" value={loading ? '...' : `${activeTasks.length}`} tone="emerald" />
-                  <MetricCard label="Coded Ready" value={loading ? '...' : `${codedCount}`} tone="amber" />
-                  <MetricCard label="Multi-Repo" value={loading ? '...' : `${multiRepoCount}`} tone="sky" />
+                  <MetricCard label="进行中任务" value={loading ? '...' : `${activeTasks.length}`} tone="emerald" />
+                  <MetricCard label="已有结果" value={loading ? '...' : `${codedCount}`} tone="amber" />
+                  <MetricCard label="多仓任务" value={loading ? '...' : `${multiRepoCount}`} tone="sky" />
                   <MetricCard
-                    label="Awaiting Code"
+                    label="待进入实现"
                     value={loading ? '...' : `${waitingCodeCount}`}
                     tone="amber"
                   />
@@ -188,37 +214,37 @@ function AppShell() {
               <section className="overflow-hidden rounded-[28px] border border-stone-900 bg-[#111317] text-white shadow-[0_30px_80px_rgba(15,23,42,0.18)]">
                 <div className="grid gap-4 px-5 py-5 lg:grid-cols-[minmax(0,1fr)_280px]">
                   <div>
-                    <div className="text-[11px] font-semibold uppercase tracking-[0.24em] text-emerald-300">Active Delivery</div>
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.24em] text-emerald-300">当前焦点</div>
                     <h2 className="mt-3 text-[30px] font-semibold tracking-[-0.05em]">
-                      {spotlightTask ? spotlightTask.title : '等待新的 task 进入系统'}
+                      {spotlightTask ? spotlightTask.title : '等待新的任务进入队列'}
                     </h2>
                     <p className="mt-3 max-w-2xl text-sm leading-6 text-stone-300">
-                      {spotlightTask ? taskNarrative(spotlightTask.status) : '当前还没有 task，可以从 New Task 入口创建第一条需求。'}
+                      {spotlightTask ? taskNarrative(spotlightTask.status) : '当前还没有任务，可以先创建一条需求开始推进。'}
                     </p>
                     {spotlightTask ? (
                       <div className="mt-5 grid gap-3 md:grid-cols-3">
                         <div className="rounded-[18px] border border-white/8 bg-white/4 px-4 py-3">
-                          <div className="text-[11px] uppercase tracking-[0.2em] text-stone-400">Stage</div>
-                          <div className="mt-2 text-sm font-semibold text-white">{spotlightTask.status}</div>
+                          <div className="text-[11px] uppercase tracking-[0.2em] text-stone-400">当前阶段</div>
+                          <div className="mt-2 text-sm font-semibold text-white">{taskHeadline(spotlightTask.status)}</div>
                         </div>
                         <div className="rounded-[18px] border border-white/8 bg-white/4 px-4 py-3">
-                          <div className="text-[11px] uppercase tracking-[0.2em] text-stone-400">Repo Scope</div>
+                          <div className="text-[11px] uppercase tracking-[0.2em] text-stone-400">涉及仓库</div>
                           <div className="mt-2 text-sm font-semibold text-white">{spotlightTask.repoIds.join(', ') || '-'}</div>
                         </div>
                         <div className="rounded-[18px] border border-white/8 bg-white/4 px-4 py-3">
-                          <div className="text-[11px] uppercase tracking-[0.2em] text-stone-400">Updated</div>
+                          <div className="text-[11px] uppercase tracking-[0.2em] text-stone-400">最近更新</div>
                           <div className="mt-2 text-sm font-semibold text-white">{spotlightTask.updatedAt}</div>
                         </div>
                       </div>
                     ) : null}
                   </div>
                   <div className="rounded-[24px] border border-emerald-300/20 bg-emerald-400/10 p-4">
-                    <div className="text-[11px] font-semibold uppercase tracking-[0.24em] text-emerald-200">System Summary</div>
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.24em] text-emerald-200">整体概览</div>
                     <div className="mt-3 text-2xl font-semibold tracking-[-0.04em] text-white">
-                      {loading ? '加载中...' : `${workspace?.reposInvolved.length ?? 0} repos · ${tasks.length} tasks`}
+                      {loading ? '加载中...' : `${workspace?.reposInvolved.length ?? 0} 个仓库 · ${tasks.length} 个任务`}
                     </div>
                     <p className="mt-3 text-sm leading-6 text-emerald-100/85">
-                      这个首页不是静态介绍页，而是拿真实 task 数据讲清楚需求如何进入系统、如何跨 repo 执行，以及现在卡在哪一步。
+                      这里汇总当前任务规模、仓库范围和推进节奏，方便你快速判断今天最值得跟进的工作。
                     </p>
                   </div>
                 </div>
@@ -228,11 +254,11 @@ function AppShell() {
                 <section className="rounded-[24px] border border-stone-200 bg-stone-50/80 p-4 dark:border-white/10 dark:bg-white/5">
                   <div className="flex items-center justify-between gap-3">
                     <div>
-                      <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-stone-500 dark:text-stone-400">Repo Orchestration</div>
-                      <h3 className="mt-2 text-2xl font-semibold tracking-[-0.04em] text-stone-950 dark:text-stone-50">多仓任务不是附属能力</h3>
+                      <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-stone-500 dark:text-stone-400">重点仓库</div>
+                      <h3 className="mt-2 text-2xl font-semibold tracking-[-0.04em] text-stone-950 dark:text-stone-50">最近最活跃的范围</h3>
                     </div>
                     <div className="rounded-full border border-stone-200 bg-white px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-stone-500 dark:border-white/10 dark:bg-white/6 dark:text-stone-300">
-                      top repos
+                      最近关注
                     </div>
                   </div>
                   <div className="mt-4 space-y-3">
@@ -244,21 +270,21 @@ function AppShell() {
                         >
                           <div>
                             <div className="text-sm font-semibold text-stone-950 dark:text-stone-50">{repo.repoId}</div>
-                            <div className="mt-1 text-xs text-stone-500 dark:text-stone-400">作为 task 作用范围反复出现的 repo</div>
+                            <div className="mt-1 text-xs text-stone-500 dark:text-stone-400">最近被多个任务反复涉及的仓库</div>
                           </div>
                           <div>
-                            <div className="text-[11px] uppercase tracking-[0.2em] text-stone-500 dark:text-stone-400">tasks</div>
+                            <div className="text-[11px] uppercase tracking-[0.2em] text-stone-500 dark:text-stone-400">任务数</div>
                             <div className="mt-2 text-lg font-semibold text-stone-950 dark:text-stone-50">{repo.taskCount}</div>
                           </div>
                           <div>
-                            <div className="text-[11px] uppercase tracking-[0.2em] text-stone-500 dark:text-stone-400">in flight</div>
+                            <div className="text-[11px] uppercase tracking-[0.2em] text-stone-500 dark:text-stone-400">进行中</div>
                             <div className="mt-2 text-lg font-semibold text-stone-950 dark:text-stone-50">{repo.activeCount}</div>
                           </div>
                         </div>
                       ))
                     ) : (
                       <div className="rounded-[18px] border border-dashed border-stone-300 bg-white px-4 py-4 text-sm text-stone-500 dark:border-white/15 dark:bg-white/6 dark:text-stone-400">
-                        当前还没有 repo scope 数据。
+                        还没有足够的数据来识别重点仓库。
                       </div>
                     )}
                   </div>
@@ -266,15 +292,15 @@ function AppShell() {
 
                 <div className="flex flex-wrap items-center gap-2">
                   <TopNavItem
-                    description="面向交付流程，聚焦 task、产物、repo 状态和下一步动作。"
+                    description="查看任务进度、下一步动作和关键产物。"
                     isActive={location.pathname.startsWith('/tasks') || location.pathname === '/'}
-                    title="Delivery Console"
+                    title="任务推进"
                     to="/tasks"
                   />
                   <TopNavItem
-                    description="面向执行拓扑，解释 repo、context、task root 和隔离 worktree 的路径关系。"
+                    description="查看仓库、任务目录和隔离工作区的实际位置。"
                     isActive={location.pathname.startsWith('/workspace')}
-                    title="Workspace Topology"
+                    title="路径视图"
                     to="/workspace"
                   />
                 </div>

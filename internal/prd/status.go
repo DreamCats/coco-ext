@@ -143,6 +143,8 @@ func suggestNextCommand(taskDir, taskID, status string, artifacts []ArtifactStat
 	switch {
 	case !hasRefined:
 		return fmt.Sprintf("coco-ext prd refine --task %s --prd %s", taskID, filepath.Join(taskDir, "prd.source.md"))
+	case status == TaskStatusPlanning:
+		return "plan 正在执行，请稍候刷新任务详情。"
 	case !hasDesign || !hasPlan:
 		return fmt.Sprintf("coco-ext prd plan --task %s", taskID)
 	case status == TaskStatusCoding || status == TaskStatusPartiallyCoded:
