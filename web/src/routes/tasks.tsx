@@ -17,9 +17,9 @@ import {
   type TaskStatus,
 } from '../api'
 import { ActionPanel } from '../components/action-panel'
-import { ArtifactViewer, artifactLabel } from '../components/artifact-viewer'
-import { DiffPanel } from '../components/diff-panel'
 import { RepoPicker } from '../components/repo-picker'
+import { TaskPrimaryAction } from '../components/task-primary-action'
+import { TaskWorkbench } from '../components/task-workbench'
 import {
   CompactField,
   FilterChip,
@@ -30,17 +30,6 @@ import {
   TimelineCard,
 } from '../components/ui-primitives'
 import { useAppData } from '../hooks/use-app-data'
-
-const artifactNavigationOrder: TaskArtifactName[] = [
-  'prd.source.md',
-  'prd-refined.md',
-  'design.md',
-  'plan.md',
-  'code-result.json',
-  'refine.log',
-  'plan.log',
-  'code.log',
-]
 
 export function TasksLayout() {
   const { tasks, loading, error, reload } = useAppData()
@@ -483,6 +472,126 @@ export function TaskDetailPage() {
   const planActionLabel = task.status === 'planned' ? '重新 Plan' : '开始 Plan'
   const codeActionLabel = singleRepo?.status === 'failed' ? '重试实现' : '开始实现'
   const actionBusy = Boolean(planStarting || codeStartingRepo || batchCodeStarting || resettingRepo || archivingRepo)
+  const currentTask = task
+
+  async function handleDeleteTask() {
+    const confirmed = window.confirm(`确认删除 task ${currentTask.id}？仅允许删除未进入 code 的 task。`)
+    if (!confirmed) {
+      return
+    }
+    try {
+      await deleteTask(currentTask.id)
+      await reload()
+      void navigate({ to: '/tasks' })
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : '删除 task 失败')
+    }
+  }
+
+  async function handleStartPlan() {
+    try {
+      setPlanStarting(true)
+      setActionError('')
+      const result = await startPlan(currentTask.id)
+      setTask({
+        ...currentTask,
+        status: result.status as TaskStatus,
+        nextAction: '方案正在生成，请稍候刷新任务详情。',
+      })
+      setArtifact('plan.log')
+      await reload()
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : '启动 plan 失败')
+      setPlanStarting(false)
+    }
+  }
+
+  async function handleStartSingleCode() {
+    try {
+      setCodeStartingRepo(singleRepo?.id ?? currentTask.id)
+      setActionError('')
+      const result = await startCode(currentTask.id, singleRepo?.id)
+      setTask({
+        ...currentTask,
+        status: result.status as TaskStatus,
+        nextAction: '实现正在执行，请稍候刷新任务详情。',
+      })
+      setArtifact('code.log')
+      setArtifactRepo(singleRepo?.id ?? '')
+      await reload()
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : '启动实现失败')
+      setCodeStartingRepo(null)
+    }
+  }
+
+  async function handleResetSingleCode() {
+    const confirmed = window.confirm('回退后会删除这次生成的分支、worktree、diff 和结果记录。确认继续吗？')
+    if (!confirmed) {
+      return
+    }
+    try {
+      setResettingRepo(singleRepo?.id ?? currentTask.id)
+      setActionError('')
+      const result = await resetCode(currentTask.id, singleRepo?.id)
+      setTask({
+        ...currentTask,
+        status: result.status as TaskStatus,
+        nextAction: '实现结果已回退，可重新生成方案或再次开始实现。',
+      })
+      setArtifact('plan.md')
+      setArtifactRepo('')
+      await reload()
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : '回退实现失败')
+      setResettingRepo(null)
+    }
+  }
+
+  async function handleArchiveSingleCode() {
+    const confirmed = window.confirm('归档后会清理这次实现产生的分支和 worktree，但会保留结果记录。确认继续吗？')
+    if (!confirmed) {
+      return
+    }
+    try {
+      setArchivingRepo(singleRepo?.id ?? currentTask.id)
+      setActionError('')
+      const result = await archiveCode(currentTask.id, singleRepo?.id)
+      setTask({
+        ...currentTask,
+        status: result.status as TaskStatus,
+        nextAction: '任务已归档，无后续操作。',
+      })
+      await reload()
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : '归档失败')
+      setArchivingRepo(null)
+    }
+  }
+
+  async function handleStartRemainingCode() {
+    try {
+      setBatchCodeStarting(true)
+      setActionError('')
+      const result = await startRemainingCode(currentTask.id)
+      setTask({
+        ...currentTask,
+        status: result.status as TaskStatus,
+        nextAction: `正在按顺序推进剩余 ${remainingRepos.length} 个仓库，请稍候刷新任务详情。`,
+      })
+      setArtifact('code.log')
+      setArtifactRepo(remainingRepos[0]?.id ?? artifactRepo)
+      await reload()
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : '启动批量实现失败')
+      setBatchCodeStarting(false)
+    }
+  }
+
+  function handleRepoContextChange(repoId: string) {
+    setSelectedDiffRepo(repoId)
+    setArtifactRepo(repoId)
+  }
 
   return (
     <div className="space-y-4 lg:h-full lg:overflow-y-auto lg:pr-1">
@@ -497,338 +606,67 @@ export function TaskDetailPage() {
               {task.complexity}
             </span>
           </div>
-          <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
+          <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_420px]">
             <div>
               <div className="text-xs font-semibold uppercase tracking-[0.24em] text-stone-400">Task Detail</div>
-              <h3 className="mt-2 text-[30px] font-semibold tracking-[-0.05em] text-white">{task.title}</h3>
-              <p className="mt-3 max-w-3xl text-sm leading-6 text-stone-300">
-                在这里查看需求文档、实施方案、涉及仓库和最新结果，让推进路径始终清晰。
-              </p>
-              {canDelete ? (
-                <div className="mt-4 flex flex-wrap items-center gap-3">
-                  <button
-                    className="rounded-2xl border border-rose-300/30 bg-rose-400/10 px-4 py-3 text-sm font-semibold text-rose-100 transition hover:border-rose-200/40 hover:bg-rose-400/20"
-                    onClick={async () => {
-                      const confirmed = window.confirm(`确认删除 task ${task.id}？仅允许删除未进入 code 的 task。`)
-                      if (!confirmed) {
-                        return
-                      }
-                      try {
-                        await deleteTask(task.id)
-                        await reload()
-                        void navigate({ to: '/tasks' })
-                      } catch (err) {
-                        window.alert(err instanceof Error ? err.message : '删除 task 失败')
-                      }
-                    }}
-                    type="button"
-                  >
-                    删除任务
-                  </button>
-                  <span className="text-xs text-stone-400">仅限尚未进入实现阶段的任务</span>
-                </div>
-              ) : null}
+              <h3 className="mt-2 text-[34px] font-semibold tracking-[-0.05em] text-white">{task.title}</h3>
+              <p className="mt-3 max-w-3xl text-sm leading-6 text-stone-300">{taskStatusSummary(currentTask)}</p>
+              <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                <CompactField label="任务编号" value={task.id} />
+                <CompactField label="最近更新" value={task.updatedAt} />
+                <CompactField label="负责人" value={task.owner} />
+                <CompactField label="涉及仓库" value={`${task.repos.length}`} />
+              </div>
             </div>
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
-              <CompactField label="任务编号" value={task.id} />
-              <CompactField label="最近更新" value={task.updatedAt} />
-              <CompactField label="负责人" value={task.owner} />
-              <CompactField label="涉及仓库" value={`${task.repos.length}`} />
-            </div>
-          </div>
-        </div>
-        <div className="grid gap-4 px-5 py-5 lg:grid-cols-[minmax(0,1fr)_360px]">
-          <div className="rounded-[20px] border border-white/8 bg-white/3 p-4">
-            <div className="mb-3 text-xs font-semibold uppercase tracking-[0.22em] text-stone-400">推进阶段</div>
-            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-              {task.timeline.map((step) => (
-                <TimelineCard key={step.label} detail={step.detail} label={step.label} state={step.state} />
-              ))}
-            </div>
-          </div>
-
-          <div className="rounded-[20px] border border-emerald-300/20 bg-emerald-400/10 p-4">
-            <div className="text-xs font-semibold uppercase tracking-[0.22em] text-emerald-200">下一步建议</div>
-            <div className="mt-3 text-xl font-semibold tracking-[-0.04em] text-white">
-              {task.status === 'coded'
-                ? '归档并完成收尾'
-                : task.status === 'partially_coded'
-                  ? '继续推进剩余仓库'
-                  : task.status === 'coding'
-                    ? '等待实现完成'
-                  : task.status === 'planning'
-                    ? '等待方案生成完成'
-                  : task.status === 'planned'
-                    ? '开始生成实现'
-                    : task.status === 'failed' && canResetCode
-                      ? '回退这次实现'
-                    : task.status === 'failed' && canStartCode
-                      ? '调整后重新实现'
-                    : task.status === 'refined'
-                      ? '开始生成方案'
-                      : '继续推进当前任务'}
-            </div>
-            <p className="mt-3 text-sm leading-6 text-emerald-100/85">
-              系统会根据当前阶段给出建议动作，帮助你把任务继续往前推进。
-            </p>
-            {task.status === 'initialized' ? (
-              <div className="mt-3 rounded-2xl border border-amber-300/20 bg-amber-400/10 px-4 py-3 text-sm leading-6 text-amber-100">
-                需求正在整理成可执行任务。若停留时间过长，可打开 `refine.log` 查看进度。
-              </div>
-            ) : null}
-            {task.status === 'planning' ? (
-              <div className="mt-3 rounded-2xl border border-sky-300/20 bg-sky-400/10 px-4 py-3 text-sm leading-6 text-sky-100">
-                正在分析代码并生成方案。若停留时间过长，可打开 `plan.log` 查看进度。
-              </div>
-            ) : null}
-            {task.status === 'coding' ? (
-              <div className="mt-3 rounded-2xl border border-emerald-300/20 bg-emerald-400/10 px-4 py-3 text-sm leading-6 text-emerald-100">
-                正在后台生成实现并验证结果。若停留时间过长，可打开 `code.log` 查看进度。
-              </div>
-            ) : null}
-            {task.repos.length > 1 && (task.status === 'planned' || task.status === 'partially_coded' || task.status === 'failed' || task.status === 'coded') ? (
-              <div className="mt-3 rounded-2xl border border-amber-300/20 bg-amber-400/10 px-4 py-3 text-sm leading-6 text-amber-100">
-                这是一条多仓任务。你可以直接逐个仓库推进，也可以一键依次执行剩余仓库。
-              </div>
-            ) : null}
-            {actionError ? (
-              <div className="mt-3 rounded-2xl border border-rose-300/20 bg-rose-400/10 px-4 py-3 text-sm leading-6 text-rose-100">
-                {actionError}
-              </div>
-            ) : null}
-            {canStartCode || canStartPlan || canResetCode || canArchiveCode || canStartRemainingCode ? (
-              <div className="mt-4 flex flex-wrap items-center gap-3">
-                {canStartRemainingCode ? (
-                  <>
-                    <button
-                      className="rounded-2xl border border-emerald-200/30 bg-emerald-500/25 px-4 py-3 text-sm font-semibold text-emerald-50 transition hover:border-emerald-100/40 hover:bg-emerald-500/35 disabled:cursor-not-allowed disabled:opacity-60"
-                      disabled={actionBusy}
-                      onClick={async () => {
-                        try {
-                          setBatchCodeStarting(true)
-                          setActionError('')
-                          const result = await startRemainingCode(task.id)
-                          setTask({
-                            ...task,
-                            status: result.status as TaskStatus,
-                            nextAction: `正在按顺序推进剩余 ${remainingRepos.length} 个仓库，请稍候刷新任务详情。`,
-                          })
-                          setArtifact('code.log')
-                          setArtifactRepo(remainingRepos[0]?.id ?? artifactRepo)
-                          await reload()
-                        } catch (err) {
-                          setActionError(err instanceof Error ? err.message : '启动批量实现失败')
-                          setBatchCodeStarting(false)
-                        }
-                      }}
-                      type="button"
-                    >
-                      {batchCodeStarting ? '批量推进中...' : `依次推进剩余仓库 (${remainingRepos.length})`}
-                    </button>
-                    <span className="text-xs text-emerald-100/80">会按仓库顺序逐个执行，某个仓库失败后立即停止</span>
-                  </>
-                ) : null}
-                {canStartCode ? (
-                  <>
-                    <button
-                      className="rounded-2xl border border-emerald-200/30 bg-emerald-400/20 px-4 py-3 text-sm font-semibold text-emerald-50 transition hover:border-emerald-100/40 hover:bg-emerald-400/30 disabled:cursor-not-allowed disabled:opacity-60"
-                      disabled={actionBusy}
-                      onClick={async () => {
-                        try {
-                          setCodeStartingRepo(singleRepo?.id ?? task.id)
-                          setActionError('')
-                          const result = await startCode(task.id, singleRepo?.id)
-                          setTask({
-                            ...task,
-                            status: result.status as TaskStatus,
-                            nextAction: '实现正在执行，请稍候刷新任务详情。',
-                          })
-                          setArtifact('code.log')
-                          setArtifactRepo(singleRepo?.id ?? '')
-                          await reload()
-                        } catch (err) {
-                          setActionError(err instanceof Error ? err.message : '启动实现失败')
-                          setCodeStartingRepo(null)
-                        }
-                      }}
-                      type="button"
-                    >
-                      {codeStartingRepo ? '实现进行中...' : codeActionLabel}
-                    </button>
-                    <span className="text-xs text-emerald-100/80">会在后台创建隔离工作区、生成改动并尝试完成构建验证</span>
-                  </>
-                ) : null}
-                {canResetCode ? (
-                  <>
-                    <button
-                      className="rounded-2xl border border-rose-200/30 bg-rose-400/15 px-4 py-3 text-sm font-semibold text-rose-50 transition hover:border-rose-100/40 hover:bg-rose-400/25 disabled:cursor-not-allowed disabled:opacity-60"
-                      disabled={actionBusy}
-                      onClick={async () => {
-                        const confirmed = window.confirm('回退后会删除这次生成的分支、worktree、diff 和结果记录。确认继续吗？')
-                        if (!confirmed) {
-                          return
-                        }
-                        try {
-                          setResettingRepo(singleRepo?.id ?? task.id)
-                          setActionError('')
-                          const result = await resetCode(task.id, singleRepo?.id)
-                          setTask({
-                            ...task,
-                            status: result.status as TaskStatus,
-                            nextAction: '实现结果已回退，可重新生成方案或再次开始实现。',
-                          })
-                          setArtifact('plan.md')
-                          setArtifactRepo('')
-                          await reload()
-                        } catch (err) {
-                          setActionError(err instanceof Error ? err.message : '回退实现失败')
-                          setResettingRepo(null)
-                        }
-                      }}
-                      type="button"
-                    >
-                      {resettingRepo ? '回退中...' : '回退实现'}
-                    </button>
-                    <span className="text-xs text-emerald-100/80">会丢弃当前这次实现结果，并把任务退回到可重新开始实现的状态</span>
-                  </>
-                ) : null}
-                {canArchiveCode ? (
-                  <>
-                    <button
-                      className="rounded-2xl border border-sky-200/30 bg-sky-400/15 px-4 py-3 text-sm font-semibold text-sky-50 transition hover:border-sky-100/40 hover:bg-sky-400/25 disabled:cursor-not-allowed disabled:opacity-60"
-                      disabled={actionBusy}
-                      onClick={async () => {
-                        const confirmed = window.confirm('归档后会清理这次实现产生的分支和 worktree，但会保留结果记录。确认继续吗？')
-                        if (!confirmed) {
-                          return
-                        }
-                        try {
-                          setArchivingRepo(singleRepo?.id ?? task.id)
-                          setActionError('')
-                          const result = await archiveCode(task.id, singleRepo?.id)
-                          setTask({
-                            ...task,
-                            status: result.status as TaskStatus,
-                            nextAction: '任务已归档，无后续操作。',
-                          })
-                          await reload()
-                        } catch (err) {
-                          setActionError(err instanceof Error ? err.message : '归档失败')
-                          setArchivingRepo(null)
-                        }
-                      }}
-                      type="button"
-                    >
-                      {archivingRepo ? '归档中...' : '归档任务'}
-                    </button>
-                    <span className="text-xs text-emerald-100/80">会清理分支和工作区，并把当前任务标记为已归档</span>
-                  </>
-                ) : null}
-                {canStartPlan ? (
-                  <>
-                    <button
-                      className="rounded-2xl border border-white/20 bg-white/8 px-4 py-3 text-sm font-semibold text-white transition hover:border-white/30 hover:bg-white/12 disabled:cursor-not-allowed disabled:opacity-60"
-                      disabled={actionBusy}
-                      onClick={async () => {
-                        try {
-                          setPlanStarting(true)
-                          setActionError('')
-                          const result = await startPlan(task.id)
-                          setTask({
-                            ...task,
-                            status: result.status as TaskStatus,
-                            nextAction: '方案正在生成，请稍候刷新任务详情。',
-                          })
-                          setArtifact('plan.log')
-                          await reload()
-                        } catch (err) {
-                          setActionError(err instanceof Error ? err.message : '启动 plan 失败')
-                          setPlanStarting(false)
-                        }
-                      }}
-                      type="button"
-                    >
-                      {planStarting ? '方案生成中...' : planActionLabel}
-                    </button>
-                    <span className="text-xs text-emerald-100/80">
-                      {task.status === 'planned'
-                        ? '重新分析代码，并覆盖 `design.md` / `plan.md`'
-                        : '在后台生成 `design.md` / `plan.md`'}
-                    </span>
-                  </>
-                ) : null}
-              </div>
-            ) : null}
-            <div className="mt-4 rounded-2xl border border-emerald-200/20 bg-stone-950/50 px-4 py-3 font-mono text-sm text-emerald-100">
-              {task.nextAction}
-            </div>
+            <TaskPrimaryAction
+              actionBusy={actionBusy}
+              actionError={actionError}
+              archiving={Boolean(archivingRepo)}
+              batchCodeStarting={batchCodeStarting}
+              canArchiveCode={canArchiveCode}
+              canResetCode={canResetCode}
+              canStartCode={canStartCode}
+              canStartPlan={canStartPlan}
+              canStartRemainingCode={canStartRemainingCode}
+              codeActionLabel={codeActionLabel}
+              codeStarting={Boolean(codeStartingRepo)}
+              onArchive={() => void handleArchiveSingleCode()}
+              onReset={() => void handleResetSingleCode()}
+              onStartCode={() => void handleStartSingleCode()}
+              onStartPlan={() => void handleStartPlan()}
+              onStartRemainingCode={() => void handleStartRemainingCode()}
+              planActionLabel={planActionLabel}
+              planStarting={planStarting}
+              remainingReposCount={remainingRepos.length}
+              resetting={Boolean(resettingRepo)}
+              task={task}
+            />
           </div>
         </div>
       </section>
 
+      <section className="rounded-[24px] border border-stone-200 bg-[#15181d] p-4 text-white shadow-[0_18px_40px_rgba(15,23,42,0.14)]">
+        <div className="mb-3 text-xs font-semibold uppercase tracking-[0.22em] text-stone-400">推进阶段</div>
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          {task.timeline.map((step) => (
+            <TimelineCard key={step.label} detail={step.detail} label={step.label} state={step.state} />
+          ))}
+        </div>
+      </section>
+
       <div className="grid gap-4 2xl:grid-cols-[minmax(0,1fr)_360px]">
-        <section className="rounded-[24px] border border-stone-200 bg-stone-50/70 p-4 dark:border-white/10 dark:bg-white/5">
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <div className="text-xs font-semibold uppercase tracking-[0.22em] text-stone-500 dark:text-stone-400">Artifacts</div>
-              <h4 className="mt-2 text-2xl font-semibold tracking-[-0.04em] text-stone-950 dark:text-stone-50">文档与结果产物</h4>
-            </div>
-            <div className="text-sm text-stone-500 dark:text-stone-400">查看需求、方案、日志和结果产物</div>
-          </div>
-
-          <div className="mb-4 flex flex-wrap gap-2">
-            {artifactNavigationOrder.filter((name) => name in task.artifacts).map((name) => (
-              <button
-                className={`rounded-full border px-3 py-2 text-sm font-medium transition ${
-                  artifact === name
-                    ? 'border-stone-900 bg-stone-900 text-white shadow-sm dark:border-stone-100 dark:bg-stone-100 dark:text-stone-950'
-                    : 'border-stone-200 bg-white text-stone-600 hover:border-stone-400 hover:text-stone-950 dark:border-white/10 dark:bg-stone-950/70 dark:text-stone-300 dark:hover:border-white/20 dark:hover:text-stone-100'
-                }`}
-                key={name}
-                onClick={() => setArtifact(name)}
-                type="button"
-              >
-                {artifactLabel(name)}
-              </button>
-            ))}
-          </div>
-
-          {task.repos.length > 1 && (artifact === 'code.log' || artifact === 'code-result.json') ? (
-            <div className="mb-4 flex flex-wrap items-center gap-2">
-              <span className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500 dark:text-stone-400">仓库视角</span>
-              {task.repos.map((repo) => (
-                <button
-                  className={`rounded-full border px-3 py-2 text-sm transition ${
-                    (artifactRepo || task.repos.find((item) => hasRepoArtifactData(item, artifact))?.id || task.repos[0]?.id) === repo.id
-                      ? 'border-stone-900 bg-stone-900 text-white shadow-sm dark:border-stone-100 dark:bg-stone-100 dark:text-stone-950'
-                      : 'border-stone-200 bg-white text-stone-600 hover:border-stone-400 hover:text-stone-950 dark:border-white/10 dark:bg-stone-950/70 dark:text-stone-300 dark:hover:border-white/20 dark:hover:text-stone-100'
-                  }`}
-                  key={`${artifact}-${repo.id}`}
-                  onClick={() => setArtifactRepo(repo.id)}
-                  type="button"
-                >
-                  {repo.id}
-                </button>
-              ))}
-            </div>
-          ) : null}
-
-          <ArtifactViewer
-            artifact={artifact}
-            content={artifactContent}
-            sourcePath={
-              task.repos.length > 1 && (artifact === 'code.log' || artifact === 'code-result.json') && artifactRepo
-                ? `task/${task.id}/repos/${artifactRepo}/${artifact}`
-                : undefined
-            }
-            taskID={task.id}
-          />
-        </section>
+        <TaskWorkbench
+          artifact={artifact}
+          artifactContent={artifactContent}
+          artifactRepo={artifactRepo}
+          onArtifactChange={setArtifact}
+          onArtifactRepoChange={setArtifactRepo}
+          onSelectDiffRepo={handleRepoContextChange}
+          selectedDiffRepo={selectedDiffRepo}
+          task={task}
+        />
 
         <aside className="space-y-4">
-          <ActionPanel task={task} />
-          <DeletePolicyCard canDelete={canDelete} />
-          <RepoScopeCard task={task} />
           <CodeResultCard
             actionBusy={actionBusy}
             archivingRepo={archivingRepo}
@@ -842,9 +680,9 @@ export function TaskDetailPage() {
               try {
                 setArchivingRepo(repoId)
                 setActionError('')
-                const result = await archiveCode(task.id, repoId)
+                const result = await archiveCode(currentTask.id, repoId)
                 setTask({
-                  ...task,
+                  ...currentTask,
                   status: result.status as TaskStatus,
                   nextAction: `仓库 ${repoId} 已归档。`,
                 })
@@ -858,14 +696,14 @@ export function TaskDetailPage() {
               try {
                 setCodeStartingRepo(repoId)
                 setActionError('')
-                const result = await startCode(task.id, repoId)
+                const result = await startCode(currentTask.id, repoId)
                 setTask({
-                  ...task,
+                  ...currentTask,
                   status: result.status as TaskStatus,
                   nextAction: `仓库 ${repoId} 正在生成实现，请稍候刷新任务详情。`,
                 })
                 setArtifact('code.log')
-                setArtifactRepo(repoId)
+                handleRepoContextChange(repoId)
                 await reload()
               } catch (err) {
                 setActionError(err instanceof Error ? err.message : '启动实现失败')
@@ -880,9 +718,9 @@ export function TaskDetailPage() {
               try {
                 setResettingRepo(repoId)
                 setActionError('')
-                const result = await resetCode(task.id, repoId)
+                const result = await resetCode(currentTask.id, repoId)
                 setTask({
-                  ...task,
+                  ...currentTask,
                   status: result.status as TaskStatus,
                   nextAction: `仓库 ${repoId} 的实现结果已回退。`,
                 })
@@ -897,7 +735,9 @@ export function TaskDetailPage() {
             resettingRepo={resettingRepo}
             task={task}
           />
-          <DiffPanel repos={task.repos} selectedRepo={selectedDiffRepo} onSelectRepo={setSelectedDiffRepo} />
+          <RepoScopeCard task={task} />
+          <ActionPanel task={task} />
+          <DeletePolicyCard canDelete={canDelete} onDelete={canDelete ? handleDeleteTask : undefined} />
         </aside>
       </div>
     </div>
@@ -909,6 +749,33 @@ function hasActionableArtifact(content?: string) {
     return false
   }
   return !content.includes("当前没有") && !content.includes("当前为空")
+}
+
+function taskStatusSummary(task: TaskRecord) {
+  const codedCount = task.repos.filter((repo) => repo.status === 'coded' || repo.status === 'archived').length
+  const failedCount = task.repos.filter((repo) => repo.status === 'failed').length
+  const runningCount = task.repos.filter((repo) => repo.status === 'coding').length
+
+  switch (task.status) {
+    case 'planned':
+      return task.repos.length > 1
+        ? '方案已经准备好。你可以一键推进剩余仓库，或者在下方按仓库逐个处理。'
+        : '方案已经准备好。下一步最适合直接开始实现。'
+    case 'planning':
+      return '系统正在调研代码并生成方案，完成后会自动进入可实现状态。'
+    case 'coding':
+      return runningCount > 0 ? `${runningCount} 个仓库正在执行实现，当前更适合查看日志和等待结果。` : '系统正在后台执行实现。'
+    case 'partially_coded':
+      return `${codedCount} 个仓库已经完成，仍有 ${Math.max(task.repos.length - codedCount, 0)} 个仓库待继续推进。`
+    case 'coded':
+      return '所有关联仓库都已产出结果。现在更适合集中查看结果、Diff，并决定是否归档。'
+    case 'failed':
+      return failedCount > 0 ? `${failedCount} 个仓库在推进中失败。建议先查看日志，再决定重试还是回退。` : '任务推进中断。建议先查看日志，再决定如何继续。'
+    case 'refined':
+      return '需求已经整理完成。下一步最值得做的是生成实施方案。'
+    default:
+      return '在这里集中查看任务进度、实施方案、实现结果和下一步动作。'
+  }
 }
 
 function hasRepoArtifactData(repo: TaskRecord['repos'][number], artifact: TaskArtifactName) {
@@ -951,15 +818,26 @@ function shouldContinuePolling(task: TaskRecord, batchCodeStarting: boolean) {
 
 function DeletePolicyCard({
   canDelete,
+  onDelete,
 }: {
   canDelete: boolean
+  onDelete?: () => void
 }) {
   return (
     <section className="rounded-[24px] border border-stone-200 bg-white p-4 dark:border-white/10 dark:bg-white/6">
       <div className="mb-3 text-xs font-semibold uppercase tracking-[0.22em] text-stone-500 dark:text-stone-400">Delete Policy</div>
       {canDelete ? (
         <div className="rounded-[18px] border border-emerald-200 bg-emerald-50 px-3 py-3 text-sm leading-6 text-emerald-800 dark:border-emerald-300/20 dark:bg-emerald-400/10 dark:text-emerald-100">
-          当前阶段支持直接删除。如果这条需求不再继续，可以在这里移除。
+          <div>当前阶段支持直接删除。如果这条需求不再继续，可以在这里移除。</div>
+          {onDelete ? (
+            <button
+              className="mt-3 rounded-2xl border border-rose-300/30 bg-rose-400/10 px-4 py-2 text-sm font-semibold text-rose-700 transition hover:border-rose-200/40 hover:bg-rose-400/20 dark:text-rose-100"
+              onClick={onDelete}
+              type="button"
+            >
+              删除任务
+            </button>
+          ) : null}
         </div>
       ) : (
         <div className="rounded-[18px] border border-amber-200 bg-amber-50 px-3 py-3 text-sm leading-6 text-amber-900 dark:border-amber-300/20 dark:bg-amber-400/10 dark:text-amber-100">
