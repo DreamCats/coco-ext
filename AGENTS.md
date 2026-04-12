@@ -177,8 +177,10 @@ coco-ext ui serve
   - `POST /api/tasks`：Web UI 创建 task，后台异步 refine
   - `POST /api/tasks/:task_id/plan`：Web UI 触发后台异步 plan，产出 `design.md`、`plan.md` 与 `plan.log`
   - `POST /api/tasks/:task_id/code`：Web UI 触发后台异步 code；单 repo task 直接执行，多 repo task 通过 `?repo=<repo_id>` 按仓库推进，产出 `code.log`、`code-result.json`、diff 与 commit 信息
+  - `POST /api/tasks/:task_id/code-all`：Web UI 按仓库顺序批量推进剩余 repo 的 code，失败即停
   - `POST /api/tasks/:task_id/reset`：Web UI 回退 code 结果；多 repo task 通过 `?repo=<repo_id>` 按仓库清理分支/worktree/diff，并按 repo 状态重新聚合 task
   - `POST /api/tasks/:task_id/archive`：Web UI 归档 code 结果；多 repo task 通过 `?repo=<repo_id>` 按仓库清理分支/worktree，并按 repo 状态重新聚合 task
+  - `GET /api/tasks/:task_id/artifact?name=...&repo=...`：按需读取 task 级或 repo 级 artifact；多 repo 下 `code.log` / `code-result.json` 支持仓库切换
   - `DELETE /api/tasks/:task_id`：仅允许删除未进入 code 的 task
   - `GET /api/repos/recent`：recent repos
   - `POST /api/repos/validate`：手动路径校验并加入 repo

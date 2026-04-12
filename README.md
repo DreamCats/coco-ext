@@ -251,8 +251,10 @@ coco-ext prd run -i "需求描述或飞书链接"
   - `Create Task`：通过弹层创建全局 task，后台异步执行 refine，前端轮询 `initialized -> refined`
   - `Start Plan`：在 `refined` 状态下触发后台异步 plan，前端轮询 `planning -> planned`
   - `Start Code`：单 repo task 可直接从详情页启动；多 repo task 可在仓库卡片上按 repo 逐个启动后台异步 code
+  - `Code Remaining`：多 repo task 可一键按顺序推进剩余仓库，失败即停
   - `Reset Code`：单 repo task 可直接回退；多 repo task 可在仓库卡片上按 repo 回退 code 结果，清理分支/worktree/diff
   - `Archive Code`：单 repo task 可直接归档；多 repo task 可在仓库卡片上按 repo 归档结果并清理分支/worktree
+  - repo 级结果查看：多 repo task 可按仓库切换 `code.log` 和 `code-result.json`
   - `Delete Task`：仅允许删除未进入 code 的 task（`initialized/refined/planned/failed`）
   - repo 选择：支持 `Recent Repos` 和 `Remote Browser`
 - Web UI 创建 task 时：
@@ -264,8 +266,10 @@ coco-ext prd run -i "需求描述或飞书链接"
   - `POST /api/tasks`
   - `POST /api/tasks/:task_id/plan`
   - `POST /api/tasks/:task_id/code`（多 repo task 时支持 `?repo=<repo_id>`）
+  - `POST /api/tasks/:task_id/code-all`
   - `POST /api/tasks/:task_id/reset`（多 repo task 时支持 `?repo=<repo_id>`）
   - `POST /api/tasks/:task_id/archive`（多 repo task 时支持 `?repo=<repo_id>`）
+  - `GET /api/tasks/:task_id/artifact?name=...&repo=...`
   - `DELETE /api/tasks/:task_id`
   - `GET /api/repos/recent`
   - `POST /api/repos/validate`

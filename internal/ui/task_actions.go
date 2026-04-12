@@ -216,6 +216,8 @@ func (s *Server) handleTaskAction(w http.ResponseWriter, r *http.Request, taskID
 		s.handleStartPlan(w, taskID)
 	case "code":
 		s.handleStartCode(w, taskID, requestedRepoID(r))
+	case "code-all":
+		s.handleStartRemainingCode(w, taskID)
 	case "reset":
 		s.handleResetCode(w, taskID, requestedRepoID(r))
 	case "archive":
@@ -471,6 +473,44 @@ func (s *Server) handleStartCode(w http.ResponseWriter, taskID, requestedRepoID 
 	})
 }
 
+func (s *Server) handleStartRemainingCode(w http.ResponseWriter, taskID string) {
+	report, err := prd.LoadTaskStatus(s.repoRoot, taskID)
+	if err != nil {
+		writeJSONError(w, http.StatusNotFound, err.Error())
+		return
+	}
+
+	repos, err := remainingCodeRepos(report)
+	if err != nil {
+		writeJSONError(w, http.StatusConflict, err.Error())
+		return
+	}
+	if len(repos) == 0 {
+		writeJSONError(w, http.StatusConflict, "当前没有可继续推进的仓库")
+		return
+	}
+
+	firstRepo := repos[0]
+	firstBranch := buildWebPRDBranchName(taskID, firstRepo.ID, true)
+	if err := prd.StartCodingRepoBinding(report.TaskDir, firstRepo.ID, firstBranch, ""); err != nil {
+		writeJSONError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	go s.runRemainingCodeTask(taskID, report.TaskDir, repos)
+
+	updatedReport, err := prd.LoadTaskStatus(s.repoRoot, taskID)
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusAccepted, taskActionResponse{
+		TaskID: taskID,
+		Status: updatedReport.Metadata.Status,
+	})
+}
+
 func canStartCode(report *prd.TaskStatusReport, repo *prd.RepoBinding) bool {
 	if report == nil || repo == nil {
 		return false
@@ -508,6 +548,31 @@ func sanitizeBranchSegment(value string) string {
 	return value
 }
 
+func remainingCodeRepos(report *prd.TaskStatusReport) ([]prd.RepoBinding, error) {
+	if report == nil || report.Repos == nil || len(report.Repos.Repos) == 0 {
+		return nil, fmt.Errorf("task 未绑定 repo，无法执行当前操作")
+	}
+	if report.Metadata.Status == prd.TaskStatusCoding {
+		return nil, fmt.Errorf("当前已有 repo 正在执行 code，请等待完成后再继续")
+	}
+	if !taskHasArtifact(report.Artifacts, "prd-refined.md") || !taskHasArtifact(report.Artifacts, "design.md") || !taskHasArtifact(report.Artifacts, "plan.md") {
+		return nil, fmt.Errorf("当前任务缺少可执行的 plan 产物，不能开始 code")
+	}
+
+	repos := make([]prd.RepoBinding, 0, len(report.Repos.Repos))
+	for _, repo := range report.Repos.Repos {
+		repo.Path = strings.TrimSpace(repo.Path)
+		if repo.Path == "" {
+			return nil, fmt.Errorf("task 绑定的 repo %s path 为空，无法执行当前操作", repo.ID)
+		}
+		switch repo.Status {
+		case prd.TaskStatusPlanned, prd.TaskStatusFailed:
+			repos = append(repos, repo)
+		}
+	}
+	return repos, nil
+}
+
 func (s *Server) runCodeTask(taskID, taskDir, repoRoot, repoID, branchName string) {
 	if _, err := prd.ExecuteCodeForRepo(repoRoot, taskID, branchName, repoID, 2, nil, nil); err != nil {
 		// ExecuteCodeForRepo 已负责写 code.log 和失败状态，这里只在极早期失败时兜底补一行。
@@ -518,6 +583,34 @@ func (s *Server) runCodeTask(taskID, taskDir, repoRoot, repoID, branchName strin
 			_, _ = file.WriteString(fmt.Sprintf("%s web_code_error: %v\n", time.Now().Format("2006-01-02 15:04:05"), err))
 		}
 	}
+}
+
+func (s *Server) runRemainingCodeTask(taskID, taskDir string, repos []prd.RepoBinding) {
+	for index, repo := range repos {
+		branchName := buildWebPRDBranchName(taskID, repo.ID, true)
+		if index > 0 {
+			if err := prd.StartCodingRepoBinding(taskDir, repo.ID, branchName, ""); err != nil {
+				appendWebCodeLogLine(taskDir, fmt.Sprintf("batch_start_repo_error: repo=%s err=%v", repo.ID, err))
+				return
+			}
+		}
+		if _, err := prd.ExecuteCodeForRepo(repo.Path, taskID, branchName, repo.ID, 2, nil, nil); err != nil {
+			appendWebCodeLogLine(taskDir, fmt.Sprintf("batch_repo_error: repo=%s err=%v", repo.ID, err))
+			return
+		}
+		appendWebCodeLogLine(taskDir, fmt.Sprintf("batch_repo_done: %s", repo.ID))
+	}
+}
+
+func appendWebCodeLogLine(taskDir, line string) {
+	logPath := filepath.Join(taskDir, "code.log")
+	logLine := fmt.Sprintf("%s %s\n", time.Now().Format("2006-01-02 15:04:05"), line)
+	file, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		return
+	}
+	defer file.Close()
+	_, _ = file.WriteString(logLine)
 }
 
 func (s *Server) handleResetCode(w http.ResponseWriter, taskID, requestedRepoID string) {

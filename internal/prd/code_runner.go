@@ -44,6 +44,9 @@ func ExecuteCodeForRepo(repoRoot, taskID, branchName, repoID string, maxRetries 
 		if err := os.WriteFile(logPath, []byte(logBuffer.String()), 0644); err != nil && retErr == nil {
 			retErr = fmt.Errorf("写入 code.log 失败: %w", err)
 		}
+		if err := WriteRepoCodeLog(taskDir, repoBindingID, logBuffer.String()); err != nil && retErr == nil {
+			retErr = err
+		}
 	}()
 
 	appendCodeLogLine(&logBuffer, "=== SETUP ===")

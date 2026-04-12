@@ -5,10 +5,12 @@ export function ArtifactViewer({
   artifact,
   content,
   taskID,
+  sourcePath,
 }: {
   artifact: TaskArtifactName
   content: string
   taskID: string
+  sourcePath?: string
 }) {
   const isLog = artifact.endsWith('.log')
   const isJSON = artifact.endsWith('.json')
@@ -22,7 +24,7 @@ export function ArtifactViewer({
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/8 px-4 py-3 text-sm text-stone-300">
         <div>
           <div className="font-semibold text-stone-100">{artifactLabel(artifact)}</div>
-          <div className="mt-1 font-mono text-xs text-stone-500">task/{taskID}/{artifact}</div>
+          <div className="mt-1 font-mono text-xs text-stone-500">{sourcePath || `task/${taskID}/${artifact}`}</div>
         </div>
         <div className="flex items-center gap-2 text-xs text-stone-500">
           <span className="rounded-full border border-white/10 px-2 py-1">

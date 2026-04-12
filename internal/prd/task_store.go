@@ -312,6 +312,14 @@ func RemoveRepoCodeResult(taskDir, repoID string) error {
 	return nil
 }
 
+func RemoveRepoCodeLog(taskDir, repoID string) error {
+	path := repoCodeLogPath(taskDir, repoID)
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
+}
+
 func ResolveTaskRepo(taskDir, repoRoot, requestedRepoID string) (*RepoBinding, error) {
 	meta, err := readReposMetadata(reposMetadataPath(taskDir))
 	if err != nil {

@@ -4,7 +4,9 @@ import {
   archiveCode,
   createTask,
   deleteTask,
+  getTaskArtifact,
   getTask,
+  startRemainingCode,
   resetCode,
   startCode,
   startPlan,
@@ -343,11 +345,14 @@ export function TaskDetailPage() {
   const { taskId } = useParams({ from: '/tasks/$taskId' })
   const [task, setTask] = useState<TaskRecord | null>(null)
   const [artifact, setArtifact] = useState<TaskArtifactName>('prd-refined.md')
+  const [artifactContent, setArtifactContent] = useState('')
+  const [artifactRepo, setArtifactRepo] = useState('')
   const [selectedDiffRepo, setSelectedDiffRepo] = useState('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [planStarting, setPlanStarting] = useState(false)
   const [codeStartingRepo, setCodeStartingRepo] = useState<string | null>(null)
+  const [batchCodeStarting, setBatchCodeStarting] = useState(false)
   const [resettingRepo, setResettingRepo] = useState<string | null>(null)
   const [archivingRepo, setArchivingRepo] = useState<string | null>(null)
   const [actionError, setActionError] = useState('')
@@ -364,6 +369,7 @@ export function TaskDetailPage() {
         setTask(detail)
         const firstDiffRepo = detail.repos.find((repo) => repo.diffSummary)?.id ?? detail.repos[0]?.id ?? ''
         setSelectedDiffRepo(firstDiffRepo)
+        setArtifactRepo(firstDiffRepo)
         setError('')
         setActionError('')
       } catch (err) {
@@ -378,6 +384,7 @@ export function TaskDetailPage() {
       }
     }
     setArtifact('prd-refined.md')
+    setArtifactContent('')
     void load()
     return () => {
       cancelled = true
@@ -385,7 +392,7 @@ export function TaskDetailPage() {
   }, [taskId])
 
   useEffect(() => {
-    if (!task || !new Set<TaskStatus>(['initialized', 'planning', 'coding']).has(task.status)) {
+    if (!task || (!new Set<TaskStatus>(['initialized', 'planning', 'coding']).has(task.status) && !batchCodeStarting)) {
       return
     }
 
@@ -399,9 +406,11 @@ export function TaskDetailPage() {
           setTask(detail)
           const firstDiffRepo = detail.repos.find((repo) => repo.diffSummary)?.id ?? detail.repos[0]?.id ?? ''
           setSelectedDiffRepo(firstDiffRepo)
-          if (detail.status !== 'initialized' && detail.status !== 'planning' && detail.status !== 'coding') {
+          setArtifactRepo((current) => current || firstDiffRepo)
+          if (!shouldContinuePolling(detail, batchCodeStarting)) {
             setPlanStarting(false)
             setCodeStartingRepo(null)
+            setBatchCodeStarting(false)
             setResettingRepo(null)
             setArchivingRepo(null)
             void reload()
@@ -414,7 +423,43 @@ export function TaskDetailPage() {
       cancelled = true
       window.clearInterval(timer)
     }
-  }, [task, taskId, reload])
+  }, [task, taskId, reload, batchCodeStarting])
+
+  useEffect(() => {
+    if (!task) {
+      return
+    }
+
+    const repoScopedArtifact = task.repos.length > 1 && (artifact === 'code.log' || artifact === 'code-result.json')
+    if (!repoScopedArtifact) {
+      setArtifactContent(task.artifacts[artifact] || '')
+      return
+    }
+
+    const targetRepoID = artifactRepo || task.repos.find((repo) => hasRepoArtifactData(repo, artifact))?.id || task.repos[0]?.id || ''
+    if (!targetRepoID) {
+      setArtifactContent('当前没有可查看的仓库结果。')
+      return
+    }
+
+    let cancelled = false
+    setArtifactContent('加载中...')
+    void getTaskArtifact(task.id, artifact, targetRepoID)
+      .then((result) => {
+        if (!cancelled) {
+          setArtifactContent(result.content)
+        }
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setArtifactContent(err instanceof Error ? err.message : '加载 artifact 失败')
+        }
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [artifact, artifactRepo, task])
 
   if (loading) {
     return <PanelMessage>正在加载任务详情...</PanelMessage>
@@ -433,9 +478,11 @@ export function TaskDetailPage() {
   const canStartCode = singleRepo ? canStartCodeForRepo(singleRepo, hasGeneratedPlan) : false
   const canResetCode = singleRepo ? canResetCodeForRepo(singleRepo) : false
   const canArchiveCode = singleRepo ? canArchiveCodeForRepo(singleRepo) : false
+  const remainingRepos = task.repos.filter((repo) => canStartCodeForRepo(repo, hasGeneratedPlan))
+  const canStartRemainingCode = task.repos.length > 1 && remainingRepos.length > 0 && task.status !== 'coding'
   const planActionLabel = task.status === 'planned' ? '重新 Plan' : '开始 Plan'
   const codeActionLabel = singleRepo?.status === 'failed' ? '重试实现' : '开始实现'
-  const actionBusy = Boolean(planStarting || codeStartingRepo || resettingRepo || archivingRepo)
+  const actionBusy = Boolean(planStarting || codeStartingRepo || batchCodeStarting || resettingRepo || archivingRepo)
 
   return (
     <div className="space-y-4 lg:h-full lg:overflow-y-auto lg:pr-1">
@@ -541,7 +588,7 @@ export function TaskDetailPage() {
             ) : null}
             {task.repos.length > 1 && (task.status === 'planned' || task.status === 'partially_coded' || task.status === 'failed' || task.status === 'coded') ? (
               <div className="mt-3 rounded-2xl border border-amber-300/20 bg-amber-400/10 px-4 py-3 text-sm leading-6 text-amber-100">
-                这是一条多仓任务。请在下方按仓库逐个推进实现、回退或归档。
+                这是一条多仓任务。你可以直接逐个仓库推进，也可以一键依次执行剩余仓库。
               </div>
             ) : null}
             {actionError ? (
@@ -549,8 +596,38 @@ export function TaskDetailPage() {
                 {actionError}
               </div>
             ) : null}
-            {canStartCode || canStartPlan || canResetCode || canArchiveCode ? (
+            {canStartCode || canStartPlan || canResetCode || canArchiveCode || canStartRemainingCode ? (
               <div className="mt-4 flex flex-wrap items-center gap-3">
+                {canStartRemainingCode ? (
+                  <>
+                    <button
+                      className="rounded-2xl border border-emerald-200/30 bg-emerald-500/25 px-4 py-3 text-sm font-semibold text-emerald-50 transition hover:border-emerald-100/40 hover:bg-emerald-500/35 disabled:cursor-not-allowed disabled:opacity-60"
+                      disabled={actionBusy}
+                      onClick={async () => {
+                        try {
+                          setBatchCodeStarting(true)
+                          setActionError('')
+                          const result = await startRemainingCode(task.id)
+                          setTask({
+                            ...task,
+                            status: result.status as TaskStatus,
+                            nextAction: `正在按顺序推进剩余 ${remainingRepos.length} 个仓库，请稍候刷新任务详情。`,
+                          })
+                          setArtifact('code.log')
+                          setArtifactRepo(remainingRepos[0]?.id ?? artifactRepo)
+                          await reload()
+                        } catch (err) {
+                          setActionError(err instanceof Error ? err.message : '启动批量实现失败')
+                          setBatchCodeStarting(false)
+                        }
+                      }}
+                      type="button"
+                    >
+                      {batchCodeStarting ? '批量推进中...' : `依次推进剩余仓库 (${remainingRepos.length})`}
+                    </button>
+                    <span className="text-xs text-emerald-100/80">会按仓库顺序逐个执行，某个仓库失败后立即停止</span>
+                  </>
+                ) : null}
                 {canStartCode ? (
                   <>
                     <button
@@ -567,6 +644,7 @@ export function TaskDetailPage() {
                             nextAction: '实现正在执行，请稍候刷新任务详情。',
                           })
                           setArtifact('code.log')
+                          setArtifactRepo(singleRepo?.id ?? '')
                           await reload()
                         } catch (err) {
                           setActionError(err instanceof Error ? err.message : '启动实现失败')
@@ -600,6 +678,7 @@ export function TaskDetailPage() {
                             nextAction: '实现结果已回退，可重新生成方案或再次开始实现。',
                           })
                           setArtifact('plan.md')
+                          setArtifactRepo('')
                           await reload()
                         } catch (err) {
                           setActionError(err instanceof Error ? err.message : '回退实现失败')
@@ -714,7 +793,36 @@ export function TaskDetailPage() {
             ))}
           </div>
 
-          <ArtifactViewer artifact={artifact} content={task.artifacts[artifact] || ''} taskID={task.id} />
+          {task.repos.length > 1 && (artifact === 'code.log' || artifact === 'code-result.json') ? (
+            <div className="mb-4 flex flex-wrap items-center gap-2">
+              <span className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500 dark:text-stone-400">仓库视角</span>
+              {task.repos.map((repo) => (
+                <button
+                  className={`rounded-full border px-3 py-2 text-sm transition ${
+                    (artifactRepo || task.repos.find((item) => hasRepoArtifactData(item, artifact))?.id || task.repos[0]?.id) === repo.id
+                      ? 'border-stone-900 bg-stone-900 text-white shadow-sm dark:border-stone-100 dark:bg-stone-100 dark:text-stone-950'
+                      : 'border-stone-200 bg-white text-stone-600 hover:border-stone-400 hover:text-stone-950 dark:border-white/10 dark:bg-stone-950/70 dark:text-stone-300 dark:hover:border-white/20 dark:hover:text-stone-100'
+                  }`}
+                  key={`${artifact}-${repo.id}`}
+                  onClick={() => setArtifactRepo(repo.id)}
+                  type="button"
+                >
+                  {repo.id}
+                </button>
+              ))}
+            </div>
+          ) : null}
+
+          <ArtifactViewer
+            artifact={artifact}
+            content={artifactContent}
+            sourcePath={
+              task.repos.length > 1 && (artifact === 'code.log' || artifact === 'code-result.json') && artifactRepo
+                ? `task/${task.id}/repos/${artifactRepo}/${artifact}`
+                : undefined
+            }
+            taskID={task.id}
+          />
         </section>
 
         <aside className="space-y-4">
@@ -757,6 +865,7 @@ export function TaskDetailPage() {
                   nextAction: `仓库 ${repoId} 正在生成实现，请稍候刷新任务详情。`,
                 })
                 setArtifact('code.log')
+                setArtifactRepo(repoId)
                 await reload()
               } catch (err) {
                 setActionError(err instanceof Error ? err.message : '启动实现失败')
@@ -778,6 +887,7 @@ export function TaskDetailPage() {
                   nextAction: `仓库 ${repoId} 的实现结果已回退。`,
                 })
                 setArtifact('plan.md')
+                setArtifactRepo('')
                 await reload()
               } catch (err) {
                 setActionError(err instanceof Error ? err.message : '回退实现失败')
@@ -801,6 +911,16 @@ function hasActionableArtifact(content?: string) {
   return !content.includes("当前没有") && !content.includes("当前为空")
 }
 
+function hasRepoArtifactData(repo: TaskRecord['repos'][number], artifact: TaskArtifactName) {
+  if (artifact === 'code.log') {
+    return repo.status === 'coding' || repo.status === 'coded' || repo.status === 'failed' || repo.status === 'archived'
+  }
+  if (artifact === 'code-result.json') {
+    return Boolean(repo.commit || (repo.filesWritten && repo.filesWritten.length > 0) || repo.build === 'passed' || repo.build === 'failed')
+  }
+  return false
+}
+
 function canStartCodeForRepo(repo: TaskRecord['repos'][number], hasGeneratedPlan: boolean) {
   if (!hasGeneratedPlan) {
     return false
@@ -814,6 +934,19 @@ function canResetCodeForRepo(repo: TaskRecord['repos'][number]) {
 
 function canArchiveCodeForRepo(repo: TaskRecord['repos'][number]) {
   return repo.status === 'coded'
+}
+
+function shouldContinuePolling(task: TaskRecord, batchCodeStarting: boolean) {
+  if (new Set<TaskStatus>(['initialized', 'planning', 'coding']).has(task.status)) {
+    return true
+  }
+  if (!batchCodeStarting) {
+    return false
+  }
+  if (task.status === 'failed' || task.status === 'coded' || task.status === 'archived') {
+    return false
+  }
+  return task.repos.some((repo) => repo.status === 'planned' || repo.status === 'failed')
 }
 
 function DeletePolicyCard({

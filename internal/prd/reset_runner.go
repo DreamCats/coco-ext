@@ -52,9 +52,14 @@ func ResetCodeForRepo(repoRoot, taskID, repoID string) (*ResetCodeResult, error)
 	}
 
 	_ = RemoveRepoCodeResult(task.TaskDir, repo.ID)
+	_ = RemoveRepoCodeLog(task.TaskDir, repo.ID)
 	_ = RemoveRepoDiffArtifacts(task.TaskDir, repo.ID)
-	_ = os.Remove(filepath.Join(task.TaskDir, "code-result.json"))
-	_ = os.Remove(filepath.Join(task.TaskDir, "code.log"))
+	if report, err := ReadCodeResultReport(task.TaskDir); err == nil && report.RepoID == repo.ID {
+		_ = os.Remove(filepath.Join(task.TaskDir, "code-result.json"))
+	}
+	if len(task.Repos.Repos) == 1 {
+		_ = os.Remove(filepath.Join(task.TaskDir, "code.log"))
+	}
 
 	if err := ResetRepoBinding(task.TaskDir, repo.ID); err != nil {
 		return nil, err
