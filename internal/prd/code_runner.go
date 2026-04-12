@@ -237,7 +237,7 @@ func formatCodeToolEvent(event generator.ToolEvent) string {
 }
 
 func readCommitPatch(repoRoot string) (string, error) {
-	cmd := exec.Command("git", "show", "--format=medium", "--stat=0", "HEAD")
+	cmd := exec.Command("git", "show", "--format=medium", "--patch", "--stat=0", "--no-ext-diff", "HEAD")
 	cmd.Dir = repoRoot
 	output, err := cmd.CombinedOutput()
 	if err != nil {

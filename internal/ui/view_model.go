@@ -85,10 +85,10 @@ type RemoteDirEntry struct {
 var uiArtifactOrder = []string{
 	"prd.source.md",
 	"prd-refined.md",
-	"refine.log",
 	"design.md",
 	"plan.md",
-	"plan.log",
 	"code-result.json",
+	"refine.log",
+	"plan.log",
 	"code.log",
 }

@@ -1,6 +1,8 @@
 export type ParsedDiffFile = {
   path: string
   lines: string[]
+  additions: number
+  deletions: number
 }
 
 export function parseDiffFiles(patch: string): ParsedDiffFile[] {
@@ -20,12 +22,20 @@ export function parseDiffFiles(patch: string): ParsedDiffFile[] {
       current = {
         path: extractDiffPath(line),
         lines: [line],
+        additions: 0,
+        deletions: 0,
       }
       continue
     }
 
     if (!current) {
-      current = { path: 'commit', lines: [] }
+      current = { path: 'commit', lines: [], additions: 0, deletions: 0 }
+    }
+
+    if (!line.startsWith('+++') && line.startsWith('+')) {
+      current.additions += 1
+    } else if (!line.startsWith('---') && line.startsWith('-')) {
+      current.deletions += 1
     }
     current.lines.push(line)
   }

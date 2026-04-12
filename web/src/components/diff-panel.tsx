@@ -16,13 +16,17 @@ export function DiffPanel({
   const deferredSelectedRepo = useDeferredValue(selectedRepo)
   const activeRepo = reposWithDiff.find((repo) => repo.id === deferredSelectedRepo) ?? reposWithDiff[0]
   const diffFiles = useMemo(() => parseDiffFiles(activeRepo?.diffSummary?.patch ?? ''), [activeRepo?.diffSummary?.patch])
+  const parsedFiles = useMemo(() => diffFiles.filter((file) => file.path !== 'commit'), [diffFiles])
   const [selectedFile, setSelectedFile] = useState('')
 
   useEffect(() => {
-    setSelectedFile(diffFiles[0]?.path ?? '')
-  }, [activeRepo?.id, diffFiles])
+    setSelectedFile(parsedFiles[0]?.path ?? '')
+  }, [activeRepo?.id, parsedFiles])
 
-  const activeFile = diffFiles.find((file) => file.path === selectedFile) ?? diffFiles[0]
+  const fileButtons = parsedFiles.length > 0 ? parsedFiles : diffFiles.filter((file) => file.path)
+  const activeFile = fileButtons.find((file) => file.path === selectedFile) ?? fileButtons[0]
+  const additionsValue = activeFile?.additions ?? activeRepo?.diffSummary?.additions ?? 0
+  const deletionsValue = activeFile?.deletions ?? activeRepo?.diffSummary?.deletions ?? 0
 
   return (
     <section className="rounded-[24px] border border-stone-200 bg-white p-4 dark:border-white/10 dark:bg-white/6">
@@ -60,35 +64,35 @@ export function DiffPanel({
           {activeRepo?.diffSummary ? (
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-2">
-                <FilterChip label="Files" value={`${activeRepo.diffSummary.files.length}`} />
+                <FilterChip label="文件数" value={`${fileButtons.length || activeRepo.diffSummary.files.length}`} />
                 <FilterChip
                   label="+ / -"
-                  value={`${activeRepo.diffSummary.additions} / ${activeRepo.diffSummary.deletions}`}
+                  value={`${additionsValue} / ${deletionsValue}`}
                 />
               </div>
 
               <div className="rounded-[18px] border border-stone-200 bg-stone-50 px-3 py-3 dark:border-white/10 dark:bg-white/5">
                 <div className="grid gap-3 md:grid-cols-2">
-                  <KeyValue label="branch" mono value={activeRepo.diffSummary.branch || '-'} />
-                  <KeyValue label="commit" mono value={activeRepo.diffSummary.commit || '-'} />
+                  <KeyValue label="分支" mono value={activeRepo.diffSummary.branch || '-'} />
+                  <KeyValue label="提交" mono value={activeRepo.diffSummary.commit || '-'} />
                 </div>
               </div>
 
               <div className="rounded-[18px] border border-stone-200 bg-white px-3 py-3 dark:border-white/10 dark:bg-white/5">
                 <div className="mb-2 text-[11px] uppercase tracking-[0.2em] text-stone-500 dark:text-stone-400">涉及文件</div>
                 <div className="space-y-2">
-                  {activeRepo.diffSummary.files.map((file) => (
+                  {fileButtons.map((file) => (
                     <button
                       className={`block w-full rounded-xl border px-3 py-2 text-left font-mono text-xs transition ${
-                        activeFile?.path === file
+                        activeFile?.path === file.path
                           ? 'border-stone-900 bg-stone-900 text-white dark:border-stone-100 dark:bg-stone-100 dark:text-stone-950'
                           : 'border-stone-200 bg-stone-50 text-stone-800 hover:border-stone-300 hover:bg-white dark:border-white/10 dark:bg-stone-950/70 dark:text-stone-200 dark:hover:border-white/20 dark:hover:bg-stone-900'
                       }`}
-                      key={file}
-                      onClick={() => setSelectedFile(file)}
+                      key={file.path}
+                      onClick={() => setSelectedFile(file.path)}
                       type="button"
                     >
-                      {file}
+                      {file.path}
                     </button>
                   ))}
                 </div>
@@ -97,7 +101,7 @@ export function DiffPanel({
               <div className="overflow-hidden rounded-[18px] border border-stone-200 bg-[#0d1014] shadow-[0_12px_30px_rgba(17,24,39,0.08)]">
                 <div className="flex items-center justify-between border-b border-white/8 px-4 py-3 text-sm text-stone-300">
                   <div className="font-semibold text-stone-100">
-                    {activeFile?.path ? `Diff · ${activeFile.path}` : 'Unified Diff'}
+                    {activeFile?.path ? `Diff · ${activeFile.path}` : '提交差异'}
                   </div>
                   <div className="font-mono text-xs text-stone-500">diffs/{activeRepo.id}.patch</div>
                 </div>

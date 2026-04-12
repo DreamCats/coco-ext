@@ -27,6 +27,17 @@ import {
 } from '../components/ui-primitives'
 import { useAppData } from '../hooks/use-app-data'
 
+const artifactNavigationOrder: TaskArtifactName[] = [
+  'prd.source.md',
+  'prd-refined.md',
+  'design.md',
+  'plan.md',
+  'code-result.json',
+  'refine.log',
+  'plan.log',
+  'code.log',
+]
+
 export function TasksLayout() {
   const { tasks, loading, error, reload } = useAppData()
   const navigate = useNavigate()
@@ -610,7 +621,7 @@ export function TaskDetailPage() {
           </div>
 
           <div className="mb-4 flex flex-wrap gap-2">
-            {(Object.keys(task.artifacts) as TaskArtifactName[]).map((name) => (
+            {artifactNavigationOrder.filter((name) => name in task.artifacts).map((name) => (
               <button
                 className={`rounded-full border px-3 py-2 text-sm font-medium transition ${
                   artifact === name
