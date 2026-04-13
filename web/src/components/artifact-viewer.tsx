@@ -4,11 +4,17 @@ import type { TaskArtifactName } from '../api'
 export function ArtifactViewer({
   artifact,
   content,
+  isLive,
+  lastRefreshedAt,
+  liveLabel,
   taskID,
   sourcePath,
 }: {
   artifact: TaskArtifactName
   content: string
+  isLive?: boolean
+  lastRefreshedAt?: string
+  liveLabel?: string
   taskID: string
   sourcePath?: string
 }) {
@@ -27,6 +33,15 @@ export function ArtifactViewer({
           <div className="mt-1 font-mono text-xs text-stone-500">{sourcePath || `task/${taskID}/${artifact}`}</div>
         </div>
         <div className="flex items-center gap-2 text-xs text-stone-500">
+          {isLive ? (
+            <span className="flex items-center gap-2 rounded-full border border-emerald-300/20 bg-emerald-400/10 px-3 py-1 text-emerald-100">
+              <span className="relative flex h-2.5 w-2.5">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-300/70" />
+                <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-300" />
+              </span>
+              {liveLabel || 'Live'}
+            </span>
+          ) : null}
           <span className="rounded-full border border-white/10 px-2 py-1">
             {isLog ? 'Log' : isJSON ? 'JSON' : isMarkdown ? 'Markdown' : 'Text'}
           </span>
@@ -51,6 +66,11 @@ export function ArtifactViewer({
           </button>
         </div>
       </div>
+      {isLive ? (
+        <div className="border-b border-emerald-300/12 bg-emerald-400/10 px-4 py-2 text-xs text-emerald-100/90">
+          正在后台运行，内容会随轮询自动刷新。最近同步 {lastRefreshedAt || '--:--:--'}。
+        </div>
+      ) : null}
       <div className="max-h-[520px] overflow-auto px-4 py-4">
         {isLog ? (
           <LogArtifact content={normalized} />

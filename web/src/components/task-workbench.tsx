@@ -3,7 +3,7 @@ import type { TaskArtifactName, TaskRecord } from '../api'
 import { ArtifactViewer, artifactLabel } from './artifact-viewer'
 import { DiffPanel } from './diff-panel'
 
-type WorkbenchPane = 'docs' | 'logs' | 'result' | 'diff'
+export type WorkbenchPane = 'docs' | 'logs' | 'result' | 'diff'
 
 const paneArtifacts: Record<Exclude<WorkbenchPane, 'diff'>, TaskArtifactName[]> = {
   docs: ['prd.source.md', 'prd-refined.md', 'design.md', 'plan.md'],
@@ -15,18 +15,28 @@ export function TaskWorkbench({
   artifact,
   artifactContent,
   artifactRepo,
+  focusToken,
+  forcedPane,
+  lastRefreshedAt,
   onArtifactChange,
   onArtifactRepoChange,
+  onPaneChange,
   onSelectDiffRepo,
+  polling,
   selectedDiffRepo,
   task,
 }: {
   artifact: TaskArtifactName
   artifactContent: string
   artifactRepo: string
+  focusToken: number
+  forcedPane: WorkbenchPane | null
+  lastRefreshedAt: string
   onArtifactChange: (artifact: TaskArtifactName) => void
   onArtifactRepoChange: (repoId: string) => void
+  onPaneChange?: (pane: WorkbenchPane) => void
   onSelectDiffRepo: (repoId: string) => void
+  polling: boolean
   selectedDiffRepo: string
   task: TaskRecord
 }) {
@@ -45,11 +55,21 @@ export function TaskWorkbench({
     setPane(resolvePane(artifact))
   }, [artifact])
 
+  useEffect(() => {
+    if (!forcedPane) {
+      return
+    }
+    setPane(forcedPane)
+  }, [forcedPane, focusToken])
+
   const repoScopedArtifact = task.repos.length > 1 && (artifact === 'code.log' || artifact === 'code-result.json')
   const activeRepoID = artifactRepo || selectedDiffRepo || task.repos[0]?.id || ''
+  const liveArtifact = resolveLiveArtifact(task.status)
+  const artifactLive = polling && liveArtifact === artifact
 
   function switchPane(nextPane: WorkbenchPane) {
     setPane(nextPane)
+    onPaneChange?.(nextPane)
     if (nextPane === 'diff') {
       return
     }
@@ -124,6 +144,9 @@ export function TaskWorkbench({
           <ArtifactViewer
             artifact={artifact}
             content={artifactContent}
+            isLive={artifactLive}
+            liveLabel={artifactLive ? resolveLiveLabel(task.status) : ''}
+            lastRefreshedAt={artifactLive ? lastRefreshedAt : ''}
             sourcePath={repoScopedArtifact && activeRepoID ? `task/${task.id}/repos/${activeRepoID}/${artifact}` : undefined}
             taskID={task.id}
           />
@@ -167,4 +190,30 @@ function resolvePane(artifact: TaskArtifactName): WorkbenchPane {
     return 'logs'
   }
   return 'docs'
+}
+
+function resolveLiveArtifact(status: TaskRecord['status']): TaskArtifactName | '' {
+  switch (status) {
+    case 'initialized':
+      return 'refine.log'
+    case 'planning':
+      return 'plan.log'
+    case 'coding':
+      return 'code.log'
+    default:
+      return ''
+  }
+}
+
+function resolveLiveLabel(status: TaskRecord['status']) {
+  switch (status) {
+    case 'initialized':
+      return 'Refine Live'
+    case 'planning':
+      return 'Plan Live'
+    case 'coding':
+      return 'Code Live'
+    default:
+      return 'Live'
+  }
 }
