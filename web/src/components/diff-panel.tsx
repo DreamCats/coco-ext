@@ -1,6 +1,6 @@
-import { useDeferredValue, useEffect, useMemo, useState } from 'react'
+import { useDeferredValue, useEffect, useMemo, useState, type ReactNode } from 'react'
 import type { RepoResult } from '../api'
-import { buildSplitRows, diffLineTone, parsePatch, type ParsedDiffFile, type DiffLineKind } from '../lib/diff'
+import { buildSplitRows, collapseContextBlocks, diffLineTone, parsePatch, type ParsedDiffFile, type DiffLineKind } from '../lib/diff'
 import { FilterChip, KeyValue } from './ui-primitives'
 
 export function DiffPanel({
@@ -199,6 +199,8 @@ export function DiffPanel({
 }
 
 function SplitDiffView({ file }: { file: ParsedDiffFile }) {
+  const [expandedBlocks, setExpandedBlocks] = useState<Record<string, boolean>>({})
+
   return (
     <div>
       <div className="grid grid-cols-2 border-b border-white/8 text-[11px] uppercase tracking-[0.18em] text-stone-500">
@@ -216,12 +218,44 @@ function SplitDiffView({ file }: { file: ParsedDiffFile }) {
       {file.hunks.map((hunk, hunkIndex) => (
         <div className="border-b border-white/6 last:border-b-0" key={`${file.path}-${hunk.header}-${hunkIndex}`}>
           <div className="bg-sky-500/10 px-4 py-2 font-mono text-[11px] text-sky-200">{hunk.header}</div>
-          {buildSplitRows(hunk.lines).map((row, rowIndex) => (
-            <div className="grid grid-cols-2" key={`${hunkIndex}-${rowIndex}-${row.left.lineNumber}-${row.right.lineNumber}`}>
-              <SplitCell side="left" cell={row.left} />
-              <SplitCell side="right" cell={row.right} />
-            </div>
-          ))}
+          {collapseContextBlocks(
+            buildSplitRows(hunk.lines),
+            (row) => row.left.kind === 'context' && row.right.kind === 'context',
+          ).map((block, blockIndex) => {
+            const blockKey = `${file.path}-${hunkIndex}-${blockIndex}`
+            if (block.kind === 'items') {
+              return block.items.map((row, rowIndex) => (
+                <div className="grid grid-cols-2" key={`${blockKey}-${rowIndex}-${row.left.lineNumber}-${row.right.lineNumber}`}>
+                  <SplitCell side="left" cell={row.left} />
+                  <SplitCell side="right" cell={row.right} />
+                </div>
+              ))
+            }
+
+            if (expandedBlocks[blockKey]) {
+              return (
+                <ExpandedContextBlock
+                  key={blockKey}
+                  onCollapse={() => setExpandedBlocks((current) => ({ ...current, [blockKey]: false }))}
+                >
+                  {[...block.visibleHead, ...block.hiddenItems, ...block.visibleTail].map((row, rowIndex) => (
+                    <div className="grid grid-cols-2" key={`${blockKey}-expanded-${rowIndex}-${row.left.lineNumber}-${row.right.lineNumber}`}>
+                      <SplitCell side="left" cell={row.left} />
+                      <SplitCell side="right" cell={row.right} />
+                    </div>
+                  ))}
+                </ExpandedContextBlock>
+              )
+            }
+
+            return (
+              <CollapsedContextRow
+                hiddenCount={block.hiddenCount}
+                key={blockKey}
+                onExpand={() => setExpandedBlocks((current) => ({ ...current, [blockKey]: true }))}
+              />
+            )
+          })}
         </div>
       ))}
     </div>
@@ -229,6 +263,8 @@ function SplitDiffView({ file }: { file: ParsedDiffFile }) {
 }
 
 function UnifiedDiffView({ file }: { file: ParsedDiffFile }) {
+  const [expandedBlocks, setExpandedBlocks] = useState<Record<string, boolean>>({})
+
   return (
     <div>
       <div className="grid grid-cols-[64px_64px_16px_1fr] gap-3 border-b border-white/8 px-4 py-2 text-[11px] uppercase tracking-[0.18em] text-stone-500">
@@ -240,19 +276,52 @@ function UnifiedDiffView({ file }: { file: ParsedDiffFile }) {
       {file.hunks.map((hunk, hunkIndex) => (
         <div className="border-b border-white/6 last:border-b-0" key={`${file.path}-${hunk.header}-${hunkIndex}`}>
           <div className="bg-sky-500/10 px-4 py-2 font-mono text-[11px] text-sky-200">{hunk.header}</div>
-          {hunk.lines.map((line, lineIndex) => (
-            <div
-              className={`grid grid-cols-[64px_64px_16px_1fr] gap-3 px-4 py-1.5 text-[12px] leading-6 ${diffLineTone(line.kind)}`}
-              key={`${hunkIndex}-${lineIndex}-${line.oldLine}-${line.newLine}`}
-            >
-              <span className="select-none text-right font-mono text-stone-500">{formatLineNumber(line.oldLine)}</span>
-              <span className="select-none text-right font-mono text-stone-500">{formatLineNumber(line.newLine)}</span>
-              <span className="select-none font-mono text-stone-500">{diffLineMarker(line.kind)}</span>
-              <code className="whitespace-pre-wrap break-all">{line.text || ' '}</code>
-            </div>
-          ))}
+          {collapseContextBlocks(hunk.lines, (line) => line.kind === 'context').map((block, blockIndex) => {
+            const blockKey = `${file.path}-unified-${hunkIndex}-${blockIndex}`
+            if (block.kind === 'items') {
+              return block.items.map((line, lineIndex) => (
+                <UnifiedDiffLine key={`${blockKey}-${lineIndex}-${line.oldLine}-${line.newLine}`} line={line} />
+              ))
+            }
+
+            if (expandedBlocks[blockKey]) {
+              return (
+                <ExpandedContextBlock
+                  key={blockKey}
+                  onCollapse={() => setExpandedBlocks((current) => ({ ...current, [blockKey]: false }))}
+                >
+                  {[...block.visibleHead, ...block.hiddenItems, ...block.visibleTail].map((line, lineIndex) => (
+                    <UnifiedDiffLine key={`${blockKey}-expanded-${lineIndex}-${line.oldLine}-${line.newLine}`} line={line} />
+                  ))}
+                </ExpandedContextBlock>
+              )
+            }
+
+            return (
+              <CollapsedContextRow
+                hiddenCount={block.hiddenCount}
+                key={blockKey}
+                onExpand={() => setExpandedBlocks((current) => ({ ...current, [blockKey]: true }))}
+              />
+            )
+          })}
         </div>
       ))}
+    </div>
+  )
+}
+
+function UnifiedDiffLine({
+  line,
+}: {
+  line: { kind: DiffLineKind; text: string; oldLine: number | null; newLine: number | null }
+}) {
+  return (
+    <div className={`grid grid-cols-[64px_64px_16px_1fr] gap-3 px-4 py-1.5 text-[12px] leading-6 ${diffLineTone(line.kind)}`}>
+      <span className="select-none text-right font-mono text-stone-500">{formatLineNumber(line.oldLine)}</span>
+      <span className="select-none text-right font-mono text-stone-500">{formatLineNumber(line.newLine)}</span>
+      <span className="select-none font-mono text-stone-500">{diffLineMarker(line.kind)}</span>
+      <code className="whitespace-pre-wrap break-all">{line.text || ' '}</code>
     </div>
   )
 }
@@ -324,6 +393,45 @@ function rawPatchTone(line: string) {
     return 'text-rose-300'
   }
   return 'text-stone-200'
+}
+
+function CollapsedContextRow({
+  hiddenCount,
+  onExpand,
+}: {
+  hiddenCount: number
+  onExpand: () => void
+}) {
+  return (
+    <button
+      className="block w-full border-y border-white/6 bg-white/[0.03] px-4 py-2 text-left text-xs font-medium text-stone-400 transition hover:bg-white/[0.06] hover:text-stone-200"
+      onClick={onExpand}
+      type="button"
+    >
+      展开 {hiddenCount} 行未改内容
+    </button>
+  )
+}
+
+function ExpandedContextBlock({
+  children,
+  onCollapse,
+}: {
+  children: ReactNode
+  onCollapse: () => void
+}) {
+  return (
+    <>
+      {children}
+      <button
+        className="block w-full border-y border-white/6 bg-white/[0.03] px-4 py-2 text-left text-xs font-medium text-stone-400 transition hover:bg-white/[0.06] hover:text-stone-200"
+        onClick={onCollapse}
+        type="button"
+      >
+        收起上下文
+      </button>
+    </>
+  )
 }
 
 function splitCellTone(kind: DiffLineKind, side: 'left' | 'right') {

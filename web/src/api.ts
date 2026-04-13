@@ -31,6 +31,7 @@ export type RepoResult = {
   worktree?: string
   commit?: string
   build?: 'passed' | 'failed' | 'n/a'
+  failureHint?: string
   filesWritten?: string[]
   diffSummary?: {
     repoId: string

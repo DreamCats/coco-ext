@@ -122,6 +122,13 @@ function RepoDeliveryCard({
         <RepoStatusBadge status={repo.status} />
       </div>
 
+      {repo.failureHint ? (
+        <div className="mb-4 rounded-[18px] border border-rose-200 bg-rose-50 px-3 py-3 text-sm leading-6 text-rose-800 dark:border-rose-300/20 dark:bg-rose-400/10 dark:text-rose-100">
+          <div className="text-[11px] font-semibold uppercase tracking-[0.2em] opacity-80">失败摘要</div>
+          <div className="mt-2 font-mono text-xs leading-6">{repo.failureHint}</div>
+        </div>
+      ) : null}
+
       <div className="grid gap-3 md:grid-cols-2">
         <KeyValue label="构建结果" value={repo.build === 'passed' ? '已通过' : repo.build === 'failed' ? '未通过' : '待生成'} />
         <KeyValue label="提交" mono value={repo.commit ?? '尚未提交'} />

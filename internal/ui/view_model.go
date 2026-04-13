@@ -19,6 +19,7 @@ type RepoView struct {
 	Worktree     string    `json:"worktree,omitempty"`
 	Commit       string    `json:"commit,omitempty"`
 	Build        string    `json:"build,omitempty"`
+	FailureHint  string    `json:"failureHint,omitempty"`
 	FilesWritten []string  `json:"filesWritten,omitempty"`
 	DiffSummary  *DiffView `json:"diffSummary,omitempty"`
 }

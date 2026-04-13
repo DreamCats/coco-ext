@@ -36,6 +36,10 @@ export type SplitDiffRow = {
   right: SplitDiffCell
 }
 
+export type ContextBlock<T> =
+  | { kind: 'items'; items: T[] }
+  | { kind: 'collapsed'; hiddenCount: number; hiddenItems: T[]; visibleHead: T[]; visibleTail: T[] }
+
 export function parsePatch(patch: string): ParsedPatch {
   if (!patch.trim()) {
     return { headerLines: [], files: [] }
@@ -232,4 +236,51 @@ function emptySplitCell(): SplitDiffCell {
     text: '',
     lineNumber: null,
   }
+}
+
+export function collapseContextBlocks<T>(items: T[], isContext: (item: T) => boolean, visibleCount = 3): ContextBlock<T>[] {
+  const blocks: ContextBlock<T>[] = []
+  let index = 0
+
+  for (; index < items.length; ) {
+    if (!isContext(items[index]!)) {
+      blocks.push({ kind: 'items', items: [items[index]!] })
+      index += 1
+      continue
+    }
+
+    let end = index
+    for (; end < items.length && isContext(items[end]!); end += 1) {
+      // continue
+    }
+
+    const contextItems = items.slice(index, end)
+    if (contextItems.length <= visibleCount * 2 + 2) {
+      blocks.push({ kind: 'items', items: contextItems })
+    } else {
+      blocks.push({
+        kind: 'collapsed',
+        hiddenCount: contextItems.length - visibleCount * 2,
+        hiddenItems: contextItems.slice(visibleCount, -visibleCount),
+        visibleHead: contextItems.slice(0, visibleCount),
+        visibleTail: contextItems.slice(-visibleCount),
+      })
+    }
+    index = end
+  }
+
+  return mergeAdjacentItemBlocks(blocks)
+}
+
+function mergeAdjacentItemBlocks<T>(blocks: ContextBlock<T>[]) {
+  const merged: ContextBlock<T>[] = []
+  for (const block of blocks) {
+    const previous = merged[merged.length - 1]
+    if (block.kind === 'items' && previous?.kind === 'items') {
+      previous.items = previous.items.concat(block.items)
+      continue
+    }
+    merged.push(block)
+  }
+  return merged
 }
