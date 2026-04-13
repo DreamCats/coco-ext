@@ -61,7 +61,7 @@ export function TaskWorkbench({
   }
 
   return (
-    <section className="rounded-[24px] border border-stone-200 bg-stone-50/70 p-4 dark:border-white/10 dark:bg-white/5">
+    <section className="rounded-[28px] border border-stone-200/90 bg-white/88 p-4 shadow-[0_18px_40px_rgba(17,24,39,0.08)] backdrop-blur dark:border-white/10 dark:bg-white/[0.045] dark:shadow-[0_18px_40px_rgba(0,0,0,0.2)]">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>
           <div className="text-xs font-semibold uppercase tracking-[0.22em] text-stone-500 dark:text-stone-400">Workbench</div>
@@ -70,11 +70,13 @@ export function TaskWorkbench({
         <div className="text-sm text-stone-500 dark:text-stone-400">统一查看文档、日志、结果和 Diff</div>
       </div>
 
-      <div className="mb-4 flex flex-wrap gap-2">
+      <div className="mb-4 rounded-[22px] border border-stone-200 bg-stone-50/90 p-2 dark:border-white/10 dark:bg-white/[0.03]">
+        <div className="flex flex-wrap gap-2">
         <PaneButton active={pane === 'docs'} label="文档" onClick={() => switchPane('docs')} />
         <PaneButton active={pane === 'logs'} label="日志" onClick={() => switchPane('logs')} />
         <PaneButton active={pane === 'result'} label="结果" onClick={() => switchPane('result')} />
         <PaneButton active={pane === 'diff'} label="Diff" onClick={() => switchPane('diff')} />
+        </div>
       </div>
 
       {pane !== 'diff' ? (
@@ -146,8 +148,8 @@ function PaneButton({
     <button
       className={`rounded-full border px-3 py-2 text-sm font-medium transition ${
         active
-          ? 'border-stone-900 bg-stone-900 text-white shadow-sm dark:border-stone-100 dark:bg-stone-100 dark:text-stone-950'
-          : 'border-stone-200 bg-white text-stone-600 hover:border-stone-400 hover:text-stone-950 dark:border-white/10 dark:bg-stone-950/70 dark:text-stone-300 dark:hover:border-white/20 dark:hover:text-stone-100'
+          ? 'border-stone-900 bg-stone-900 text-white shadow-[0_8px_18px_rgba(17,24,39,0.12)] dark:border-stone-100 dark:bg-stone-100 dark:text-stone-950'
+          : 'border-transparent bg-white text-stone-600 hover:border-stone-300 hover:text-stone-950 dark:bg-transparent dark:text-stone-300 dark:hover:border-white/16 dark:hover:text-stone-100'
       }`}
       onClick={onClick}
       type="button"

@@ -46,7 +46,7 @@ export function RepoDeliveryBoard({
   })
 
   return (
-    <section className="rounded-[24px] border border-stone-200 bg-white p-4 dark:border-white/10 dark:bg-white/6">
+    <section className="rounded-[26px] border border-stone-200/90 bg-white/82 p-4 shadow-[0_14px_32px_rgba(17,24,39,0.06)] dark:border-white/10 dark:bg-white/[0.04] dark:shadow-none">
       <div className="mb-4 flex items-center justify-between gap-3">
         <div>
           <div className="text-xs font-semibold uppercase tracking-[0.22em] text-stone-500 dark:text-stone-400">Repo Delivery</div>
@@ -112,7 +112,7 @@ function RepoDeliveryCard({
   const hasDiff = Boolean(repo.diffSummary)
 
   return (
-    <div className="rounded-[20px] border border-stone-200 bg-stone-50 p-4 dark:border-white/10 dark:bg-white/5">
+    <div className="rounded-[22px] border border-stone-200 bg-stone-50/90 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.65)] dark:border-white/10 dark:bg-white/[0.03] dark:shadow-none">
       <div className="mb-3 flex items-start justify-between gap-3">
         <div>
           <div className="text-sm font-semibold text-stone-950 dark:text-stone-50">{repo.displayName}</div>
@@ -123,7 +123,7 @@ function RepoDeliveryCard({
       </div>
 
       {repo.failureHint ? (
-        <div className="mb-4 rounded-[18px] border border-rose-200 bg-rose-50 px-3 py-3 text-sm leading-6 text-rose-800 dark:border-rose-300/20 dark:bg-rose-400/10 dark:text-rose-100">
+        <div className="mb-4 rounded-[18px] border border-rose-200/90 bg-rose-50/90 px-3 py-3 text-sm leading-6 text-rose-800 dark:border-rose-300/20 dark:bg-rose-400/10 dark:text-rose-100">
           <div className="text-[11px] font-semibold uppercase tracking-[0.2em] opacity-80">失败摘要</div>
           <div className="mt-2 font-mono text-xs leading-6">{repo.failureHint}</div>
         </div>
@@ -164,7 +164,7 @@ function RepoDeliveryCard({
         ) : null}
       </div>
 
-      <div className="mt-4 rounded-[18px] border border-stone-200 bg-white px-3 py-3 dark:border-white/10 dark:bg-stone-950/70">
+      <div className="mt-4 rounded-[18px] border border-stone-200 bg-white/92 px-3 py-3 dark:border-white/10 dark:bg-stone-950/70">
         <div className="text-[11px] uppercase tracking-[0.2em] text-stone-500 dark:text-stone-400">变更文件</div>
         <div className="mt-2 space-y-2">
           {(repo.filesWritten && repo.filesWritten.length > 0 ? repo.filesWritten : ['尚无写入结果']).map((file) => (
@@ -196,7 +196,7 @@ function ActionButton({
         ? 'border-rose-200/60 bg-rose-50 text-rose-700 hover:bg-rose-100 dark:border-rose-300/20 dark:bg-rose-400/10 dark:text-rose-100 dark:hover:bg-rose-400/20'
         : tone === 'sky'
           ? 'border-sky-200/60 bg-sky-50 text-sky-700 hover:bg-sky-100 dark:border-sky-300/20 dark:bg-sky-400/10 dark:text-sky-100 dark:hover:bg-sky-400/20'
-          : 'border-stone-200 bg-white text-stone-700 hover:bg-stone-100 dark:border-white/10 dark:bg-white/6 dark:text-stone-200 dark:hover:bg-white/10'
+          : 'border-stone-200 bg-white/92 text-stone-700 hover:bg-stone-100 dark:border-white/10 dark:bg-white/[0.05] dark:text-stone-200 dark:hover:bg-white/10'
 
   return (
     <button

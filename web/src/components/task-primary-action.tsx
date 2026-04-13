@@ -51,12 +51,12 @@ export function TaskPrimaryAction({
   const runningCount = task.repos.filter((repo) => repo.status === 'coding').length
 
   return (
-    <section className="rounded-[24px] border border-emerald-300/20 bg-emerald-400/10 p-5">
+    <section className="rounded-[28px] border border-emerald-300/18 bg-[linear-gradient(140deg,rgba(16,185,129,0.2),rgba(12,18,18,0.96)_42%,rgba(11,13,17,0.98)_100%)] p-5 shadow-[0_28px_60px_rgba(6,78,59,0.24)]">
       <div className="text-xs font-semibold uppercase tracking-[0.22em] text-emerald-200">主行动区</div>
-      <div className="mt-3 text-[26px] font-semibold tracking-[-0.05em] text-white">{primaryHeadline(task)}</div>
-      <p className="mt-3 text-sm leading-6 text-emerald-100/85">{primaryNarrative(task)}</p>
+      <div className="mt-3 text-[28px] font-semibold tracking-[-0.05em] text-white">{primaryHeadline(task)}</div>
+      <p className="mt-3 max-w-[42rem] text-sm leading-6 text-emerald-50/80">{primaryNarrative(task)}</p>
 
-      <div className="mt-4 grid gap-2 sm:grid-cols-3">
+      <div className="mt-4 grid gap-3 sm:grid-cols-3">
         <MiniStat label="仓库总数" value={`${repoCount}`} />
         <MiniStat label="已完成" value={`${codedCount}`} />
         <MiniStat label="处理中断" value={`${failedCount + runningCount}`} />
@@ -125,7 +125,7 @@ export function TaskPrimaryAction({
         ) : null}
       </div>
 
-      <div className="mt-5 rounded-2xl border border-emerald-200/20 bg-stone-950/50 px-4 py-3 font-mono text-sm text-emerald-100">
+      <div className="mt-5 rounded-[22px] border border-white/10 bg-black/25 px-4 py-3 font-mono text-sm text-emerald-100/95 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
         {task.nextAction}
       </div>
     </section>
@@ -134,9 +134,9 @@ export function TaskPrimaryAction({
 
 function MiniStat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-[18px] border border-white/8 bg-white/4 px-4 py-3">
-      <div className="text-[11px] uppercase tracking-[0.2em] text-stone-400">{label}</div>
-      <div className="mt-2 text-lg font-semibold text-white">{value}</div>
+    <div className="rounded-[20px] border border-white/10 bg-white/[0.06] px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+      <div className="text-[11px] uppercase tracking-[0.2em] text-stone-400/90">{label}</div>
+      <div className="mt-2 text-[22px] font-semibold tracking-[-0.04em] text-white">{value}</div>
     </div>
   )
 }
@@ -150,12 +150,12 @@ function NoticeBox({
 }) {
   const toneClass =
     tone === 'amber'
-      ? 'mt-4 rounded-2xl border border-amber-300/20 bg-amber-400/10 px-4 py-3 text-sm leading-6 text-amber-100'
+      ? 'mt-4 rounded-[20px] border border-amber-300/18 bg-amber-400/10 px-4 py-3 text-sm leading-6 text-amber-100'
       : tone === 'sky'
-        ? 'mt-4 rounded-2xl border border-sky-300/20 bg-sky-400/10 px-4 py-3 text-sm leading-6 text-sky-100'
+        ? 'mt-4 rounded-[20px] border border-sky-300/18 bg-sky-400/10 px-4 py-3 text-sm leading-6 text-sky-100'
         : tone === 'rose'
-          ? 'mt-4 rounded-2xl border border-rose-300/20 bg-rose-400/10 px-4 py-3 text-sm leading-6 text-rose-100'
-          : 'mt-4 rounded-2xl border border-emerald-300/20 bg-emerald-400/10 px-4 py-3 text-sm leading-6 text-emerald-100'
+          ? 'mt-4 rounded-[20px] border border-rose-300/18 bg-rose-400/10 px-4 py-3 text-sm leading-6 text-rose-100'
+          : 'mt-4 rounded-[20px] border border-emerald-300/18 bg-emerald-400/10 px-4 py-3 text-sm leading-6 text-emerald-100'
 
   return <div className={toneClass}>{children}</div>
 }
@@ -171,7 +171,7 @@ function PrimaryButton({
 }) {
   return (
     <button
-      className="rounded-2xl border border-emerald-200/30 bg-emerald-500/25 px-4 py-3 text-sm font-semibold text-emerald-50 transition hover:border-emerald-100/40 hover:bg-emerald-500/35 disabled:cursor-not-allowed disabled:opacity-60"
+      className="rounded-[20px] border border-emerald-200/36 bg-emerald-500/30 px-4 py-3 text-sm font-semibold text-emerald-50 shadow-[0_12px_24px_rgba(16,185,129,0.16)] transition hover:border-emerald-100/44 hover:bg-emerald-500/42 disabled:cursor-not-allowed disabled:opacity-60"
       disabled={disabled}
       onClick={onClick}
       type="button"
@@ -194,14 +194,14 @@ function SecondaryButton({
 }) {
   const toneClass =
     tone === 'rose'
-      ? 'border-rose-200/30 bg-rose-400/15 text-rose-50 hover:border-rose-100/40 hover:bg-rose-400/25'
+      ? 'border-rose-200/28 bg-rose-400/14 text-rose-50 hover:border-rose-100/38 hover:bg-rose-400/22'
       : tone === 'sky'
-        ? 'border-sky-200/30 bg-sky-400/15 text-sky-50 hover:border-sky-100/40 hover:bg-sky-400/25'
-        : 'border-white/20 bg-white/8 text-white hover:border-white/30 hover:bg-white/12'
+        ? 'border-sky-200/28 bg-sky-400/14 text-sky-50 hover:border-sky-100/38 hover:bg-sky-400/22'
+        : 'border-white/14 bg-white/[0.06] text-white hover:border-white/22 hover:bg-white/[0.1]'
 
   return (
     <button
-      className={`rounded-2xl border px-4 py-3 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${toneClass}`}
+      className={`rounded-[20px] border px-4 py-3 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${toneClass}`}
       disabled={disabled}
       onClick={onClick}
       type="button"
@@ -212,7 +212,7 @@ function SecondaryButton({
 }
 
 function InlineHint({ children }: { children: string }) {
-  return <span className="self-center text-xs text-emerald-100/80">{children}</span>
+  return <span className="self-center text-xs text-emerald-50/65">{children}</span>
 }
 
 function primaryHeadline(task: TaskRecord) {

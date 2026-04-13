@@ -832,10 +832,10 @@ function DeletePolicyCard({
   onDelete?: () => void
 }) {
   return (
-    <section className="rounded-[24px] border border-stone-200 bg-white p-4 dark:border-white/10 dark:bg-white/6">
+    <section className="rounded-[24px] border border-stone-200/70 bg-stone-50/75 p-4 dark:border-white/8 dark:bg-white/[0.028]">
       <div className="mb-3 text-xs font-semibold uppercase tracking-[0.22em] text-stone-500 dark:text-stone-400">Delete Policy</div>
       {canDelete ? (
-        <div className="rounded-[18px] border border-emerald-200 bg-emerald-50 px-3 py-3 text-sm leading-6 text-emerald-800 dark:border-emerald-300/20 dark:bg-emerald-400/10 dark:text-emerald-100">
+        <div className="rounded-[18px] border border-emerald-200/80 bg-emerald-50/88 px-3 py-3 text-sm leading-6 text-emerald-800 dark:border-emerald-300/16 dark:bg-emerald-400/10 dark:text-emerald-100">
           <div>当前阶段支持直接删除。如果这条需求不再继续，可以在这里移除。</div>
           {onDelete ? (
             <button
@@ -848,7 +848,7 @@ function DeletePolicyCard({
           ) : null}
         </div>
       ) : (
-        <div className="rounded-[18px] border border-amber-200 bg-amber-50 px-3 py-3 text-sm leading-6 text-amber-900 dark:border-amber-300/20 dark:bg-amber-400/10 dark:text-amber-100">
+        <div className="rounded-[18px] border border-amber-200/80 bg-amber-50/88 px-3 py-3 text-sm leading-6 text-amber-900 dark:border-amber-300/16 dark:bg-amber-400/10 dark:text-amber-100">
           当前任务已经进入实现流程。如需回退，建议先处理已有结果后再操作。
         </div>
       )}
@@ -892,7 +892,7 @@ function TaskListItemCard({ task }: { task: TaskListItem }) {
 
 function RepoScopeCard({ task }: { task: TaskRecord }) {
   return (
-    <section className="rounded-[24px] border border-stone-200 bg-white p-4 dark:border-white/10 dark:bg-white/6">
+    <section className="rounded-[24px] border border-stone-200/70 bg-stone-50/75 p-4 dark:border-white/8 dark:bg-white/[0.028]">
       <div className="mb-4 text-xs font-semibold uppercase tracking-[0.22em] text-stone-500 dark:text-stone-400">涉及仓库</div>
       <div className="space-y-3">
         <KeyValue label="仓库数量" value={`${task.repos.length}`} />
@@ -901,7 +901,7 @@ function RepoScopeCard({ task }: { task: TaskRecord }) {
 
       <div className="mt-4 space-y-2">
         {task.repos.map((repo) => (
-          <div className="rounded-[18px] border border-stone-200 bg-stone-50 px-3 py-3 dark:border-white/10 dark:bg-white/5" key={repo.id}>
+          <div className="rounded-[18px] border border-stone-200/80 bg-white/72 px-3 py-3 dark:border-white/8 dark:bg-white/[0.03]" key={repo.id}>
             <div className="flex items-center justify-between gap-3">
               <div>
                 <div className="text-sm font-semibold text-stone-950 dark:text-stone-50">{repo.displayName}</div>
