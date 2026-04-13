@@ -155,9 +155,6 @@ export function TasksLayout() {
                     最近更新 {tasks[0]?.updatedAt ?? '-'}
                   </span>
                 </div>
-                <p className="mt-1 text-xs leading-5 text-stone-500 dark:text-stone-400">
-                  默认先看状态、更新时间和下一步动作。
-                </p>
               </div>
               <div className="shrink-0">
                 <button
