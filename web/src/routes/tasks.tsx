@@ -23,7 +23,6 @@ import { TaskPrimaryAction } from '../components/task-primary-action'
 import { TaskWorkbench, type WorkbenchPane } from '../components/task-workbench'
 import {
   CompactField,
-  FilterChip,
   KeyValue,
   PanelMessage,
   RepoStatusBadge,
@@ -145,102 +144,105 @@ export function TasksLayout() {
   return (
     <>
       <div className="grid gap-4 lg:h-[calc(100vh-235px)] lg:min-h-0 lg:grid-cols-[360px_minmax(0,1fr)]">
-      <section
-        className="rounded-[24px] border border-stone-200 bg-stone-50/80 p-4 dark:border-white/10 dark:bg-white/5 lg:flex lg:min-h-0 lg:flex-col lg:overflow-hidden"
-      >
-        <div className="mb-4 flex items-start justify-between gap-3">
-          <div>
-            <div className="text-xs font-semibold uppercase tracking-[0.22em] text-stone-500 dark:text-stone-400">任务推进</div>
-            <h2 className="mt-2 text-2xl font-semibold tracking-[-0.04em] text-stone-950 dark:text-stone-50">任务队列</h2>
-            <p className="mt-2 max-w-[280px] text-sm leading-6 text-stone-500 dark:text-stone-400">
-              在这里查看每条需求的当前阶段、涉及仓库和下一步动作。
-            </p>
-          </div>
-          <div className="flex flex-col gap-2">
-            <button
-              className="rounded-2xl bg-stone-900 px-4 py-3 text-sm font-semibold text-white transition hover:bg-stone-800"
-              onClick={() => setShowCreateForm((current) => !current)}
-              type="button"
-            >
-              {showCreateForm ? '收起新建入口' : '新建任务'}
-            </button>
-            <div className="rounded-2xl bg-stone-900 px-3 py-2 text-right text-white dark:bg-stone-100 dark:text-stone-950">
-              <div className="text-[11px] uppercase tracking-[0.24em] text-stone-400 dark:text-stone-500">最近更新</div>
-              <div className="text-sm font-semibold">{tasks[0]?.updatedAt ?? '-'}</div>
+        <section className="rounded-[24px] border border-stone-200 bg-stone-50/80 p-2.5 dark:border-white/10 dark:bg-white/5 lg:flex lg:min-h-0 lg:flex-col lg:overflow-hidden">
+          <div className="mb-2.5 rounded-[20px] border border-stone-200/80 bg-white/88 p-2.5 shadow-[0_10px_30px_rgba(15,23,42,0.04)] dark:border-white/10 dark:bg-white/[0.04]">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.24em] text-stone-500 dark:text-stone-400">任务推进</div>
+                <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
+                  <h2 className="text-[24px] font-semibold tracking-[-0.05em] text-stone-950 dark:text-stone-50">任务队列</h2>
+                  <span className="text-xs text-stone-500 dark:text-stone-400">
+                    最近更新 {tasks[0]?.updatedAt ?? '-'}
+                  </span>
+                </div>
+              </div>
+              <div className="shrink-0">
+                <button
+                  className="rounded-2xl bg-stone-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-stone-800"
+                  onClick={() => setShowCreateForm((current) => !current)}
+                  type="button"
+                >
+                  {showCreateForm ? '收起入口' : '新建任务'}
+                </button>
+              </div>
+            </div>
+
+            <div className="mt-2.5 flex flex-wrap items-center gap-2 text-xs">
+              <QueueSummaryItem label="全部任务" value={loading ? '...' : `${tasks.length}`} />
+              <QueueSummaryItem
+                label="已有结果"
+                value={loading ? '...' : `${tasks.filter((task) => task.status === 'coded' || task.status === 'partially_coded').length}`}
+              />
+              <QueueSummaryItem
+                label="待推进"
+                value={loading ? '...' : `${tasks.filter((task) => task.status === 'planned' || task.status === 'planning').length}`}
+              />
+            </div>
+
+            <div className="mt-2.5 space-y-2">
+              <input
+                className="w-full rounded-2xl border border-stone-200 bg-white px-3 py-2 text-sm text-stone-900 outline-none transition placeholder:text-stone-400 focus:border-stone-400 dark:border-white/10 dark:bg-stone-950/70 dark:text-stone-100 dark:placeholder:text-stone-500 dark:focus:border-white/20"
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="搜索标题、仓库或任务编号"
+                type="text"
+                value={query}
+              />
+              <div className="grid grid-cols-2 gap-2">
+                <select
+                  className="rounded-2xl border border-stone-200 bg-white px-3 py-2 text-sm text-stone-700 outline-none focus:border-stone-400 dark:border-white/10 dark:bg-stone-950/70 dark:text-stone-200 dark:focus:border-white/20"
+                  onChange={(event) => setStatusFilter(event.target.value as 'all' | TaskStatus)}
+                  value={statusFilter}
+                >
+                  <option value="all">全部状态</option>
+                  <option value="planned">待进入实现</option>
+                  <option value="planning">方案生成中</option>
+                  <option value="coding">实现进行中</option>
+                  <option value="partially_coded">部分已完成</option>
+                  <option value="coded">已产出结果</option>
+                  <option value="archived">已归档</option>
+                  <option value="failed">处理中断</option>
+                </select>
+                <select
+                  className="rounded-2xl border border-stone-200 bg-white px-3 py-2 text-sm text-stone-700 outline-none focus:border-stone-400 dark:border-white/10 dark:bg-stone-950/70 dark:text-stone-200 dark:focus:border-white/20"
+                  onChange={(event) => setRepoFilter(event.target.value)}
+                  value={repoFilter}
+                >
+                  <option value="all">全部仓库</option>
+                  {repoOptions.map((repoId) => (
+                    <option key={repoId} value={repoId}>
+                      {repoId}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
           </div>
-        </div>
 
-        <div className="mb-4 grid grid-cols-3 gap-2 text-xs">
-          <FilterChip label="全部任务" value={loading ? '...' : `${tasks.length}`} />
-          <FilterChip
-            label="已有结果"
-            value={loading ? '...' : `${tasks.filter((task) => task.status === 'coded' || task.status === 'partially_coded').length}`}
-          />
-          <FilterChip
-            label="待推进"
-            value={loading ? '...' : `${tasks.filter((task) => task.status === 'planned' || task.status === 'planning').length}`}
-          />
-        </div>
+          <div className="mb-2 flex items-center justify-between px-1">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-stone-500 dark:text-stone-400">任务列表</div>
+            <div className="text-xs text-stone-500 dark:text-stone-400">{loading ? '...' : `${filteredTasks.length} 条`}</div>
+          </div>
 
-        <div className="mb-4 space-y-3">
-          <input
-            className="w-full rounded-2xl border border-stone-200 bg-white px-3 py-3 text-sm text-stone-900 outline-none transition placeholder:text-stone-400 focus:border-stone-400 dark:border-white/10 dark:bg-stone-950/70 dark:text-stone-100 dark:placeholder:text-stone-500 dark:focus:border-white/20"
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="搜索任务标题、仓库或任务编号"
-            type="text"
-            value={query}
-          />
-          <div className="grid grid-cols-2 gap-2">
-            <select
-              className="rounded-2xl border border-stone-200 bg-white px-3 py-3 text-sm text-stone-700 outline-none focus:border-stone-400 dark:border-white/10 dark:bg-stone-950/70 dark:text-stone-200 dark:focus:border-white/20"
-              onChange={(event) => setStatusFilter(event.target.value as 'all' | TaskStatus)}
-              value={statusFilter}
-            >
-              <option value="all">全部状态</option>
-              <option value="planned">待进入实现</option>
-              <option value="planning">方案生成中</option>
-              <option value="coding">实现进行中</option>
-              <option value="partially_coded">部分已完成</option>
-              <option value="coded">已产出结果</option>
-              <option value="archived">已归档</option>
-              <option value="failed">处理中断</option>
-            </select>
-            <select
-              className="rounded-2xl border border-stone-200 bg-white px-3 py-3 text-sm text-stone-700 outline-none focus:border-stone-400 dark:border-white/10 dark:bg-stone-950/70 dark:text-stone-200 dark:focus:border-white/20"
-              onChange={(event) => setRepoFilter(event.target.value)}
-              value={repoFilter}
-            >
-              <option value="all">全部仓库</option>
-              {repoOptions.map((repoId) => (
-                <option key={repoId} value={repoId}>
-                  {repoId}
-                </option>
+          {loading ? (
+            <PanelMessage>正在加载 task 列表...</PanelMessage>
+          ) : error ? (
+            <PanelMessage>{error}</PanelMessage>
+          ) : filteredTasks.length === 0 ? (
+            <PanelMessage>当前过滤条件下没有 task。</PanelMessage>
+          ) : tasks.length === 0 ? (
+            <PanelMessage>当前没有 task。</PanelMessage>
+          ) : (
+            <div className="space-y-1.5 lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:pr-1">
+              {filteredTasks.map((task) => (
+                <TaskListItemCard key={task.id} task={task} />
               ))}
-            </select>
-          </div>
+            </div>
+          )}
+        </section>
+
+        <div className="min-h-0 overflow-hidden lg:min-h-0">
+          <Outlet />
         </div>
-
-        {loading ? (
-          <PanelMessage>正在加载 task 列表...</PanelMessage>
-        ) : error ? (
-          <PanelMessage>{error}</PanelMessage>
-        ) : filteredTasks.length === 0 ? (
-          <PanelMessage>当前过滤条件下没有 task。</PanelMessage>
-        ) : tasks.length === 0 ? (
-          <PanelMessage>当前没有 task。</PanelMessage>
-        ) : (
-          <div className="space-y-3 lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:pr-1">
-            {filteredTasks.map((task) => (
-              <TaskListItemCard key={task.id} task={task} />
-            ))}
-          </div>
-        )}
-      </section>
-
-      <div className="min-h-0 overflow-hidden lg:min-h-0">
-        <Outlet />
-      </div>
       </div>
 
       {showCreateForm ? (
@@ -902,35 +904,95 @@ function DeletePolicyCard({
 function TaskListItemCard({ task }: { task: TaskListItem }) {
   const location = useLocation()
   const active = location.pathname === `/tasks/${task.id}`
+  const repoSummary =
+    task.status === 'initialized'
+      ? '正在整理需求输入'
+      : task.status === 'planning'
+        ? '正在分析代码与方案'
+        : task.status === 'coding'
+          ? '后台实现执行中'
+          : formatTaskListRepos(task.repoIds)
+  const nextStepHint = taskListNextStep(task.status)
 
   return (
     <Link
-      className={`block rounded-[22px] border px-4 py-4 transition ${
+      className={`block rounded-[18px] border px-3.5 py-3 transition ${
         active
-          ? 'border-stone-900 bg-stone-900 text-white shadow-[0_16px_40px_rgba(15,23,42,0.2)] dark:border-stone-100 dark:bg-stone-100 dark:text-stone-950'
+          ? 'border-stone-900 bg-stone-900 text-white shadow-[0_16px_34px_rgba(15,23,42,0.18)] dark:border-stone-100 dark:bg-stone-100 dark:text-stone-950'
           : 'border-stone-200 bg-white text-stone-900 hover:border-stone-300 hover:bg-stone-100/80 dark:border-white/10 dark:bg-white/6 dark:text-stone-100 dark:hover:border-white/20 dark:hover:bg-white/10'
       }`}
       params={{ taskId: task.id }}
+      resetScroll={false}
       to="/tasks/$taskId"
     >
       <div className="flex items-center justify-between gap-3">
         <StatusBadge status={task.status} />
         <div className={`text-xs ${active ? 'text-stone-300 dark:text-stone-500' : 'text-stone-500 dark:text-stone-400'}`}>{task.updatedAt}</div>
       </div>
-      <div className="mt-3 text-[17px] font-semibold leading-6 tracking-[-0.03em]">{task.title}</div>
-      <div className={`mt-2 text-xs font-mono ${active ? 'text-stone-400 dark:text-stone-500' : 'text-stone-500 dark:text-stone-400'}`}>{task.id}</div>
-      <div className={`mt-4 flex items-center justify-between text-xs ${active ? 'text-stone-300 dark:text-stone-500' : 'text-stone-500 dark:text-stone-400'}`}>
-        <span>
-          {task.status === 'initialized'
-            ? 'Refining…'
-            : task.status === 'planning'
-              ? 'Planning…'
-              : task.repoIds.slice(0, 2).join(', ') || '-'}
-        </span>
-        <span>{task.repoCount} 个仓库</span>
+      <div className="mt-2 flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="text-[15px] font-semibold leading-5 tracking-[-0.03em]">{task.title}</div>
+          <div className={`mt-1 text-[11px] font-mono ${active ? 'text-stone-400 dark:text-stone-500' : 'text-stone-500 dark:text-stone-400'}`}>{task.id}</div>
+        </div>
+        <div
+          className={`shrink-0 rounded-full border px-2.5 py-1 text-[11px] font-semibold ${
+            active
+              ? 'border-white/15 text-stone-200 dark:border-stone-300 dark:text-stone-700'
+              : 'border-stone-200 text-stone-600 dark:border-white/10 dark:text-stone-300'
+          }`}
+        >
+          {task.repoCount} 仓库
+        </div>
+      </div>
+      <div className={`mt-2 flex items-center justify-between gap-3 text-xs ${active ? 'text-stone-300 dark:text-stone-500' : 'text-stone-500 dark:text-stone-400'}`}>
+        <span className="min-w-0 truncate">{repoSummary}</span>
+        <span className="shrink-0">{nextStepHint}</span>
       </div>
     </Link>
   )
+}
+
+function QueueSummaryItem({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="inline-flex items-center gap-2 rounded-full border border-stone-200 bg-stone-50/90 px-3 py-1.5 dark:border-white/10 dark:bg-white/[0.03]">
+      <span className="text-[11px] uppercase tracking-[0.18em] text-stone-500 dark:text-stone-400">{label}</span>
+      <span className="text-sm font-semibold text-stone-950 dark:text-stone-50">{value}</span>
+    </div>
+  )
+}
+
+function formatTaskListRepos(repoIds: string[]) {
+  if (repoIds.length === 0) {
+    return '暂未绑定仓库'
+  }
+  if (repoIds.length <= 2) {
+    return repoIds.join(' · ')
+  }
+  return `${repoIds.slice(0, 2).join(' · ')} +${repoIds.length - 2}`
+}
+
+function taskListNextStep(status: TaskStatus) {
+  switch (status) {
+    case 'initialized':
+    case 'refined':
+      return '等待方案'
+    case 'planning':
+      return '生成中'
+    case 'planned':
+      return '可实现'
+    case 'coding':
+      return '看日志'
+    case 'partially_coded':
+      return '继续推进'
+    case 'coded':
+      return '看结果'
+    case 'failed':
+      return '先排查'
+    case 'archived':
+      return '已收尾'
+    default:
+      return '处理中'
+  }
 }
 
 function RepoScopeCard({ task }: { task: TaskRecord }) {
