@@ -18,6 +18,7 @@ import {
 } from '../api'
 import { ActionPanel } from '../components/action-panel'
 import { RepoPicker } from '../components/repo-picker'
+import { RepoDeliveryBoard } from '../components/repo-delivery-board'
 import { TaskPrimaryAction } from '../components/task-primary-action'
 import { TaskWorkbench } from '../components/task-workbench'
 import {
@@ -667,7 +668,7 @@ export function TaskDetailPage() {
         />
 
         <aside className="space-y-4">
-          <CodeResultCard
+          <RepoDeliveryBoard
             actionBusy={actionBusy}
             archivingRepo={archivingRepo}
             codeStartingRepo={codeStartingRepo}
@@ -691,6 +692,13 @@ export function TaskDetailPage() {
                 setActionError(err instanceof Error ? err.message : '归档失败')
                 setArchivingRepo(null)
               }
+            }}
+            onReviewDiff={(repoId) => {
+              setSelectedDiffRepo(repoId)
+            }}
+            onReviewResult={(repoId) => {
+              setArtifact('code-result.json')
+              handleRepoContextChange(repoId)
             }}
             onStartCode={async (repoId) => {
               try {
@@ -905,141 +913,5 @@ function RepoScopeCard({ task }: { task: TaskRecord }) {
         ))}
       </div>
     </section>
-  )
-}
-
-function CodeResultCard({
-  task,
-  hasGeneratedPlan,
-  actionBusy,
-  codeStartingRepo,
-  resettingRepo,
-  archivingRepo,
-  onStartCode,
-  onReset,
-  onArchive,
-}: {
-  task: TaskRecord
-  hasGeneratedPlan: boolean
-  actionBusy: boolean
-  codeStartingRepo: string | null
-  resettingRepo: string | null
-  archivingRepo: string | null
-  onStartCode: (repoId: string) => Promise<void>
-  onReset: (repoId: string) => Promise<void>
-  onArchive: (repoId: string) => Promise<void>
-}) {
-  return (
-    <section className="rounded-[24px] border border-stone-200 bg-white p-4 dark:border-white/10 dark:bg-white/6">
-      <div className="mb-4 text-xs font-semibold uppercase tracking-[0.22em] text-stone-500 dark:text-stone-400">仓库结果</div>
-      <div className="space-y-4">
-        {task.repos.map((repo) => (
-          <RepoCodeResult
-            actionBusy={actionBusy}
-            archiving={archivingRepo === repo.id}
-            canArchive={task.repos.length > 1 && canArchiveCodeForRepo(repo)}
-            canReset={task.repos.length > 1 && canResetCodeForRepo(repo)}
-            canStartCode={task.repos.length > 1 && canStartCodeForRepo(repo, hasGeneratedPlan)}
-            codeStarting={codeStartingRepo === repo.id}
-            key={repo.id}
-            onArchive={onArchive}
-            onReset={onReset}
-            onStartCode={onStartCode}
-            repo={repo}
-            resetting={resettingRepo === repo.id}
-          />
-        ))}
-      </div>
-    </section>
-  )
-}
-
-function RepoCodeResult({
-  repo,
-  canStartCode,
-  canReset,
-  canArchive,
-  codeStarting,
-  resetting,
-  archiving,
-  actionBusy,
-  onStartCode,
-  onReset,
-  onArchive,
-}: {
-  repo: TaskRecord['repos'][number]
-  canStartCode: boolean
-  canReset: boolean
-  canArchive: boolean
-  codeStarting: boolean
-  resetting: boolean
-  archiving: boolean
-  actionBusy: boolean
-  onStartCode: (repoId: string) => Promise<void>
-  onReset: (repoId: string) => Promise<void>
-  onArchive: (repoId: string) => Promise<void>
-}) {
-  return (
-    <div className="rounded-[20px] border border-stone-200 bg-stone-50 p-4 dark:border-white/10 dark:bg-white/5">
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <div>
-          <div className="text-sm font-semibold text-stone-950 dark:text-stone-50">{repo.displayName}</div>
-          <div className="mt-1 text-[11px] uppercase tracking-[0.2em] text-stone-500 dark:text-stone-400">{repo.id}</div>
-        </div>
-        <RepoStatusBadge status={repo.status} />
-      </div>
-      <div className="space-y-3">
-        <KeyValue label="构建结果" value={repo.build === 'passed' ? '已通过' : repo.build === 'failed' ? '未通过' : '待生成'} />
-        <KeyValue label="分支" mono value={repo.branch ?? '尚未创建'} />
-        <KeyValue label="工作区" mono value={repo.worktree ?? '尚未创建'} />
-        <KeyValue label="提交" mono value={repo.commit ?? '尚未提交'} />
-      </div>
-
-      {canStartCode || canReset || canArchive ? (
-        <div className="mt-4 flex flex-wrap gap-2">
-          {canStartCode ? (
-            <button
-              className="rounded-2xl border border-emerald-200/50 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-emerald-300/20 dark:bg-emerald-400/10 dark:text-emerald-100 dark:hover:bg-emerald-400/20"
-              disabled={actionBusy}
-              onClick={() => void onStartCode(repo.id)}
-              type="button"
-            >
-              {codeStarting ? '实现进行中...' : repo.status === 'failed' ? '重试实现' : '开始实现'}
-            </button>
-          ) : null}
-          {canReset ? (
-            <button
-              className="rounded-2xl border border-rose-200/60 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-rose-300/20 dark:bg-rose-400/10 dark:text-rose-100 dark:hover:bg-rose-400/20"
-              disabled={actionBusy}
-              onClick={() => void onReset(repo.id)}
-              type="button"
-            >
-              {resetting ? '回退中...' : '回退实现'}
-            </button>
-          ) : null}
-          {canArchive ? (
-            <button
-              className="rounded-2xl border border-sky-200/60 bg-sky-50 px-3 py-2 text-sm font-semibold text-sky-700 transition hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-sky-300/20 dark:bg-sky-400/10 dark:text-sky-100 dark:hover:bg-sky-400/20"
-              disabled={actionBusy}
-              onClick={() => void onArchive(repo.id)}
-              type="button"
-            >
-              {archiving ? '归档中...' : '归档任务'}
-            </button>
-          ) : null}
-        </div>
-      ) : null}
-
-      <div className="mt-4 rounded-[18px] border border-stone-200 bg-white px-3 py-3 dark:border-white/10 dark:bg-stone-950/70">
-        <div className="text-[11px] uppercase tracking-[0.2em] text-stone-500 dark:text-stone-400">变更文件</div>
-        <div className="mt-2 space-y-2">
-          {(repo.filesWritten && repo.filesWritten.length > 0 ? repo.filesWritten : ['尚无写入结果']).map((file) => (
-            <div className="font-mono text-xs text-stone-800 dark:text-stone-200" key={file}>
-              {file}
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
   )
 }
