@@ -224,12 +224,7 @@ function SplitDiffView({ file }: { file: ParsedDiffFile }) {
           ).map((block, blockIndex) => {
             const blockKey = `${file.path}-${hunkIndex}-${blockIndex}`
             if (block.kind === 'items') {
-              return block.items.map((row, rowIndex) => (
-                <div className="grid grid-cols-2" key={`${blockKey}-${rowIndex}-${row.left.lineNumber}-${row.right.lineNumber}`}>
-                  <SplitCell side="left" cell={row.left} />
-                  <SplitCell side="right" cell={row.right} />
-                </div>
-              ))
+              return renderSplitRows(block.items, blockKey)
             }
 
             if (expandedBlocks[blockKey]) {
@@ -238,22 +233,17 @@ function SplitDiffView({ file }: { file: ParsedDiffFile }) {
                   key={blockKey}
                   onCollapse={() => setExpandedBlocks((current) => ({ ...current, [blockKey]: false }))}
                 >
-                  {[...block.visibleHead, ...block.hiddenItems, ...block.visibleTail].map((row, rowIndex) => (
-                    <div className="grid grid-cols-2" key={`${blockKey}-expanded-${rowIndex}-${row.left.lineNumber}-${row.right.lineNumber}`}>
-                      <SplitCell side="left" cell={row.left} />
-                      <SplitCell side="right" cell={row.right} />
-                    </div>
-                  ))}
+                  {renderSplitRows([...block.visibleHead, ...block.hiddenItems, ...block.visibleTail], `${blockKey}-expanded`)}
                 </ExpandedContextBlock>
               )
             }
 
             return (
-              <CollapsedContextRow
-                hiddenCount={block.hiddenCount}
-                key={blockKey}
-                onExpand={() => setExpandedBlocks((current) => ({ ...current, [blockKey]: true }))}
-              />
+              <div key={blockKey}>
+                {renderSplitRows(block.visibleHead, `${blockKey}-head`)}
+                <CollapsedContextRow hiddenCount={block.hiddenCount} onExpand={() => setExpandedBlocks((current) => ({ ...current, [blockKey]: true }))} />
+                {renderSplitRows(block.visibleTail, `${blockKey}-tail`)}
+              </div>
             )
           })}
         </div>
@@ -279,9 +269,7 @@ function UnifiedDiffView({ file }: { file: ParsedDiffFile }) {
           {collapseContextBlocks(hunk.lines, (line) => line.kind === 'context').map((block, blockIndex) => {
             const blockKey = `${file.path}-unified-${hunkIndex}-${blockIndex}`
             if (block.kind === 'items') {
-              return block.items.map((line, lineIndex) => (
-                <UnifiedDiffLine key={`${blockKey}-${lineIndex}-${line.oldLine}-${line.newLine}`} line={line} />
-              ))
+              return renderUnifiedLines(block.items, blockKey)
             }
 
             if (expandedBlocks[blockKey]) {
@@ -290,19 +278,17 @@ function UnifiedDiffView({ file }: { file: ParsedDiffFile }) {
                   key={blockKey}
                   onCollapse={() => setExpandedBlocks((current) => ({ ...current, [blockKey]: false }))}
                 >
-                  {[...block.visibleHead, ...block.hiddenItems, ...block.visibleTail].map((line, lineIndex) => (
-                    <UnifiedDiffLine key={`${blockKey}-expanded-${lineIndex}-${line.oldLine}-${line.newLine}`} line={line} />
-                  ))}
+                  {renderUnifiedLines([...block.visibleHead, ...block.hiddenItems, ...block.visibleTail], `${blockKey}-expanded`)}
                 </ExpandedContextBlock>
               )
             }
 
             return (
-              <CollapsedContextRow
-                hiddenCount={block.hiddenCount}
-                key={blockKey}
-                onExpand={() => setExpandedBlocks((current) => ({ ...current, [blockKey]: true }))}
-              />
+              <div key={blockKey}>
+                {renderUnifiedLines(block.visibleHead, `${blockKey}-head`)}
+                <CollapsedContextRow hiddenCount={block.hiddenCount} onExpand={() => setExpandedBlocks((current) => ({ ...current, [blockKey]: true }))} />
+                {renderUnifiedLines(block.visibleTail, `${blockKey}-tail`)}
+              </div>
             )
           })}
         </div>
@@ -432,6 +418,25 @@ function ExpandedContextBlock({
       </button>
     </>
   )
+}
+
+function renderSplitRows(
+  rows: Array<{ left: { kind: DiffLineKind; text: string; lineNumber: number | null }; right: { kind: DiffLineKind; text: string; lineNumber: number | null } }>,
+  keyPrefix: string,
+) {
+  return rows.map((row, rowIndex) => (
+    <div className="grid grid-cols-2" key={`${keyPrefix}-${rowIndex}-${row.left.lineNumber}-${row.right.lineNumber}`}>
+      <SplitCell side="left" cell={row.left} />
+      <SplitCell side="right" cell={row.right} />
+    </div>
+  ))
+}
+
+function renderUnifiedLines(
+  lines: Array<{ kind: DiffLineKind; text: string; oldLine: number | null; newLine: number | null }>,
+  keyPrefix: string,
+) {
+  return lines.map((line, lineIndex) => <UnifiedDiffLine key={`${keyPrefix}-${lineIndex}-${line.oldLine}-${line.newLine}`} line={line} />)
 }
 
 function splitCellTone(kind: DiffLineKind, side: 'left' | 'right') {
