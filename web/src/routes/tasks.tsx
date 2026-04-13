@@ -20,7 +20,7 @@ import { ActionPanel } from '../components/action-panel'
 import { RepoPicker } from '../components/repo-picker'
 import { RepoDeliveryBoard } from '../components/repo-delivery-board'
 import { TaskPrimaryAction } from '../components/task-primary-action'
-import { TaskWorkbench } from '../components/task-workbench'
+import { TaskWorkbench, type WorkbenchPane } from '../components/task-workbench'
 import {
   CompactField,
   FilterChip,
@@ -337,9 +337,14 @@ export function TaskDetailPage() {
   const [artifact, setArtifact] = useState<TaskArtifactName>('prd-refined.md')
   const [artifactContent, setArtifactContent] = useState('')
   const [artifactRepo, setArtifactRepo] = useState('')
+  const artifactRequestKeyRef = useRef('')
+  const workbenchRef = useRef<HTMLDivElement | null>(null)
   const [selectedDiffRepo, setSelectedDiffRepo] = useState('')
+  const [workbenchFocusToken, setWorkbenchFocusToken] = useState(0)
+  const [workbenchForcedPane, setWorkbenchForcedPane] = useState<WorkbenchPane | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [lastRefreshedAt, setLastRefreshedAt] = useState('')
   const [planStarting, setPlanStarting] = useState(false)
   const [codeStartingRepo, setCodeStartingRepo] = useState<string | null>(null)
   const [batchCodeStarting, setBatchCodeStarting] = useState(false)
@@ -360,6 +365,7 @@ export function TaskDetailPage() {
         const firstDiffRepo = detail.repos.find((repo) => repo.diffSummary)?.id ?? detail.repos[0]?.id ?? ''
         setSelectedDiffRepo(firstDiffRepo)
         setArtifactRepo(firstDiffRepo)
+        setLastRefreshedAt(formatRefreshTime(new Date()))
         setError('')
         setActionError('')
       } catch (err) {
@@ -375,6 +381,7 @@ export function TaskDetailPage() {
     }
     setArtifact('prd-refined.md')
     setArtifactContent('')
+    setWorkbenchForcedPane('docs')
     void load()
     return () => {
       cancelled = true
@@ -397,6 +404,7 @@ export function TaskDetailPage() {
           const firstDiffRepo = detail.repos.find((repo) => repo.diffSummary)?.id ?? detail.repos[0]?.id ?? ''
           setSelectedDiffRepo(firstDiffRepo)
           setArtifactRepo((current) => current || firstDiffRepo)
+          setLastRefreshedAt(formatRefreshTime(new Date()))
           if (!shouldContinuePolling(detail, batchCodeStarting)) {
             setPlanStarting(false)
             setCodeStartingRepo(null)
@@ -429,11 +437,16 @@ export function TaskDetailPage() {
     const targetRepoID = artifactRepo || task.repos.find((repo) => hasRepoArtifactData(repo, artifact))?.id || task.repos[0]?.id || ''
     if (!targetRepoID) {
       setArtifactContent('当前没有可查看的仓库结果。')
+      artifactRequestKeyRef.current = ''
       return
     }
 
     let cancelled = false
-    setArtifactContent('加载中...')
+    const requestKey = `${task.id}:${artifact}:${targetRepoID}`
+    if (artifactRequestKeyRef.current !== requestKey) {
+      artifactRequestKeyRef.current = requestKey
+      setArtifactContent('加载中...')
+    }
     void getTaskArtifact(task.id, artifact, targetRepoID)
       .then((result) => {
         if (!cancelled) {
@@ -473,6 +486,7 @@ export function TaskDetailPage() {
   const planActionLabel = task.status === 'planned' ? '重新 Plan' : '开始 Plan'
   const codeActionLabel = singleRepo?.status === 'failed' ? '重试实现' : '开始实现'
   const actionBusy = Boolean(planStarting || codeStartingRepo || batchCodeStarting || resettingRepo || archivingRepo)
+  const polling = shouldContinuePolling(task, batchCodeStarting)
   const currentTask = task
 
   async function handleDeleteTask() {
@@ -594,6 +608,14 @@ export function TaskDetailPage() {
     setArtifactRepo(repoId)
   }
 
+  function focusWorkbench(pane: WorkbenchPane) {
+    setWorkbenchForcedPane(pane)
+    setWorkbenchFocusToken((current) => current + 1)
+    window.requestAnimationFrame(() => {
+      workbenchRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    })
+  }
+
   return (
     <div className="space-y-4 lg:h-full lg:overflow-y-auto lg:pr-1">
       <section className="overflow-hidden rounded-[24px] border border-stone-200 bg-[#111317] text-white shadow-[0_30px_80px_rgba(15,23,42,0.18)]">
@@ -638,6 +660,8 @@ export function TaskDetailPage() {
               onStartRemainingCode={() => void handleStartRemainingCode()}
               planActionLabel={planActionLabel}
               planStarting={planStarting}
+              polling={polling}
+              lastRefreshedAt={lastRefreshedAt}
               remainingReposCount={remainingRepos.length}
               resetting={Boolean(resettingRepo)}
               task={task}
@@ -656,16 +680,23 @@ export function TaskDetailPage() {
       </section>
 
       <div className="grid gap-4 2xl:grid-cols-[minmax(0,1fr)_360px]">
-        <TaskWorkbench
-          artifact={artifact}
-          artifactContent={artifactContent}
-          artifactRepo={artifactRepo}
-          onArtifactChange={setArtifact}
-          onArtifactRepoChange={setArtifactRepo}
-          onSelectDiffRepo={handleRepoContextChange}
-          selectedDiffRepo={selectedDiffRepo}
-          task={task}
-        />
+        <div ref={workbenchRef}>
+          <TaskWorkbench
+            artifact={artifact}
+            artifactContent={artifactContent}
+            artifactRepo={artifactRepo}
+            focusToken={workbenchFocusToken}
+            forcedPane={workbenchForcedPane}
+            lastRefreshedAt={lastRefreshedAt}
+            onArtifactChange={setArtifact}
+            onArtifactRepoChange={setArtifactRepo}
+            onPaneChange={setWorkbenchForcedPane}
+            onSelectDiffRepo={handleRepoContextChange}
+            polling={polling}
+            selectedDiffRepo={selectedDiffRepo}
+            task={task}
+          />
+        </div>
 
         <aside className="space-y-4">
           <RepoDeliveryBoard
@@ -673,6 +704,7 @@ export function TaskDetailPage() {
             archivingRepo={archivingRepo}
             codeStartingRepo={codeStartingRepo}
             hasGeneratedPlan={hasGeneratedPlan}
+            polling={polling}
             onArchive={async (repoId) => {
               const confirmed = window.confirm('归档后会清理这次实现产生的分支和 worktree，但会保留结果记录。确认继续吗？')
               if (!confirmed) {
@@ -694,11 +726,13 @@ export function TaskDetailPage() {
               }
             }}
             onReviewDiff={(repoId) => {
-              setSelectedDiffRepo(repoId)
+              handleRepoContextChange(repoId)
+              focusWorkbench('diff')
             }}
             onReviewResult={(repoId) => {
               setArtifact('code-result.json')
               handleRepoContextChange(repoId)
+              focusWorkbench('result')
             }}
             onStartCode={async (repoId) => {
               try {
@@ -822,6 +856,15 @@ function shouldContinuePolling(task: TaskRecord, batchCodeStarting: boolean) {
     return false
   }
   return task.repos.some((repo) => repo.status === 'planned' || repo.status === 'failed')
+}
+
+function formatRefreshTime(value: Date) {
+  return value.toLocaleTimeString('zh-CN', {
+    hour12: false,
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  })
 }
 
 function DeletePolicyCard({

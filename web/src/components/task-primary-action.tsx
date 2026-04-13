@@ -12,8 +12,10 @@ export function TaskPrimaryAction({
   canStartRemainingCode,
   codeActionLabel,
   codeStarting,
+  lastRefreshedAt,
   planActionLabel,
   planStarting,
+  polling,
   remainingReposCount,
   resetting,
   archiving,
@@ -34,8 +36,10 @@ export function TaskPrimaryAction({
   canStartRemainingCode: boolean
   codeActionLabel: string
   codeStarting: boolean
+  lastRefreshedAt: string
   planActionLabel: string
   planStarting: boolean
+  polling: boolean
   remainingReposCount: number
   resetting: boolean
   archiving: boolean
@@ -61,6 +65,8 @@ export function TaskPrimaryAction({
         <MiniStat label="已完成" value={`${codedCount}`} />
         <MiniStat label="处理中断" value={`${failedCount + runningCount}`} />
       </div>
+
+      {polling ? <RunningStatusCard status={task.status} lastRefreshedAt={lastRefreshedAt} /> : null}
 
       {task.status === 'initialized' ? (
         <NoticeBox tone="amber">需求正在整理中。若停留时间过长，可先查看 `refine.log`。</NoticeBox>
@@ -213,6 +219,50 @@ function SecondaryButton({
 
 function InlineHint({ children }: { children: string }) {
   return <span className="self-center text-xs text-emerald-50/65">{children}</span>
+}
+
+function RunningStatusCard({
+  status,
+  lastRefreshedAt,
+}: {
+  status: TaskRecord['status']
+  lastRefreshedAt: string
+}) {
+  return (
+    <div className="mt-4 overflow-hidden rounded-[22px] border border-white/12 bg-black/25">
+      <div className="h-1 w-full overflow-hidden bg-white/6">
+        <div className="h-full w-1/3 animate-pulse rounded-full bg-emerald-300/90" />
+      </div>
+      <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+        <div className="flex items-center gap-3">
+          <span className="relative flex h-3 w-3">
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-300/70" />
+            <span className="relative inline-flex h-3 w-3 rounded-full bg-emerald-300" />
+          </span>
+          <div>
+            <div className="text-sm font-semibold text-white">{runningHeadline(status)}</div>
+            <div className="mt-1 text-xs text-emerald-50/70">页面正在每 2.5 秒自动刷新任务状态和日志内容。</div>
+          </div>
+        </div>
+        <div className="rounded-full border border-white/10 bg-white/[0.05] px-3 py-1 text-[11px] uppercase tracking-[0.18em] text-emerald-100/85">
+          最近同步 {lastRefreshedAt || '--:--:--'}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function runningHeadline(status: TaskRecord['status']) {
+  switch (status) {
+    case 'initialized':
+      return 'Refine 正在后台运行'
+    case 'planning':
+      return 'Plan 正在后台运行'
+    case 'coding':
+      return 'Code 正在后台运行'
+    default:
+      return '任务正在后台运行'
+  }
 }
 
 function primaryHeadline(task: TaskRecord) {

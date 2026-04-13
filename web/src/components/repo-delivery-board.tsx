@@ -19,6 +19,7 @@ export function RepoDeliveryBoard({
   resettingRepo,
   archivingRepo,
   hasGeneratedPlan,
+  polling,
   onArchive,
   onReset,
   onReviewDiff,
@@ -31,6 +32,7 @@ export function RepoDeliveryBoard({
   resettingRepo: string | null
   archivingRepo: string | null
   hasGeneratedPlan: boolean
+  polling: boolean
   onArchive: (repoId: string) => Promise<void>
   onReset: (repoId: string) => Promise<void>
   onReviewDiff: (repoId: string) => void
@@ -65,6 +67,7 @@ export function RepoDeliveryBoard({
             canStartCode={task.repos.length > 1 && canStartCodeForRepo(repo, hasGeneratedPlan)}
             codeStarting={codeStartingRepo === repo.id}
             key={repo.id}
+            polling={polling}
             onArchive={onArchive}
             onReset={onReset}
             onReviewDiff={onReviewDiff}
@@ -85,6 +88,7 @@ function RepoDeliveryCard({
   canReset,
   canArchive,
   codeStarting,
+  polling,
   resetting,
   archiving,
   actionBusy,
@@ -99,6 +103,7 @@ function RepoDeliveryCard({
   canReset: boolean
   canArchive: boolean
   codeStarting: boolean
+  polling: boolean
   resetting: boolean
   archiving: boolean
   actionBusy: boolean
@@ -119,7 +124,18 @@ function RepoDeliveryCard({
           <div className="mt-1 text-[11px] uppercase tracking-[0.2em] text-stone-500 dark:text-stone-400">{repo.id}</div>
           <div className="mt-3 text-sm leading-6 text-stone-600 dark:text-stone-300">{repoDeliverySummary(repo)}</div>
         </div>
-        <RepoStatusBadge status={repo.status} />
+        <div className="flex items-center gap-2">
+          {polling && (repo.status === 'coding' || codeStarting) ? (
+            <span className="flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-700 dark:border-emerald-300/20 dark:bg-emerald-400/10 dark:text-emerald-100">
+              <span className="relative flex h-2.5 w-2.5">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400/70" />
+                <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500 dark:bg-emerald-300" />
+              </span>
+              Live
+            </span>
+          ) : null}
+          <RepoStatusBadge status={repo.status} />
+        </div>
       </div>
 
       {repo.failureHint ? (
