@@ -215,7 +215,7 @@ func PrepareAgentCode(repoRoot, taskID string) (taskDir string, err error) {
 		return "", err
 	}
 
-	if task.Metadata.Status != TaskStatusPlanned && task.Metadata.Status != TaskStatusCoded {
+	if task.Metadata.Status != TaskStatusPlanned && task.Metadata.Status != TaskStatusCoding && task.Metadata.Status != TaskStatusCoded {
 		return "", fmt.Errorf("task 状态为 %s，需要先执行 coco-ext prd plan 使其达到 planned 状态", task.Metadata.Status)
 	}
 

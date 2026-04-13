@@ -73,7 +73,7 @@ func runPRDArchive(cmd *cobra.Command, args []string) error {
 				}
 			}
 			if repo.Branch != "" {
-				deleted := deleteBranchQuiet(repoRoot, repo.Branch)
+				deleted := prd.DeleteBranchQuiet(repoRoot, repo.Branch)
 				branchDeleted = branchDeleted || deleted
 				if deleted {
 					color.Green("   ✓ 已删除分支 %s", repo.Branch)
@@ -100,7 +100,7 @@ func runPRDArchive(cmd *cobra.Command, args []string) error {
 			}
 		}
 		if repo.Branch != "" {
-			branchDeleted = deleteBranchQuiet(repoRoot, repo.Branch)
+			branchDeleted = prd.DeleteBranchQuiet(repoRoot, repo.Branch)
 			if branchDeleted {
 				color.Green("   ✓ 已删除分支 %s", repo.Branch)
 			}

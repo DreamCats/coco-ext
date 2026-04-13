@@ -19,6 +19,7 @@ type RepoView struct {
 	Worktree     string    `json:"worktree,omitempty"`
 	Commit       string    `json:"commit,omitempty"`
 	Build        string    `json:"build,omitempty"`
+	FailureHint  string    `json:"failureHint,omitempty"`
 	FilesWritten []string  `json:"filesWritten,omitempty"`
 	DiffSummary  *DiffView `json:"diffSummary,omitempty"`
 }
@@ -85,10 +86,10 @@ type RemoteDirEntry struct {
 var uiArtifactOrder = []string{
 	"prd.source.md",
 	"prd-refined.md",
-	"refine.log",
 	"design.md",
 	"plan.md",
-	"plan.log",
 	"code-result.json",
+	"refine.log",
+	"plan.log",
 	"code.log",
 }

@@ -95,7 +95,7 @@ coco-ext ui serve
 - [`internal/knowledge/`](/Users/bytedance/go/src/coco-ext/internal/knowledge)：`.livecoding/context/` 读写
 - [`internal/review/`](/Users/bytedance/go/src/coco-ext/internal/review)：facts → scope → release → impact → quality → summary 管线
 - [`internal/prd/`](/Users/bytedance/go/src/coco-ext/internal/prd)：refine / plan / code / archive / status / list
-- [`internal/ui/`](/Users/bytedance/go/src/coco-ext/internal/ui)：本地 Web UI 的 HTTP API、静态资源托管与 task 创建/删除/plan 动作
+- [`internal/ui/`](/Users/bytedance/go/src/coco-ext/internal/ui)：本地 Web UI 的 HTTP API、静态资源托管与 task 创建/删除/plan/code/reset/archive 动作
 - [`internal/lint/`](/Users/bytedance/go/src/coco-ext/internal/lint)：`golangci-lint` 执行与结果落盘
 - [`internal/git/`](/Users/bytedance/go/src/coco-ext/internal/git)：diff、branch、commit 等 git 封装
 - [`internal/metrics/`](/Users/bytedance/go/src/coco-ext/internal/metrics)：本地事件采集
@@ -176,11 +176,18 @@ coco-ext ui serve
 - 当前写操作与 repo 选择能力：
   - `POST /api/tasks`：Web UI 创建 task，后台异步 refine
   - `POST /api/tasks/:task_id/plan`：Web UI 触发后台异步 plan，产出 `design.md`、`plan.md` 与 `plan.log`
+  - `POST /api/tasks/:task_id/code`：Web UI 触发后台异步 code；单 repo task 直接执行，多 repo task 通过 `?repo=<repo_id>` 按仓库推进，产出 `code.log`、`code-result.json`、diff 与 commit 信息
+  - `POST /api/tasks/:task_id/code-all`：Web UI 按仓库顺序批量推进剩余 repo 的 code，失败即停
+  - `POST /api/tasks/:task_id/reset`：Web UI 回退 code 结果；多 repo task 通过 `?repo=<repo_id>` 按仓库清理分支/worktree/diff，并按 repo 状态重新聚合 task
+  - `POST /api/tasks/:task_id/archive`：Web UI 归档 code 结果；多 repo task 通过 `?repo=<repo_id>` 按仓库清理分支/worktree，并按 repo 状态重新聚合 task
+  - `GET /api/tasks/:task_id/artifact?name=...&repo=...`：按需读取 task 级或 repo 级 artifact；多 repo 下 `code.log` / `code-result.json` 支持仓库切换
   - `DELETE /api/tasks/:task_id`：仅允许删除未进入 code 的 task
   - `GET /api/repos/recent`：recent repos
   - `POST /api/repos/validate`：手动路径校验并加入 repo
   - `GET /api/fs/roots` / `GET /api/fs/list?path=...`：远程开发机上的目录浏览
 - Web UI 创建 task 时不会自动把当前仓库加入 repo scope，必须显式选择至少一个 repo
+- Web UI 当前支持在多 repo task 中按 repo 逐个执行 `code` / `reset` / `archive`
+- Web UI 当前的 `reset` 只支持 `coded/failed` 状态，暂不支持在 `coding` 中途直接中断
 - 正式安装态默认使用内嵌静态前端资源；开发态可通过 `--web-dir` 覆盖静态目录
 
 ## 关键约定

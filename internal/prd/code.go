@@ -83,13 +83,17 @@ type CodeDiffSummary struct {
 	Deletions int      `json:"deletions"`
 }
 
+func repoCodeLogPath(taskDir, repoID string) string {
+	return filepath.Join(taskDir, "code-logs", sanitizeRepoResultFileName(repoID)+".log")
+}
+
 // WriteCodeResultReport 将结果写入 task 目录的 code-result.json。
 func WriteCodeResultReport(taskDir string, report CodeResultReport) error {
 	if err := writeJSONFile(filepath.Join(taskDir, "code-result.json"), report); err != nil {
 		return err
 	}
 	if report.RepoID != "" {
-		if err := writeJSONFile(filepath.Join(taskDir, "code-results", sanitizeRepoResultFileName(report.RepoID)+".json"), report); err != nil {
+		if err := writeJSONFile(repoCodeResultPath(taskDir, report.RepoID), report); err != nil {
 			return err
 		}
 	}
@@ -111,7 +115,7 @@ func ReadCodeResultReport(taskDir string) (*CodeResultReport, error) {
 
 // ReadRepoCodeResultReport 读取某个 repo 的 code result。
 func ReadRepoCodeResultReport(taskDir, repoID string) (*CodeResultReport, error) {
-	data, err := os.ReadFile(filepath.Join(taskDir, "code-results", sanitizeRepoResultFileName(repoID)+".json"))
+	data, err := os.ReadFile(repoCodeResultPath(taskDir, repoID))
 	if err != nil {
 		return nil, err
 	}
@@ -120,6 +124,37 @@ func ReadRepoCodeResultReport(taskDir, repoID string) (*CodeResultReport, error)
 		return nil, err
 	}
 	return &report, nil
+}
+
+func ReadRepoCodeResultRaw(taskDir, repoID string) (string, error) {
+	data, err := os.ReadFile(repoCodeResultPath(taskDir, repoID))
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+
+func WriteRepoCodeLog(taskDir, repoID, content string) error {
+	repoID = strings.TrimSpace(repoID)
+	if repoID == "" {
+		return nil
+	}
+	path := repoCodeLogPath(taskDir, repoID)
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return fmt.Errorf("创建 code-logs 目录失败: %w", err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		return fmt.Errorf("写入 repo code log 失败: %w", err)
+	}
+	return nil
+}
+
+func ReadRepoCodeLog(taskDir, repoID string) (string, error) {
+	data, err := os.ReadFile(repoCodeLogPath(taskDir, repoID))
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
 }
 
 func repoDiffPatchPath(taskDir, repoID string) string {
@@ -178,6 +213,19 @@ func ReadRepoDiffSummary(taskDir, repoID string) (*CodeDiffSummary, error) {
 		return nil, err
 	}
 	return &summary, nil
+}
+
+func RemoveRepoDiffArtifacts(taskDir, repoID string) error {
+	patchPath := repoDiffPatchPath(taskDir, repoID)
+	if err := os.Remove(patchPath); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+
+	summaryPath := repoDiffSummaryPath(taskDir, repoID)
+	if err := os.Remove(summaryPath); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
 }
 
 func parseUnifiedDiffStats(patch string) (additions, deletions int) {

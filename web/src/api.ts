@@ -31,6 +31,7 @@ export type RepoResult = {
   worktree?: string
   commit?: string
   build?: 'passed' | 'failed' | 'n/a'
+  failureHint?: string
   filesWritten?: string[]
   diffSummary?: {
     repoId: string
@@ -89,6 +90,13 @@ export type RepoCandidate = {
   path: string
   taskCount?: number
   lastSeenAt?: string
+}
+
+export type ArtifactResponse = {
+  task_id: string
+  repo_id?: string
+  name: string
+  content: string
 }
 
 export type RemoteRoot = {
@@ -161,6 +169,66 @@ export async function startPlan(taskId: string) {
     throw new Error(body?.error || '启动 plan 失败')
   }
   return response.json() as Promise<{ task_id: string; status: string }>
+}
+
+export async function startCode(taskId: string, repoId?: string) {
+  const response = await fetch(buildTaskActionPath(taskId, 'code', repoId), {
+    method: 'POST',
+  })
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { error?: string } | null
+    throw new Error(body?.error || '启动实现失败')
+  }
+  return response.json() as Promise<{ task_id: string; status: string }>
+}
+
+export async function startRemainingCode(taskId: string) {
+  const response = await fetch(`/api/tasks/${taskId}/code-all`, {
+    method: 'POST',
+  })
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { error?: string } | null
+    throw new Error(body?.error || '启动批量实现失败')
+  }
+  return response.json() as Promise<{ task_id: string; status: string }>
+}
+
+export async function resetCode(taskId: string, repoId?: string) {
+	const response = await fetch(buildTaskActionPath(taskId, 'reset', repoId), {
+		method: 'POST',
+	})
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { error?: string } | null
+    throw new Error(body?.error || '回退实现失败')
+	}
+	return response.json() as Promise<{ task_id: string; status: string }>
+}
+
+export async function archiveCode(taskId: string, repoId?: string) {
+	const response = await fetch(buildTaskActionPath(taskId, 'archive', repoId), {
+		method: 'POST',
+	})
+	if (!response.ok) {
+		const body = (await response.json().catch(() => null)) as { error?: string } | null
+		throw new Error(body?.error || '归档失败')
+	}
+	return response.json() as Promise<{ task_id: string; status: string }>
+}
+
+function buildTaskActionPath(taskId: string, action: 'code' | 'reset' | 'archive', repoId?: string) {
+  const path = `/api/tasks/${taskId}/${action}`
+  if (!repoId) {
+    return path
+  }
+  return `${path}?repo=${encodeURIComponent(repoId)}`
+}
+
+export async function getTaskArtifact(taskId: string, name: TaskArtifactName, repoId?: string) {
+  const params = new URLSearchParams({ name })
+  if (repoId) {
+    params.set('repo', repoId)
+  }
+  return fetchJSON<ArtifactResponse>(`/api/tasks/${taskId}/artifact?${params.toString()}`)
 }
 
 export async function listRecentRepos() {

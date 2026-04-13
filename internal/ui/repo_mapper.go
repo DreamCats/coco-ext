@@ -31,6 +31,7 @@ func buildRepoViews(taskDir string, repos *prd.ReposMetadata) []RepoView {
 			} else {
 				view.Build = "failed"
 			}
+			view.FailureHint = summarizeRepoFailure(report, taskDir, repo.ID)
 			view.FilesWritten = cleanFilesWritten(report.FilesWritten, repo.Path, repo.Worktree)
 			if view.Branch == "" {
 				view.Branch = report.Branch
@@ -62,6 +63,50 @@ func buildRepoViews(taskDir string, repos *prd.ReposMetadata) []RepoView {
 		result = append(result, view)
 	}
 	return result
+}
+
+func summarizeRepoFailure(report *prd.CodeResultReport, taskDir, repoID string) string {
+	if report == nil {
+		return ""
+	}
+	if hint := strings.TrimSpace(report.Error); hint != "" {
+		return hint
+	}
+	if report.BuildOK {
+		return ""
+	}
+
+	logContent, err := prd.ReadRepoCodeLog(taskDir, repoID)
+	if err != nil {
+		return ""
+	}
+
+	lines := strings.Split(logContent, "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		line := strings.TrimSpace(lines[i])
+		if line == "" {
+			continue
+		}
+		lower := strings.ToLower(line)
+		if strings.Contains(lower, "result: error") {
+			return trimFailureLogLine(line)
+		}
+		if strings.Contains(lower, "build failed") || strings.Contains(lower, "auto_commit_error") || strings.Contains(lower, "generate_code_with_agent_error") || strings.Contains(lower, "retry_") {
+			return trimFailureLogLine(line)
+		}
+		if strings.Contains(lower, "error") || strings.Contains(lower, "failed") {
+			return trimFailureLogLine(line)
+		}
+	}
+	return ""
+}
+
+func trimFailureLogLine(line string) string {
+	line = strings.TrimSpace(line)
+	if len(line) > 140 {
+		return line[:140] + "..."
+	}
+	return line
 }
 
 func collectRepoIDs(repos *prd.ReposMetadata) []string {

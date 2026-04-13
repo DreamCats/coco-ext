@@ -12,19 +12,46 @@ import (
 func readTaskArtifacts(taskDir string) map[string]string {
 	artifacts := make(map[string]string, len(uiArtifactOrder))
 	for _, name := range uiArtifactOrder {
-		data, err := os.ReadFile(filepath.Join(taskDir, name))
-		if err != nil {
-			artifacts[name] = missingArtifactPlaceholder(name)
-			continue
-		}
-		content := strings.TrimSpace(string(data))
-		if content == "" {
-			artifacts[name] = emptyArtifactPlaceholder(name)
-			continue
-		}
-		artifacts[name] = string(data)
+		artifacts[name] = readTaskArtifact(taskDir, name)
 	}
 	return artifacts
+}
+
+func readTaskArtifact(taskDir, name string) string {
+	data, err := os.ReadFile(filepath.Join(taskDir, name))
+	if err != nil {
+		return missingArtifactPlaceholder(name)
+	}
+	content := strings.TrimSpace(string(data))
+	if content == "" {
+		return emptyArtifactPlaceholder(name)
+	}
+	return string(data)
+}
+
+func readRepoArtifact(taskDir, repoID, name string) (string, error) {
+	switch name {
+	case "code.log":
+		content, err := prd.ReadRepoCodeLog(taskDir, repoID)
+		if err != nil {
+			return "", err
+		}
+		if strings.TrimSpace(content) == "" {
+			return emptyRepoArtifactPlaceholder(name, repoID), nil
+		}
+		return content, nil
+	case "code-result.json":
+		content, err := prd.ReadRepoCodeResultRaw(taskDir, repoID)
+		if err != nil {
+			return "", err
+		}
+		if strings.TrimSpace(content) == "" {
+			return emptyRepoArtifactPlaceholder(name, repoID), nil
+		}
+		return content, nil
+	default:
+		return "", fmt.Errorf("repo 级 artifact 暂不支持 %s", name)
+	}
 }
 
 func buildTimeline(status string) []TaskTimelineItem {
@@ -113,4 +140,15 @@ func emptyArtifactPlaceholder(name string) string {
 		return "当前没有可用的 code.log。可能这个 task 是旧数据，或尚未进入 code 阶段。"
 	}
 	return fmt.Sprintf("`%s` 当前为空。", name)
+}
+
+func emptyRepoArtifactPlaceholder(name, repoID string) string {
+	switch name {
+	case "code.log":
+		return fmt.Sprintf("repo `%s` 当前没有可用的 code.log。可能尚未执行实现，或日志尚未生成。", repoID)
+	case "code-result.json":
+		return fmt.Sprintf("repo `%s` 当前没有可用的 code-result.json。可能尚未执行实现。", repoID)
+	default:
+		return fmt.Sprintf("repo `%s` 的 `%s` 当前为空。", repoID, name)
+	}
 }

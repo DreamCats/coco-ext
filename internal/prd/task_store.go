@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/DreamCats/coco-ext/internal/config"
 )
@@ -273,6 +274,22 @@ func ResetRepoBinding(taskDir, repoID string) error {
 	})
 }
 
+func StartCodingRepoBinding(taskDir, repoID, branchName, worktree string) error {
+	return updateRepoBinding(taskDir, repoID, func(repo *RepoBinding) {
+		repo.Status = TaskStatusCoding
+		repo.Branch = branchName
+		repo.Worktree = worktree
+	})
+}
+
+func MarkRepoBindingFailed(taskDir, repoID, branchName, worktree string) error {
+	return updateRepoBinding(taskDir, repoID, func(repo *RepoBinding) {
+		repo.Status = TaskStatusFailed
+		repo.Branch = firstNonEmpty(branchName, repo.Branch)
+		repo.Worktree = firstNonEmpty(worktree, repo.Worktree)
+	})
+}
+
 func ArchiveRepoBinding(taskDir, repoID string) error {
 	return updateRepoBinding(taskDir, repoID, func(repo *RepoBinding) {
 		repo.Status = TaskStatusArchived
@@ -289,6 +306,14 @@ func listRepoBindings(taskDir string) ([]RepoBinding, error) {
 
 func RemoveRepoCodeResult(taskDir, repoID string) error {
 	path := repoCodeResultPath(taskDir, repoID)
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
+}
+
+func RemoveRepoCodeLog(taskDir, repoID string) error {
+	path := repoCodeLogPath(taskDir, repoID)
 	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
 		return err
 	}
@@ -350,6 +375,7 @@ func syncTaskMetadataFromRepos(taskDir string) error {
 	}
 
 	meta.RepoCount = len(reposMeta.Repos)
+	meta.UpdatedAt = time.Now()
 	if aggregate := aggregateTaskStatus(meta.Status, reposMeta); aggregate != "" {
 		meta.Status = aggregate
 	}
@@ -365,14 +391,17 @@ func aggregateTaskStatus(current string, repos *ReposMetadata) string {
 	allPlannedLike := true
 	hasCoding := false
 	hasCoded := false
+	hasCompleted := false
 	hasFailed := false
 
 	for _, repo := range repos.Repos {
 		switch repo.Status {
 		case TaskStatusArchived:
+			hasCompleted = true
 			allPlannedLike = false
 		case TaskStatusCoded:
 			hasCoded = true
+			hasCompleted = true
 			allArchived = false
 			allPlannedLike = false
 		case TaskStatusCoding:
@@ -398,6 +427,8 @@ func aggregateTaskStatus(current string, repos *ReposMetadata) string {
 		return TaskStatusFailed
 	case hasCoding:
 		return TaskStatusCoding
+	case hasCompleted && !allCodedOrArchived(repos):
+		return TaskStatusPartiallyCoded
 	case hasCoded && !allCodedOrArchived(repos):
 		return TaskStatusPartiallyCoded
 	case hasCoded && allCodedOrArchived(repos):

@@ -52,6 +52,10 @@ func (s *Server) handleTaskDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if action != "" {
+		if action == "artifact" {
+			s.handleTaskArtifact(w, r, taskID)
+			return
+		}
 		s.handleTaskAction(w, r, taskID, action)
 		return
 	}
@@ -106,4 +110,55 @@ func parseTaskPath(path string) (taskID string, action string) {
 		action = strings.TrimSpace(parts[1])
 	}
 	return taskID, action
+}
+
+func (s *Server) handleTaskArtifact(w http.ResponseWriter, r *http.Request, taskID string) {
+	if r.Method != http.MethodGet {
+		writeJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	report, err := prd.LoadTaskStatus(s.repoRoot, taskID)
+	if err != nil {
+		writeJSONError(w, http.StatusNotFound, err.Error())
+		return
+	}
+
+	name := strings.TrimSpace(r.URL.Query().Get("name"))
+	if name == "" {
+		writeJSONError(w, http.StatusBadRequest, "missing artifact name")
+		return
+	}
+
+	repoID := strings.TrimSpace(r.URL.Query().Get("repo"))
+	if repoID == "" {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"task_id": taskID,
+			"name":    name,
+			"content": readTaskArtifact(report.TaskDir, name),
+		})
+		return
+	}
+
+	if _, err := resolveActionRepo(report, repoID); err != nil {
+		writeJSONError(w, http.StatusConflict, err.Error())
+		return
+	}
+
+	content, err := readRepoArtifact(report.TaskDir, repoID, name)
+	if err != nil {
+		if os.IsNotExist(err) {
+			content = emptyRepoArtifactPlaceholder(name, repoID)
+		} else {
+			writeJSONError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"task_id": taskID,
+		"repo_id": repoID,
+		"name":    name,
+		"content": content,
+	})
 }
