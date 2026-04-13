@@ -1,12 +1,14 @@
-# coco-ext
+# coco-flow
 
-面向仓库的 AI 开发工作流工具箱。除了生成和维护 `.livecoding/context/` 业务上下文，还提供 PRD refine/plan、代码 review、提交辅助、push 包装和本地 metrics 聚合能力。
+> 当前仓库与二进制技术名仍为 `coco-ext`，本文中的产品定位与目标名称统一按 `coco-flow` 表述；命令示例暂仍使用 `coco-ext`。
 
-## 为什么需要 coco-ext？
+`coco-flow` 是一个面向代码仓库的 AI 研发工作流工具，提供 context、PRD task、plan/code、review、submit/push、metrics 和本地 Web UI 能力。
+
+## 为什么需要 coco-flow？
 
 团队仓库业务知识复杂度高，AI agent 对代码理解强但缺乏业务上下文；同时，PRD 落地、review、commit、push 等研发动作也缺少统一的仓库内工作流。
 
-coco-ext 解决这个问题：自动沉淀仓库上下文 → 基于 PRD 生成 task 产物 → 对代码变更执行 review → 辅助 commit / push → 产出本地可观测 metrics。
+`coco-flow` 解决这个问题：自动沉淀仓库上下文 → 基于 PRD 生成 task 产物 → 对代码变更执行 review → 辅助 commit / push → 产出本地可观测 metrics。
 
 ## 知识文件
 

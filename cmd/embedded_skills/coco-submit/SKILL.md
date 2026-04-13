@@ -5,7 +5,7 @@ description: 当需要基于 staged 变更自动生成 commit message、执行 g
 
 # coco-submit
 
-用于执行一条受控的提交工作流：只处理已 staged 的变更，自动生成 commit message，提交成功后再执行 `coco-ext push`。
+用于执行 `coco-flow` 的一条受控提交流程：当前技术名与命令名仍为 `coco-ext`；只处理已 staged 的变更，自动生成 commit message，提交成功后再执行 `coco-ext push`。
 
 ## 何时使用
 

@@ -8,8 +8,8 @@ import (
 
 var rootCmd = &cobra.Command{
 	Use:   "coco-ext",
-	Short: "coco 扩展工具箱",
-	Long:  "coco-ext 通过 AI 自动扫描分析仓库，生成并维护 .livecoding/context/ 目录下的业务知识文件，让 AI 编码具备业务上下文。",
+	Short: "仓库级 AI 研发工作流工具",
+	Long:  "coco-flow（当前技术名：coco-ext）是一个面向代码仓库的 AI 研发工作流工具，提供 context、PRD task、plan/code、review、submit/push、metrics 和本地 Web UI 能力。",
 }
 
 // Execute 执行根命令

@@ -5,7 +5,7 @@ description: 当需要审查当前 commit、分支整体变更，或排查 .live
 
 # coco-review
 
-用于生成和查看代码审查报告。默认建议通过 `coco-ext push` 在 push 成功后后台触发 review；skill 负责说明何时手动补跑、如何查看产物、以及异常时如何定位。
+用于生成和查看 `coco-flow` 的代码审查报告。当前技术名与命令名仍为 `coco-ext`；默认建议通过 `coco-ext push` 在 push 成功后后台触发 review；skill 负责说明何时手动补跑、如何查看产物、以及异常时如何定位。
 
 ## 何时使用
 

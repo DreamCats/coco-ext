@@ -2,11 +2,13 @@
 
 本文件面向在 `coco-ext` 仓库内协作的 AI agent。目标是先给出当前仓库的事实性上下文，再约束默认工作方式，避免继续沿用过时假设。
 
+当前产品定位与目标名称统一按 `coco-flow` 表述；仓库名、Go 模块、CLI 二进制名和本地目录等技术标识当前仍为 `coco-ext`。
+
 如本文与代码不一致，以代码为准，并在完成改动后同步更新本文。
 
 ## 仓库上下文
 
-- 项目名称：`coco-ext`
+- 项目名称：`coco-flow`（当前技术名：`coco-ext`）
 - Go 模块：`github.com/DreamCats/coco-ext`
 - Go 版本：`1.24.11`
 - 维护人：Maifeng `<maifeng@bytedance.com>`

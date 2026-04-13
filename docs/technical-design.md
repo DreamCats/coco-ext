@@ -1,14 +1,16 @@
-# coco-ext 技术设计文档
+# coco-flow 技术设计文档
 
 > 日期：2026-03-22
 > 状态：Draft
 > 作者：maifeng
 
+> 当前技术名与命令名仍为 `coco-ext`；本文更多反映项目早期围绕 context 的设计思路。
+
 ---
 
 ## 1. 项目定位
 
-coco-ext 是一个仓库级代码上下文知识库生成工具。CLI 命令名为 `coco-ext`。通过调用 coco ACP 的代码理解能力，自动扫描分析目标仓库，生成并维护 `.livecoding/context/` 目录下的业务知识文件，让后续 AI 编码具备业务上下文。
+`coco-flow`（当前技术名：`coco-ext`）最初以仓库级代码上下文知识库生成为核心。CLI 命令名当前仍为 `coco-ext`。本文描述的是项目早期通过调用 coco ACP 的代码理解能力，自动扫描分析目标仓库并维护 `.livecoding/context/` 的设计思路。
 
 ## 2. 核心命令
 

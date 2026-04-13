@@ -1,14 +1,14 @@
-# coco-ext Web UI 技术栈与视觉风格建议
+# coco-flow Web UI 技术栈与视觉风格建议
 
 > 日期：2026-04-11
 > 状态：Draft
-> 目标：为 `coco-ext` Web UI 一期确定推荐技术栈、前后端分工和页面风格方向，避免一开始陷入“先写个页面看看”的临时实现。
+> 目标：为 `coco-flow` Web UI 一期确定推荐技术栈、前后端分工和页面风格方向，避免一开始陷入“先写个页面看看”的临时实现。当前技术名与命令名仍为 `coco-ext`。
 
 ---
 
 ## 1. 结论
 
-如果今天开始做 `coco-ext` Web UI，一期推荐方案是：
+如果今天开始做 `coco-flow` Web UI，一期推荐方案是：
 
 - **后端**：沿用 `coco-ext` 现有 Go CLI，增加本地 HTTP 服务能力
 - **前端**：`React + Vite + TanStack Router + Tailwind CSS + shadcn/ui`
@@ -27,9 +27,9 @@
 
 ## 2. 为什么后端继续用 Go
 
-`coco-ext` 当前的核心能力都在 Go 中：
+`coco-flow` 当前的核心能力都在 Go 中：
 
-- 读取 `.livecoding/tasks/`、`.livecoding/context/`
+- 读取 `~/.config/coco-ext/tasks/`、`.livecoding/context/`
 - 读取 `code-result.json`
 - 调用 `prd plan / code / reset / archive`
 - 管理 worktree、分支、最小编译

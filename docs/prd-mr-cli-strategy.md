@@ -1,8 +1,8 @@
-# coco-ext CLI 与 Coco CLI 协同方案
+# coco-flow CLI 与 Coco CLI 协同方案
 
 > 日期：2026-03-31
 > 状态：Draft
-> 目标：说明为什么 `coco-ext` 必须先做成稳定 CLI，再由 Coco CLI 作为交互入口承载 `PRD -> MR` 流程。
+> 目标：说明为什么 `coco-flow` 必须先做成稳定 CLI，再由 Coco CLI 作为交互入口承载 `PRD -> MR` 流程。当前技术名与命令名仍为 `coco-ext`。
 
 ---
 
@@ -16,11 +16,11 @@
 
 这会带来一个核心设计问题：
 
-**如果最终入口是 Coco CLI，为什么还要继续建设 `coco-ext` CLI？**
+**如果最终入口是 Coco CLI，为什么还要继续建设 `coco-flow` CLI？**
 
 答案是：
 
-**`coco-ext` 是基础设施，Coco CLI 是交互入口。**
+**`coco-flow` 是基础设施，Coco CLI 是交互入口。**
 
 两者分工不同：
 
@@ -117,14 +117,14 @@
                     │
                     ▼
 ┌────────────────────────────────────────────┐
-│                 coco-ext                   │
+│                coco-flow                   │
 │  稳定 CLI 能力层 / 状态机 / 产物管理        │
 └────────────────────────────────────────────┘
                     │
                     ▼
 ┌────────────────────────────────────────────┐
 │        git / daemon / hooks / skills       │
-│      .livecoding/tasks / reports / logs    │
+│ ~/.config/coco-ext/tasks / reports / logs  │
 └────────────────────────────────────────────┘
 ```
 
@@ -236,8 +236,8 @@ coco-ext prd run
 
 输出：
 
-- `.livecoding/tasks/{task-id}/prd.md`
-- `.livecoding/tasks/{task-id}/prd-refined.md`
+- `~/.config/coco-ext/tasks/{task-id}/prd.md`
+- `~/.config/coco-ext/tasks/{task-id}/prd-refined.md`
 
 #### `coco-ext prd assess`
 
@@ -360,7 +360,7 @@ initialized
 建议在 task 目录下增加一个元信息文件：
 
 ```text
-.livecoding/tasks/{task-id}/task.json
+~/.config/coco-ext/tasks/{task-id}/task.json
 ```
 
 示例：

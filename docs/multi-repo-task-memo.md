@@ -1,16 +1,16 @@
-# coco-ext 多仓任务架构备忘录
+# coco-flow 多仓任务架构备忘录
 
 > 日期：2026-04-11
 > 状态：Memo
-> 目标：明确 `coco-ext` 在支持多仓联动需求时，task 该如何建模、产物该放哪里，以及为什么当前阶段先不引入 `workspace-id`。
+> 目标：明确 `coco-flow` 在支持多仓联动需求时，task 该如何建模、产物该放哪里，以及为什么当前阶段先不引入 `workspace-id`。当前技术名与命令名仍为 `coco-ext`。
 
 ---
 
 ## 1. 背景
 
-当前 `coco-ext` 的 PRD 工作流主要围绕单仓场景构建：
+当前 `coco-flow` 的 PRD 工作流主要围绕单仓场景构建：
 
-- `task` 目录落在某个仓库的 `.livecoding/tasks/`
+- `task` 目录最初落在某个仓库的 `.livecoding/tasks/`
 - `refine / plan / code / reset / archive` 也都围绕单仓执行
 
 这在简单需求和中等需求里是可行的，但随着使用深入，会越来越频繁遇到以下场景：
@@ -37,7 +37,7 @@
 
 也就是说：
 
-- task 不再强绑定到某一个 repo 的 `.livecoding/tasks/`
+- task 不再强绑定到某一个 repo 的 `.livecoding/tasks/`，而是提升到 `~/.config/coco-ext/tasks/`
 - task 的主记录提升到全局目录
 - 每个 task 显式声明它关联的 repo 列表
 - 各 repo 的 code 结果、branch、worktree、commit 分别记录在 task 下

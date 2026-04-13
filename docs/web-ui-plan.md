@@ -1,14 +1,14 @@
-# coco-ext Web UI 一期规划
+# coco-flow Web UI 一期规划
 
 > 日期：2026-04-11
 > 状态：Draft
-> 目标：规划 `coco-ext` 的本地 Web UI 一期范围，使其既能支撑真实使用，也能支撑对外讲故事与演示。
+> 目标：规划 `coco-flow` 的本地 Web UI 一期范围，使其既能支撑真实使用，也能支撑对外讲故事与演示。当前技术名与命令名仍为 `coco-ext`。
 
 ---
 
 ## 1. 为什么现在做 Web UI
 
-`coco-ext` 的 CLI 和 PRD 工作流已经基本成型：
+`coco-flow` 的 CLI 和 PRD 工作流已经基本成型：
 
 - `refine -> plan -> code -> reset/archive` 链路可跑通
 - task 产物已经结构化落盘
@@ -21,7 +21,7 @@
    把 `PRD -> 设计 -> 计划 -> 代码 -> 收尾` 这条链路从终端命令，变成可回看、可展示、可讲故事的产品流程。
 
 2. **产物承载**
-   目前大量信息已经存在于 `.livecoding/tasks/`、`.livecoding/context/`、`.livecoding/review/`、`.livecoding/lint/` 中，但纯文件系统和终端不适合持续浏览。
+   目前大量信息已经存在于 `~/.config/coco-ext/tasks/`、`.livecoding/context/`、`.livecoding/review/`、`.livecoding/lint/` 中，但纯文件系统和终端不适合持续浏览。
 
 一句话总结：
 
@@ -160,7 +160,7 @@
 建议展示：
 
 - 仓库根目录
-- `.livecoding/tasks/` 路径
+- `~/.config/coco-ext/tasks/` 路径
 - `.coco-ext-worktree/` 根目录
 - 最近的 worktree 列表
 - 关联分支与 task_id

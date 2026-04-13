@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 项目简介
 
-coco-ext 是一个仓库级 AI 开发工作流工具箱，通过扫描代码仓库并借助 LLM（coco-acp-sdk daemon）自动生成知识文件，同时提供 PRD refine/plan、代码 review、commit/push 辅助、本地 metrics 聚合和 AGENTS.md 生成能力。
+`coco-flow`（当前技术名：`coco-ext`）是一个仓库级 AI 研发工作流工具，通过扫描代码仓库并借助 LLM（coco-acp-sdk daemon）自动生成知识文件，同时提供 PRD refine/plan、代码 review、commit/push 辅助、本地 metrics 聚合、AGENTS.md 生成和本地 Web UI 能力。
 
 ## 常用命令
 
@@ -96,10 +96,12 @@ internal/
 
 **doctor**：7 项检查（repository / workspace / hooks / tooling / skills / daemon / logs），`--fix` 可自动修复 hooks、skills、workspace 目录和 daemon。`--json` / `--verbose` 支持详细输出。
 
-**metrics**：聚合 `.livecoding/review/`、`.livecoding/tasks/`、`.livecoding/metrics/events.jsonl` 三类数据，输出 review 运行/评级分布、PRD task 状态/复杂度分布、submit/gcmsg 成功率。
+**metrics**：聚合 `.livecoding/review/`、`~/.config/coco-ext/tasks/`、`.livecoding/metrics/events.jsonl` 三类数据，输出 review 运行/评级分布、PRD task 状态/复杂度分布、submit/gcmsg 成功率。
 
 ## 关键约定
 
+- 产品目标名称：`coco-flow`
+- 当前技术名：`coco-ext`
 - Go 模块：`github.com/DreamCats/coco-ext`，Go 1.24.11
 - CLI 框架：Cobra（`spf13/cobra`）
 - 默认模型：`Doubao-Seed-2.0-Code`（字节跳动模型）
@@ -108,7 +110,7 @@ internal/
   - context init/update：5min（`ContextPromptTimeout`）
   - review：3min（`ReviewPromptTimeout`）
   - daemon 空闲退出：60min（可通过 `COCO_EXT_DAEMON_IDLE_TIMEOUT` 环境变量覆盖）
-- 目录约定：`.livecoding/context/`（知识库）、`.livecoding/review/`（review 产物）、`.livecoding/tasks/`（PRD task）、`.livecoding/metrics/`（事件日志）、`.livecoding/changelog/`（commit 优化历史）
+- 目录约定：`.livecoding/context/`（知识库）、`.livecoding/review/`（review 产物）、`~/.config/coco-ext/tasks/`（PRD task）、`.livecoding/metrics/`（事件日志）、`.livecoding/changelog/`（commit 优化历史）
 - scanner 跳过的目录：.git, .livecoding, vendor, node_modules, kitex_gen, dist, .idea, .vscode
 - prompt 和用户界面均为中文
 - 版本信息通过 Makefile ldflags 注入到 main 包变量
