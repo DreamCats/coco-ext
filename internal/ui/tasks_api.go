@@ -1,9 +1,11 @@
 package ui
 
 import (
+	"encoding/json"
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/DreamCats/coco-ext/internal/prd"
 )
@@ -113,7 +115,12 @@ func parseTaskPath(path string) (taskID string, action string) {
 }
 
 func (s *Server) handleTaskArtifact(w http.ResponseWriter, r *http.Request, taskID string) {
-	if r.Method != http.MethodGet {
+	switch r.Method {
+	case http.MethodGet:
+	case http.MethodPut:
+		s.handleUpdateTaskArtifact(w, r, taskID)
+		return
+	default:
 		writeJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
@@ -160,5 +167,48 @@ func (s *Server) handleTaskArtifact(w http.ResponseWriter, r *http.Request, task
 		"repo_id": repoID,
 		"name":    name,
 		"content": content,
+	})
+}
+
+type updateTaskArtifactRequest struct {
+	Content string `json:"content"`
+}
+
+func (s *Server) handleUpdateTaskArtifact(w http.ResponseWriter, r *http.Request, taskID string) {
+	var req updateTaskArtifactRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "invalid json body")
+		return
+	}
+
+	name := strings.TrimSpace(r.URL.Query().Get("name"))
+	if name == "" {
+		writeJSONError(w, http.StatusBadRequest, "missing artifact name")
+		return
+	}
+
+	if err := prd.UpdateTaskArtifact(s.repoRoot, taskID, name, req.Content, time.Now()); err != nil {
+		switch {
+		case os.IsNotExist(err), strings.Contains(err.Error(), "task 不存在"):
+			writeJSONError(w, http.StatusNotFound, err.Error())
+		case strings.Contains(err.Error(), "不支持编辑"), strings.Contains(err.Error(), "不能编辑"), strings.Contains(err.Error(), "不能为空"):
+			writeJSONError(w, http.StatusConflict, err.Error())
+		default:
+			writeJSONError(w, http.StatusInternalServerError, err.Error())
+		}
+		return
+	}
+
+	report, err := prd.LoadTaskStatus(s.repoRoot, taskID)
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"task_id": taskID,
+		"name":    name,
+		"status":  report.Metadata.Status,
+		"content": readTaskArtifact(report.TaskDir, name),
 	})
 }

@@ -99,6 +99,13 @@ export type ArtifactResponse = {
   content: string
 }
 
+export type UpdateArtifactResponse = {
+  task_id: string
+  name: string
+  status: TaskStatus
+  content: string
+}
+
 export type RemoteRoot = {
   label: string
   path: string
@@ -229,6 +236,20 @@ export async function getTaskArtifact(taskId: string, name: TaskArtifactName, re
     params.set('repo', repoId)
   }
   return fetchJSON<ArtifactResponse>(`/api/tasks/${taskId}/artifact?${params.toString()}`)
+}
+
+export async function updateTaskArtifact(taskId: string, name: TaskArtifactName, content: string) {
+  const params = new URLSearchParams({ name })
+  const response = await fetch(`/api/tasks/${taskId}/artifact?${params.toString()}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ content }),
+  })
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { error?: string } | null
+    throw new Error(body?.error || '保存文档失败')
+  }
+  return response.json() as Promise<UpdateArtifactResponse>
 }
 
 export async function listRecentRepos() {

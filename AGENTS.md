@@ -181,12 +181,14 @@ coco-ext ui serve
   - `POST /api/tasks/:task_id/reset`：Web UI 回退 code 结果；多 repo task 通过 `?repo=<repo_id>` 按仓库清理分支/worktree/diff，并按 repo 状态重新聚合 task
   - `POST /api/tasks/:task_id/archive`：Web UI 归档 code 结果；多 repo task 通过 `?repo=<repo_id>` 按仓库清理分支/worktree，并按 repo 状态重新聚合 task
   - `GET /api/tasks/:task_id/artifact?name=...&repo=...`：按需读取 task 级或 repo 级 artifact；多 repo 下 `code.log` / `code-result.json` 支持仓库切换
+  - `PUT /api/tasks/:task_id/artifact?name=...`：编辑 task 级 Markdown artifact；当前仅支持 `prd.source.md`、`prd-refined.md`、`design.md`、`plan.md`，并按编辑对象回退 task 状态与清理过期产物
   - `DELETE /api/tasks/:task_id`：仅允许删除未进入 code 的 task
   - `GET /api/repos/recent`：recent repos
   - `POST /api/repos/validate`：手动路径校验并加入 repo
   - `GET /api/fs/roots` / `GET /api/fs/list?path=...`：远程开发机上的目录浏览
 - Web UI 创建 task 时不会自动把当前仓库加入 repo scope，必须显式选择至少一个 repo
 - Web UI 当前支持在多 repo task 中按 repo 逐个执行 `code` / `reset` / `archive`
+- Web UI 当前支持在 task 详情页通过抽屉直接编辑 `source/refined/design/plan` 文档；其中 `source` 保存后回退到 `initialized`，`refined` 保存后回退到 `refined`，`design/plan` 仅允许在 `planned` 状态下编辑
 - Web UI 当前的 `reset` 只支持 `coded/failed` 状态，暂不支持在 `coding` 中途直接中断
 - 正式安装态默认使用内嵌静态前端资源；开发态可通过 `--web-dir` 覆盖静态目录
 

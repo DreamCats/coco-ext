@@ -15,11 +15,14 @@ export function TaskWorkbench({
   artifact,
   artifactContent,
   artifactRepo,
+  artifactSaving,
+  canEditArtifact,
   focusToken,
   forcedPane,
   lastRefreshedAt,
   onArtifactChange,
   onArtifactRepoChange,
+  onEditArtifact,
   onPaneChange,
   onSelectDiffRepo,
   polling,
@@ -29,11 +32,14 @@ export function TaskWorkbench({
   artifact: TaskArtifactName
   artifactContent: string
   artifactRepo: string
+  artifactSaving: boolean
+  canEditArtifact: boolean
   focusToken: number
   forcedPane: WorkbenchPane | null
   lastRefreshedAt: string
   onArtifactChange: (artifact: TaskArtifactName) => void
   onArtifactRepoChange: (repoId: string) => void
+  onEditArtifact: () => void
   onPaneChange?: (pane: WorkbenchPane) => void
   onSelectDiffRepo: (repoId: string) => void
   polling: boolean
@@ -143,10 +149,13 @@ export function TaskWorkbench({
 
           <ArtifactViewer
             artifact={artifact}
+            canEdit={canEditArtifact && !repoScopedArtifact && !artifactLive}
             content={artifactContent}
             isLive={artifactLive}
             liveLabel={artifactLive ? resolveLiveLabel(task.status) : ''}
             lastRefreshedAt={artifactLive ? lastRefreshedAt : ''}
+            onEdit={onEditArtifact}
+            saving={artifactSaving}
             sourcePath={repoScopedArtifact && activeRepoID ? `task/${task.id}/repos/${activeRepoID}/${artifact}` : undefined}
             taskID={task.id}
           />

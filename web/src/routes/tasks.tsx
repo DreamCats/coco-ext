@@ -10,6 +10,7 @@ import {
   resetCode,
   startCode,
   startPlan,
+  updateTaskArtifact,
   type RepoCandidate,
   type TaskArtifactName,
   type TaskListItem,
@@ -17,6 +18,7 @@ import {
   type TaskStatus,
 } from '../api'
 import { ActionPanel } from '../components/action-panel'
+import { ArtifactEditorDrawer } from '../components/artifact-editor-drawer'
 import { RepoPicker } from '../components/repo-picker'
 import { RepoDeliveryBoard } from '../components/repo-delivery-board'
 import { TaskPrimaryAction } from '../components/task-primary-action'
@@ -127,7 +129,7 @@ export function TasksLayout() {
       setCreateInput('')
       setCreateTitle('')
       setSelectedRepos([])
-      void navigate({ to: '/tasks/$taskId', params: { taskId: result.task_id } })
+      void navigate({ to: '/tasks/$taskId', params: { taskId: result.task_id }, resetScroll: false })
     } catch (err) {
       setCreateError(err instanceof Error ? err.message : '创建 task 失败')
     } finally {
@@ -353,6 +355,12 @@ export function TaskDetailPage() {
   const [resettingRepo, setResettingRepo] = useState<string | null>(null)
   const [archivingRepo, setArchivingRepo] = useState<string | null>(null)
   const [actionError, setActionError] = useState('')
+  const [editorOpen, setEditorOpen] = useState(false)
+  const [editorArtifact, setEditorArtifact] = useState<TaskArtifactName>('prd-refined.md')
+  const [editorDraft, setEditorDraft] = useState('')
+  const [editorInitial, setEditorInitial] = useState('')
+  const [editorSaving, setEditorSaving] = useState(false)
+  const [editorError, setEditorError] = useState('')
 
   useEffect(() => {
     let cancelled = false
@@ -384,6 +392,10 @@ export function TaskDetailPage() {
     setArtifact('prd-refined.md')
     setArtifactContent('')
     setWorkbenchForcedPane('docs')
+    setEditorOpen(false)
+    setEditorDraft('')
+    setEditorInitial('')
+    setEditorError('')
     void load()
     return () => {
       cancelled = true
@@ -490,6 +502,9 @@ export function TaskDetailPage() {
   const actionBusy = Boolean(planStarting || codeStartingRepo || batchCodeStarting || resettingRepo || archivingRepo)
   const polling = shouldContinuePolling(task, batchCodeStarting)
   const currentTask = task
+  const canEditArtifact = canEditTaskArtifact(task.status, artifact)
+  const editorDirty = editorDraft !== editorInitial
+  const editorCanSave = editorDraft.trim() !== '' && editorDirty && !editorSaving
 
   async function handleDeleteTask() {
     const confirmed = window.confirm(`确认删除 task ${currentTask.id}？仅允许删除未进入 code 的 task。`)
@@ -618,8 +633,54 @@ export function TaskDetailPage() {
     })
   }
 
+  function openArtifactEditor() {
+    if (!canEditArtifact) {
+      return
+    }
+    const initial = normalizeEditableContent(artifactContent)
+    setEditorArtifact(artifact)
+    setEditorDraft(initial)
+    setEditorInitial(initial)
+    setEditorError('')
+    setEditorOpen(true)
+  }
+
+  function closeArtifactEditor() {
+    if (editorSaving) {
+      return
+    }
+    if (editorDirty && !window.confirm('当前有未保存的修改，确认关闭编辑抽屉吗？')) {
+      return
+    }
+    setEditorOpen(false)
+    setEditorError('')
+  }
+
+  async function handleSaveArtifact() {
+    try {
+      setEditorSaving(true)
+      setEditorError('')
+      const targetArtifact = editorArtifact
+      const result = await updateTaskArtifact(currentTask.id, targetArtifact, editorDraft)
+      const detail = await getTask(currentTask.id)
+      setTask(detail)
+      setArtifact(targetArtifact)
+      setArtifactContent(result.content)
+      setLastRefreshedAt(formatRefreshTime(new Date()))
+      setWorkbenchForcedPane('docs')
+      setEditorOpen(false)
+      setEditorInitial(editorDraft)
+      await reload()
+    } catch (err) {
+      setEditorError(err instanceof Error ? err.message : '保存文档失败')
+    } finally {
+      setEditorSaving(false)
+    }
+  }
+
   return (
-    <div className="space-y-4 lg:h-full lg:overflow-y-auto lg:pr-1">
+    <>
+      <div className="space-y-4 lg:h-full lg:overflow-y-auto lg:pr-1">
       <section className="overflow-hidden rounded-[24px] border border-stone-200 bg-[#111317] text-white shadow-[0_30px_80px_rgba(15,23,42,0.18)]">
         <div className="border-b border-white/8 bg-[linear-gradient(135deg,_rgba(16,185,129,0.18),_transparent_38%),linear-gradient(180deg,_rgba(255,255,255,0.04),_rgba(255,255,255,0))] px-5 py-5">
           <div className="mb-3 flex flex-wrap items-center gap-2">
@@ -687,11 +748,14 @@ export function TaskDetailPage() {
             artifact={artifact}
             artifactContent={artifactContent}
             artifactRepo={artifactRepo}
+            artifactSaving={editorSaving}
+            canEditArtifact={canEditArtifact}
             focusToken={workbenchFocusToken}
             forcedPane={workbenchForcedPane}
             lastRefreshedAt={lastRefreshedAt}
             onArtifactChange={setArtifact}
             onArtifactRepoChange={setArtifactRepo}
+            onEditArtifact={openArtifactEditor}
             onPaneChange={setWorkbenchForcedPane}
             onSelectDiffRepo={handleRepoContextChange}
             polling={polling}
@@ -784,7 +848,20 @@ export function TaskDetailPage() {
           <DeletePolicyCard canDelete={canDelete} onDelete={canDelete ? handleDeleteTask : undefined} />
         </aside>
       </div>
-    </div>
+      </div>
+      <ArtifactEditorDrawer
+        artifact={editorArtifact}
+        busy={editorSaving}
+        canSave={editorCanSave}
+        error={editorError}
+        onChange={setEditorDraft}
+        onClose={closeArtifactEditor}
+        onSave={() => void handleSaveArtifact()}
+        open={editorOpen}
+        taskStatus={task.status}
+        value={editorDraft}
+      />
+    </>
   )
 }
 
@@ -867,6 +944,27 @@ function formatRefreshTime(value: Date) {
     minute: '2-digit',
     second: '2-digit',
   })
+}
+
+function canEditTaskArtifact(status: TaskStatus, artifact: TaskArtifactName) {
+  switch (artifact) {
+    case 'prd.source.md':
+      return status === 'initialized' || status === 'refined' || status === 'planned'
+    case 'prd-refined.md':
+      return status === 'refined' || status === 'planned'
+    case 'design.md':
+    case 'plan.md':
+      return status === 'planned'
+    default:
+      return false
+  }
+}
+
+function normalizeEditableContent(content: string) {
+  if (!hasActionableArtifact(content)) {
+    return ''
+  }
+  return content.replace(/\r\n/g, '\n')
 }
 
 function DeletePolicyCard({

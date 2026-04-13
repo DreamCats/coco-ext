@@ -3,18 +3,24 @@ import type { TaskArtifactName } from '../api'
 
 export function ArtifactViewer({
   artifact,
+  canEdit,
   content,
   isLive,
   lastRefreshedAt,
   liveLabel,
+  onEdit,
+  saving,
   taskID,
   sourcePath,
 }: {
   artifact: TaskArtifactName
+  canEdit?: boolean
   content: string
   isLive?: boolean
   lastRefreshedAt?: string
   liveLabel?: string
+  onEdit?: () => void
+  saving?: boolean
   taskID: string
   sourcePath?: string
 }) {
@@ -46,6 +52,16 @@ export function ArtifactViewer({
             {isLog ? 'Log' : isJSON ? 'JSON' : isMarkdown ? 'Markdown' : 'Text'}
           </span>
           <span>{lines} lines</span>
+          {canEdit ? (
+            <button
+              className="rounded-full border border-emerald-300/25 bg-emerald-400/10 px-3 py-1 text-emerald-100 transition hover:border-emerald-200/40 hover:bg-emerald-400/18 disabled:cursor-not-allowed disabled:opacity-60"
+              disabled={saving}
+              onClick={onEdit}
+              type="button"
+            >
+              {saving ? '保存中...' : '编辑'}
+            </button>
+          ) : null}
           <button
             className="rounded-full border border-white/10 px-3 py-1 text-stone-300 transition hover:border-white/20 hover:text-white"
             onClick={() => {

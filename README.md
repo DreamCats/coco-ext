@@ -111,6 +111,11 @@ coco-ext ui serve           # 启动 Web UI（默认 http://127.0.0.1:4317）
 coco-ext ui serve --port 4318
 ```
 
+Web UI 当前支持在 task 详情页直接查看并编辑 `prd.source.md`、`prd-refined.md`、`design.md`、`plan.md`。
+- 编辑 `prd.source.md` 后会清理下游 refined/design/plan 产物，并回退到 `initialized`
+- 编辑 `prd-refined.md` 后会清理 design/plan 产物，并回退到 `refined`
+- 编辑 `design.md` / `plan.md` 仅允许在 `planned` 状态下进行
+
 ## PRD 工作流
 
 ### 一键流水线
