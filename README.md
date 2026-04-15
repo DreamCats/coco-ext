@@ -321,3 +321,4 @@ coco-ext/
 ## License
 
 Internal use only.
+daemon chain smoke
