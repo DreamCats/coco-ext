@@ -104,10 +104,6 @@ func reposMetadataPath(taskDir string) string {
 	return filepath.Join(taskDir, "repos.json")
 }
 
-func repoCodeResultPath(taskDir, repoID string) string {
-	return filepath.Join(taskDir, "code-results", sanitizeRepoResultFileName(repoID)+".json")
-}
-
 func initTaskRepos(taskDir, repoRoot string, extraRepoPaths []string, autoAddRepo bool) error {
 	repos := make([]RepoBinding, 0, len(extraRepoPaths)+1)
 	seen := make(map[string]bool, len(extraRepoPaths)+1)
@@ -176,55 +172,6 @@ func updateReposMetadata(taskDir string, mutator func(*ReposMetadata)) error {
 	return writeJSONFile(path, meta)
 }
 
-func syncRepoBindingFromCodeResult(taskDir string, report CodeResultReport) error {
-	if strings.TrimSpace(report.RepoID) == "" {
-		return nil
-	}
-
-	if err := updateReposMetadata(taskDir, func(meta *ReposMetadata) {
-		found := false
-		for i := range meta.Repos {
-			if meta.Repos[i].ID != report.RepoID {
-				continue
-			}
-			meta.Repos[i].Path = firstNonEmpty(report.RepoPath, meta.Repos[i].Path)
-			meta.Repos[i].Status = deriveRepoStatus(report)
-			meta.Repos[i].Branch = report.Branch
-			meta.Repos[i].Worktree = report.Worktree
-			meta.Repos[i].Commit = report.Commit
-			found = true
-			break
-		}
-
-		if !found {
-			meta.Repos = append(meta.Repos, RepoBinding{
-				ID:       report.RepoID,
-				Path:     report.RepoPath,
-				Status:   deriveRepoStatus(report),
-				Branch:   report.Branch,
-				Worktree: report.Worktree,
-				Commit:   report.Commit,
-			})
-		}
-	}); err != nil {
-		return err
-	}
-	return syncTaskMetadataFromRepos(taskDir)
-}
-
-func deriveRepoStatus(report CodeResultReport) string {
-	if report.Status == "success" && report.BuildOK {
-		return TaskStatusCoded
-	}
-	if report.Status == "build_unknown" {
-		return TaskStatusFailed
-	}
-	if report.Status != "" {
-		return report.Status
-	}
-	return TaskStatusPlanned
-}
-
 func deriveRepoID(repoRoot string) string {
 	repoRoot = filepath.Clean(repoRoot)
 	base := filepath.Base(repoRoot)
@@ -265,59 +212,12 @@ func updateRepoBinding(taskDir, repoID string, mutator func(*RepoBinding)) error
 	return syncTaskMetadataFromRepos(taskDir)
 }
 
-func ResetRepoBinding(taskDir, repoID string) error {
-	return updateRepoBinding(taskDir, repoID, func(repo *RepoBinding) {
-		repo.Status = TaskStatusPlanned
-		repo.Branch = ""
-		repo.Worktree = ""
-		repo.Commit = ""
-	})
-}
-
-func StartCodingRepoBinding(taskDir, repoID, branchName, worktree string) error {
-	return updateRepoBinding(taskDir, repoID, func(repo *RepoBinding) {
-		repo.Status = TaskStatusCoding
-		repo.Branch = branchName
-		repo.Worktree = worktree
-	})
-}
-
-func MarkRepoBindingFailed(taskDir, repoID, branchName, worktree string) error {
-	return updateRepoBinding(taskDir, repoID, func(repo *RepoBinding) {
-		repo.Status = TaskStatusFailed
-		repo.Branch = firstNonEmpty(branchName, repo.Branch)
-		repo.Worktree = firstNonEmpty(worktree, repo.Worktree)
-	})
-}
-
-func ArchiveRepoBinding(taskDir, repoID string) error {
-	return updateRepoBinding(taskDir, repoID, func(repo *RepoBinding) {
-		repo.Status = TaskStatusArchived
-	})
-}
-
 func listRepoBindings(taskDir string) ([]RepoBinding, error) {
 	meta, err := readReposMetadata(reposMetadataPath(taskDir))
 	if err != nil {
 		return nil, err
 	}
 	return meta.Repos, nil
-}
-
-func RemoveRepoCodeResult(taskDir, repoID string) error {
-	path := repoCodeResultPath(taskDir, repoID)
-	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
-		return err
-	}
-	return nil
-}
-
-func RemoveRepoCodeLog(taskDir, repoID string) error {
-	path := repoCodeLogPath(taskDir, repoID)
-	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
-		return err
-	}
-	return nil
 }
 
 func ResolveTaskRepo(taskDir, repoRoot, requestedRepoID string) (*RepoBinding, error) {

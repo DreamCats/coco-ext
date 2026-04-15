@@ -10,7 +10,7 @@ import (
 	"github.com/DreamCats/coco-ext/internal/config"
 )
 
-// disallowedTools 是 prd code 场景下需要禁用的内置工具列表。
+// disallowedTools 是需要禁用的内置工具列表。
 // 禁用后 agent 被迫以纯文本方式输出代码，不再调用工具导致卡死。
 var disallowedTools = []string{
 	"Read", "Edit", "Write", "Replace",
@@ -26,7 +26,7 @@ type RawGenerator struct {
 }
 
 // NewRaw 创建一个禁用所有工具的 RawGenerator。
-// 适用于 prd code 等需要结构化文本输出的场景。
+// 适用于需要结构化文本输出的场景。
 func NewRaw(repoPath string) (*RawGenerator, error) {
 	client := acp.NewClient(repoPath,
 		acp.WithServeFlags(&acp.ServeFlags{

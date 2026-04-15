@@ -505,7 +505,7 @@ func BuildPlanBody(task *TaskStatusReport, sections RefinedSections, findings Re
 
 	if assessment.Total > 6 {
 		b.WriteString("## 结论\n\n")
-		b.WriteString("- 当前需求被判定为复杂，暂不建议直接进入自动 codegen。\n")
+		b.WriteString("- 当前需求被判定为复杂，暂不建议直接进入自动实现阶段。\n")
 		b.WriteString("- 建议先人工拆分需求、补充上下文或补全 PRD 后再重新执行 `coco-ext prd plan`。\n\n")
 	} else {
 		b.WriteString("## 实现目标\n\n")
@@ -968,7 +968,7 @@ func MarkTaskFailed(taskDir string, now time.Time) error {
 	return updateTaskStatus(taskDir, TaskStatusFailed, now)
 }
 
-// ResetTaskToPlanned 将 task 状态回退为 planned（用于重新执行 prd code）。
+// ResetTaskToPlanned 将 task 状态回退为 planned。
 func ResetTaskToPlanned(taskDir string, now time.Time) error {
 	return updateTaskStatus(taskDir, TaskStatusPlanned, now)
 }

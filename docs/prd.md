@@ -123,7 +123,7 @@ kitex -module xxx rpc_idl/xxx.thrift
 ```markdown
 # 代码模式
 
-> 由 context init / update 自动提取，人工确认后供 prd-assess/prd-codegen 参考
+> 由 context init / update 自动提取，人工确认后供后续 PRD 调研与方案制定参考
 > 技术栈：Go + Hertz（HTTP API）+ Kitex（RPC）
 > 最后更新：YYYY-MM-DD
 

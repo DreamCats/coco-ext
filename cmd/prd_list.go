@@ -20,13 +20,13 @@ var (
 var prdListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "列出所有 prd task",
-	Long:  "扫描 .livecoding/tasks/ 下所有 task，按时间排序展示概要信息。支持 --status 过滤、--json 结构化输出。",
+	Long:  "扫描全局 tasks 目录下所有 task，按时间排序展示概要信息。支持 --status 过滤、--json 结构化输出。",
 	RunE:  runPRDList,
 }
 
 func init() {
 	prdCmd.AddCommand(prdListCmd)
-	prdListCmd.Flags().StringVar(&prdListStatus, "status", "", "按状态过滤（initialized/refined/planned/coded/archived）")
+	prdListCmd.Flags().StringVar(&prdListStatus, "status", "", "按状态过滤（initialized/refined/planned/failed/coding/partially_coded/coded/archived）")
 	prdListCmd.Flags().BoolVar(&prdListJSONOnly, "json", false, "输出 JSON 格式（供 LLM 消费）")
 }
 

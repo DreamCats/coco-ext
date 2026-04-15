@@ -147,25 +147,14 @@ func suggestNextCommand(taskDir, taskID, status string, artifacts []ArtifactStat
 		return "plan 正在执行，请稍候刷新任务详情。"
 	case !hasDesign || !hasPlan:
 		return fmt.Sprintf("coco-ext prd plan --task %s", taskID)
-	case status == TaskStatusCoding || status == TaskStatusPartiallyCoded:
-		if nextRepo := suggestNextRepo(repos); nextRepo != "" {
-			return fmt.Sprintf("coco-ext prd code --task %s --repo %s", taskID, nextRepo)
-		}
-		return fmt.Sprintf("task 部分仓库已进入 code 阶段，请查看 `coco-ext prd status --task %s` 中的 repo 状态后继续执行 `coco-ext prd code --task %s --repo <repo_id>`", taskID, taskID)
 	case status == TaskStatusPlanned:
-		return fmt.Sprintf("coco-ext prd code --task %s", taskID)
+		return "plan 已完成；后续代码实现命令已移除，请转到迁移后的实现流程。"
 	case status == TaskStatusFailed:
-		if nextRepo := suggestNextRepo(repos); nextRepo != "" && hasDesign && hasPlan {
-			return fmt.Sprintf("coco-ext prd code --task %s --repo %s", taskID, nextRepo)
-		}
-		if hasDesign && hasPlan {
-			return fmt.Sprintf("coco-ext prd code --task %s", taskID)
-		}
-		return fmt.Sprintf("coco-ext prd plan --task %s", taskID)
-	case status == TaskStatusCoded:
-		return fmt.Sprintf("coco-ext prd archive --task %s", taskID)
+		return "task 处于历史失败状态；请人工检查既有 code 产物，或重新执行新的实现流程。"
+	case status == TaskStatusCoding || status == TaskStatusPartiallyCoded || status == TaskStatusCoded:
+		return "task 包含历史 code 阶段产物；当前 CLI 仅保留只读兼容，请转到迁移后的实现流程。"
 	case status == TaskStatusArchived:
-		return "task 已归档，无后续操作。"
+		return "task 已归档（历史状态），无后续 CLI 操作。"
 	default:
 		return "当前 task 无明确下一步，建议人工确认状态。"
 	}
@@ -238,7 +227,7 @@ func suggestNextRepo(repos *ReposMetadata) string {
 
 	for _, repo := range repos.Repos {
 		switch repo.Status {
-		case TaskStatusPlanned, TaskStatusInitialized, TaskStatusRefined, "", "pending", TaskStatusFailed:
+		case TaskStatusPlanned, TaskStatusInitialized, TaskStatusRefined, "", "pending":
 			return repo.ID
 		}
 	}
@@ -253,12 +242,12 @@ func buildRepoNextActions(taskID string, repos *ReposMetadata) []string {
 	actions := make([]string, 0, len(repos.Repos))
 	for _, repo := range repos.Repos {
 		switch repo.Status {
-		case TaskStatusInitialized, TaskStatusRefined, TaskStatusPlanned, "", "pending", TaskStatusFailed:
-			actions = append(actions, fmt.Sprintf("%s: coco-ext prd code --task %s --repo %s", repo.ID, taskID, repo.ID))
-		case TaskStatusCoding:
-			actions = append(actions, fmt.Sprintf("%s: 当前处于 coding，可等待完成或执行 reset -> coco-ext prd reset --task %s --repo %s", repo.ID, taskID, repo.ID))
+		case TaskStatusInitialized, TaskStatusRefined, TaskStatusPlanned, "", "pending":
+			actions = append(actions, fmt.Sprintf("%s: 该 repo 的 plan 已就绪，后续请转到迁移后的实现流程", repo.ID))
+		case TaskStatusCoding, TaskStatusPartiallyCoded, TaskStatusFailed:
+			actions = append(actions, fmt.Sprintf("%s: 存在历史 code 阶段状态，当前 CLI 仅保留只读兼容", repo.ID))
 		case TaskStatusCoded:
-			actions = append(actions, fmt.Sprintf("%s: coco-ext prd archive --task %s --repo %s", repo.ID, taskID, repo.ID))
+			actions = append(actions, fmt.Sprintf("%s: 已有历史 code 结果，当前 CLI 不再提供 archive/reset/code 操作", repo.ID))
 		}
 	}
 	return actions

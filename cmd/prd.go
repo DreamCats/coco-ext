@@ -4,8 +4,8 @@ import "github.com/spf13/cobra"
 
 var prdCmd = &cobra.Command{
 	Use:   "prd",
-	Short: "PRD -> MR 任务流相关命令",
-	Long:  "管理 PRD refine、评估、编码、MR 等任务流产物。",
+	Short: "PRD refine/plan 任务流相关命令",
+	Long:  "管理 PRD refine、plan、状态查看等任务流产物。",
 }
 
 func init() {

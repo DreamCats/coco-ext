@@ -30,9 +30,6 @@ cd coco-ext
 make install
 
 # 如果你直接在源码目录使用 go install .
-# 需要先构建前端静态资源，再重新编译二进制
-cd web && npm run build
-cd ..
 go install .
 ```
 
@@ -50,16 +47,12 @@ coco-ext context status
 
 # 2. PRD 工作流
 cd /path/to/your/repo
-coco-ext prd run -i "做一个支持飞书链接导入的 PRD 工作流"   # 一键：refine → plan → code
-coco-ext prd run -i "跨仓需求" --repo /path/to/repo-b        # 多仓：默认只自动推进当前 repo 的 code
-coco-ext prd run -i "跨仓需求" --repo /path/to/repo-b --all-repos
+coco-ext prd run -i "做一个支持飞书链接导入的 PRD 工作流"   # 一键：refine → plan
+coco-ext prd run -i "跨仓需求" --repo /path/to/repo-b        # 多仓：统一生成跨仓 plan
 coco-ext prd refine --prd "做一个支持飞书链接导入的 PRD 工作流"
 coco-ext prd refine --prd https://bytedance.larkoffice.com/docx/xxx
 coco-ext prd status
 coco-ext prd plan
-coco-ext prd code           # 在隔离 worktree 中跑 agent，自主实现代码（编译失败自动重试）
-coco-ext prd code --all-repos
-coco-ext prd reset          # 不满意？清理 worktree/分支后重新 code
 coco-ext prd list
 
 # 3. Code Review
@@ -105,16 +98,7 @@ coco-ext daemon status      # 查看 daemon 状态
 coco-ext daemon start       # 前台启动 daemon（阻塞）
 coco-ext daemon start -d    # 后台启动 daemon
 coco-ext daemon stop        # 停止 daemon
-
-# 11. 本地 Web UI
-coco-ext ui serve           # 启动 Web UI（默认 http://127.0.0.1:4317）
-coco-ext ui serve --port 4318
 ```
-
-Web UI 当前支持在 task 详情页直接查看并编辑 `prd.source.md`、`prd-refined.md`、`design.md`、`plan.md`。
-- 编辑 `prd.source.md` 后会清理下游 refined/design/plan 产物，并回退到 `initialized`
-- 编辑 `prd-refined.md` 后会清理 design/plan 产物，并回退到 `refined`
-- 编辑 `design.md` / `plan.md` 仅允许在 `planned` 状态下进行
 
 ## PRD 工作流
 
@@ -124,13 +108,12 @@ Web UI 当前支持在 task 详情页直接查看并编辑 `prd.source.md`、`pr
 coco-ext prd run -i "需求描述或飞书链接"
 ```
 
-自动执行 refine → plan → code 三步，task-id 自动生成，全流程流式输出，结尾输出汇总表：
+自动执行 refine → plan 两步，task-id 自动生成，全流程流式输出，结尾输出汇总表：
 
 ```
 ━━━ 汇总 ━━━
    ✓ refine   30s
    ✓ plan     4m12s
-   ✓ code     8m3s (5 文件, commit abc1234)
 ```
 
 ### 分步执行
@@ -138,30 +121,14 @@ coco-ext prd run -i "需求描述或飞书链接"
 - `coco-ext prd refine --prd <文本|本地文件|飞书链接>` 为需求生成全局 task 目录，默认落盘到 `~/.config/coco-ext/tasks/<task-id>/`
 - `coco-ext prd status` 查看最近 task 的当前状态、缺失产物和下一步命令
 - `coco-ext prd plan` 启动只读 explorer agent 调研仓库，生成 `design.md` 与 `plan.md`（失败回退本地模板）
-- `coco-ext prd code` 会先创建隔离 worktree，同步 task/context 产物后启动 yolo agent 自主实现代码；默认分支名为 `prd_<task_id>`，支持通过 `--repo <repo_id>` 更新多仓 task 中某个仓库的 code 结果，也支持通过 `--all-repos` 按绑定顺序顺序执行所有 repo；多仓 task 下默认不传 `--repo` 会要求显式指定
-- `coco-ext prd reset` 不满意时重置；不传 `--repo` 时重置整个 task，传 `--repo` 时只重置指定仓库
 - `coco-ext prd list` 列出所有 task
-- `coco-ext prd archive` 不传 `--repo` 时归档整个 task，传 `--repo` 时只归档指定仓库
-
-### Worktree 目录
-
-- `prd code` / `prd run` 的 code 阶段默认会在主仓库同级目录创建隔离 worktree
-- `prd run --all-repos` 会按 task 绑定顺序逐个 repo 执行 code，失败即停
-- `prd run` 在多仓 task 下默认只自动推进当前 repo；其他 repo 会在汇总中给出后续命令
-- 如果 `plan` 判定复杂度为“复杂”，`prd run` 会停止在 plan 阶段，不自动进入 code
-- 路径形态：`<repo-parent>/.coco-ext-worktree/<repo-name>-<repo-hash>/<task-id>`
-- 这样可以尽量保留与主仓库相近的目录结构，提高 Go 编译、`replace ../xxx` 和同级依赖场景下的兼容性
-- `.coco-ext-worktree/` 位于仓库外部，不属于当前仓库工作区，所以通常不需要修改当前仓库的 `.gitignore`
-- `coco-ext prd reset` / `coco-ext prd archive` 会清理对应 task 的 worktree
+- 历史 task 中若存在 `coding/coded/archived/failed` 等旧状态，CLI 仍保持只读兼容，但不再提供 `prd code/reset/archive` 操作
 
 ### Agent 模式
 
-`prd plan` 和 `prd code` 基于 coco-acp-sdk 的 agent 能力：
+`prd plan` 基于 coco-acp-sdk 的 agent 能力：
 - **Explorer agent**（只读）：调研仓库代码，生成技术方案和实施计划
-- **Code agent**（yolo）：自主读写文件、编译验证、输出结构化结果（build/files/summary）
 - 渐进式披露：context 文件只展示章节目录，agent 按需读取
-- 结构化输出：code agent 输出 `=== CODE RESULT ===` 块，精确报告编译状态和改动文件
-- 编译失败自动重试：把错误喂给 agent 修复，最多重试 `--max-retries` 轮
 
 ## Review 产物
 
@@ -244,49 +211,6 @@ coco-ext prd run -i "需求描述或飞书链接"
 
 > coco daemon 会在首次调用时自动拉起，无需手动启动。
 > 更新 hook 行为后，请在目标仓库重新执行一次 `coco-ext install`。
-
-## Web UI
-
-- `coco-ext ui serve` 会在当前仓库启动本地 HTTP 服务，默认托管内嵌静态前端资源
-- API 入口：
-  - `GET /api/tasks`
-  - `GET /api/tasks/:task_id`
-  - `GET /api/workspace`
-- Web UI 当前已支持：
-  - `Create Task`：通过弹层创建全局 task，后台异步执行 refine，前端轮询 `initialized -> refined`
-  - `Start Plan`：在 `refined` 状态下触发后台异步 plan，前端轮询 `planning -> planned`
-  - `Start Code`：单 repo task 可直接从详情页启动；多 repo task 可在仓库卡片上按 repo 逐个启动后台异步 code
-  - `Code Remaining`：多 repo task 可一键按顺序推进剩余仓库，失败即停
-  - `Reset Code`：单 repo task 可直接回退；多 repo task 可在仓库卡片上按 repo 回退 code 结果，清理分支/worktree/diff
-  - `Archive Code`：单 repo task 可直接归档；多 repo task 可在仓库卡片上按 repo 归档结果并清理分支/worktree
-  - repo 级结果查看：多 repo task 可按仓库切换 `code.log` 和 `code-result.json`
-  - `Delete Task`：仅允许删除未进入 code 的 task（`initialized/refined/planned/failed`）
-  - repo 选择：支持 `Recent Repos` 和 `Remote Browser`
-- Web UI 创建 task 时：
-  - 不会自动把当前启动 `ui serve` 的仓库注入 repo 列表
-  - 必须显式选择至少一个 repo
-  - `Remote Browser` 浏览和校验的是运行 `coco-ext ui serve` 的那台机器上的文件系统
-  - 当前 `Reset Code` 只支持 `coded/failed` 状态，暂不支持在 `coding` 中途直接中断
-- 扩展 API：
-  - `POST /api/tasks`
-  - `POST /api/tasks/:task_id/plan`
-  - `POST /api/tasks/:task_id/code`（多 repo task 时支持 `?repo=<repo_id>`）
-  - `POST /api/tasks/:task_id/code-all`
-  - `POST /api/tasks/:task_id/reset`（多 repo task 时支持 `?repo=<repo_id>`）
-  - `POST /api/tasks/:task_id/archive`（多 repo task 时支持 `?repo=<repo_id>`）
-  - `GET /api/tasks/:task_id/artifact?name=...&repo=...`
-  - `DELETE /api/tasks/:task_id`
-  - `GET /api/repos/recent`
-  - `POST /api/repos/validate`
-  - `GET /api/fs/roots`
-  - `GET /api/fs/list?path=...`
-- 正式安装态默认使用内嵌静态前端资源，因此同事可直接通过 `go install` 安装后运行 `coco-ext ui serve`
-- 开发态可通过 `--web-dir` 覆盖静态目录
-- 从源码构建时，`make build` / `make install` / `make build-all` 会自动先执行 `web` 前端构建，再把静态资源内嵌进二进制
-- 开发期可以：
-  1. 在仓库根目录执行 `coco-ext ui serve`
-  2. 在 [`web/`](/Users/bytedance/go/src/coco-ext/web) 目录执行 `npm run dev`
-  3. 通过 Vite 代理访问 `/api`
 
 ## 开发
 
