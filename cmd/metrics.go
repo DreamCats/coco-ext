@@ -305,12 +305,12 @@ func buildMetricsRecommendations(repoRoot string) []string {
 	}
 
 	if tasks, err := prd.ListTasks(repoRoot, ""); err != nil || len(tasks) == 0 {
-		recommendations = append(recommendations, "当前仓库还没有 prd task，建议先执行 `coco-ext prd refine`。")
+		recommendations = append(recommendations, "当前仓库还没有历史 task 产物，task 相关指标暂时为空。")
 	}
 
 	if len(recommendations) == 0 {
 		recommendations = append(recommendations,
-			"可以基于 `review/report.json` 和 `prd plan` 结果继续建设 metrics dashboard。",
+			"可以基于 `review/report.json` 和历史 task 产物继续建设 metrics dashboard。",
 			"可以进一步消费 submit/gcmsg 事件，完善 AI/fallback 成本统计。",
 		)
 	}
@@ -407,7 +407,7 @@ func renderMetrics(report metricsReport) {
 	}
 	fmt.Println()
 
-	color.Green("PRD")
+	color.Green("Task Artifacts")
 	color.Green("   total_tasks: %d", report.PRD.TotalTasks)
 	if report.PRD.LatestTaskID != "" {
 		color.Green("   latest_task: %s", report.PRD.LatestTaskID)

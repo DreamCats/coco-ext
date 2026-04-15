@@ -70,11 +70,6 @@ coco-ext review --async
 coco-ext lint
 coco-ext lint --async
 
-# PRD 工作流
-coco-ext prd run -i "需求描述"
-coco-ext prd refine --prd "需求描述"
-coco-ext prd plan
-coco-ext prd list
 ```
 
 ## 目录与架构
@@ -89,7 +84,7 @@ coco-ext prd list
 - [`internal/generator/`](/Users/bytedance/go/src/coco-ext/internal/generator)：连接 daemon，支持普通生成、agent 生成和 prompt 模板
 - [`internal/knowledge/`](/Users/bytedance/go/src/coco-ext/internal/knowledge)：`.livecoding/context/` 读写
 - [`internal/review/`](/Users/bytedance/go/src/coco-ext/internal/review)：facts → scope → release → impact → quality → summary 管线
-- [`internal/prd/`](/Users/bytedance/go/src/coco-ext/internal/prd)：refine / plan / status / list
+- [`internal/prd/`](/Users/bytedance/go/src/coco-ext/internal/prd)：历史 task 产物解析与兼容逻辑（供 metrics 等复用）
 - [`internal/lint/`](/Users/bytedance/go/src/coco-ext/internal/lint)：`golangci-lint` 执行与结果落盘
 - [`internal/git/`](/Users/bytedance/go/src/coco-ext/internal/git)：diff、branch、commit 等 git 封装
 - [`internal/metrics/`](/Users/bytedance/go/src/coco-ext/internal/metrics)：本地事件采集
@@ -105,9 +100,6 @@ coco-ext prd list
 - [`cmd/doctor.go`](/Users/bytedance/go/src/coco-ext/cmd/doctor.go)
 - [`cmd/install.go`](/Users/bytedance/go/src/coco-ext/cmd/install.go)
 - [`cmd/agents.go`](/Users/bytedance/go/src/coco-ext/cmd/agents.go)
-- [`cmd/prd_refine.go`](/Users/bytedance/go/src/coco-ext/cmd/prd_refine.go)
-- [`cmd/prd_plan.go`](/Users/bytedance/go/src/coco-ext/cmd/prd_plan.go)
-- [`cmd/prd_list.go`](/Users/bytedance/go/src/coco-ext/cmd/prd_list.go)
 
 ## 核心流程
 
@@ -138,15 +130,6 @@ coco-ext prd list
 - `push` 本质上包装 `git push`，成功后后台启动 `review --async`，并在可用时启动异步 lint
 - `push` 对 force push 有额外确认，除非显式传 `--yes`
 
-### PRD
-
-- `prd run -i ...` 一键执行 `refine -> plan`；支持通过重复 `--repo` 声明多仓 task，统一生成跨仓设计与计划
-- `prd refine` 支持文本、本地文件、飞书文档链接；飞书拉取走 [`internal/prd/lark.go`](/Users/bytedance/go/src/coco-ext/internal/prd/lark.go)，依赖 `lark-cli`
-- `prd plan` 默认使用只读 explorer agent 生成 `design.md` 和 `plan.md`
-- `prd refine` 当前支持通过重复 `--repo` 声明多仓 task 的关联仓库，task 主目录统一落在 `~/.config/coco-ext/tasks/`
-- `prd` task 当前统一存储在 `~/.config/coco-ext/tasks/` 下，不再写入仓库内 `.livecoding/tasks/`
-- `prd list` 支持状态过滤；历史 task 中若包含 `coding/partially_coded/coded/archived/failed` 等旧状态，CLI 只做只读兼容，不再提供 code/reset/archive 操作
-
 ### doctor / install / agents / daemon
 
 - `doctor` 当前检查项为 `repository/workspace/hooks/tooling/lint/skills/daemon/logs`
@@ -159,7 +142,7 @@ coco-ext prd list
 - `.livecoding/context/`：知识文件
 - `.livecoding/review/`：review 产物
 - `.livecoding/lint/`：lint 产物
-- `~/.config/coco-ext/tasks/`：PRD task 主目录（当前统一使用全局目录，不再写入仓库内 `.livecoding/tasks/`）
+- `~/.config/coco-ext/tasks/`：历史 task 主目录（用于兼容已有产物与 metrics 聚合）
 - `.livecoding/metrics/events.jsonl`：submit/gcmsg/review 等事件
 - `.livecoding/logs/`：后台 review / lint / gcmsg 日志
 - `.livecoding/changelog/`：commit 优化历史
@@ -188,8 +171,7 @@ scanner 当前会跳过：
 - 修改 Go 代码后，优先运行受影响包的 `go test`，或者对受影响命令执行定向 `go build`。
 - 不要删除或重置用户的 `.livecoding/` 产物，除非用户明确要求清理。
 - 修改 CLI 行为时，同时检查对应 README / AGENTS / help 文案是否需要同步。
-- 这个仓库大量依赖文件落盘和后台子进程；改动 review、lint、install、daemon、prd 流程时，要额外关注日志路径、权限位和异步行为。
-- `make build` / `make install` / `make build-all` 当前会自动先构建 `web` 前端静态资源，再把 UI embed 进 Go 二进制。
+- 这个仓库大量依赖文件落盘和后台子进程；改动 review、lint、install、daemon 流程时，要额外关注日志路径、权限位和异步行为。
 - 生成或修改 hook 时，保持 shell 脚本可直接执行，不要引入交互式依赖。
 
 <!-- coco-ext-agents:start -->

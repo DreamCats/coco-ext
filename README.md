@@ -1,12 +1,12 @@
 # coco-ext
 
-面向仓库的 AI 开发工作流工具箱。除了生成和维护 `.livecoding/context/` 业务上下文，还提供 PRD refine/plan、代码 review、提交辅助、push 包装和本地 metrics 聚合能力。
+面向仓库的 AI 开发工作流工具箱。除了生成和维护 `.livecoding/context/` 业务上下文，还提供代码 review、提交辅助、push 包装和本地 metrics 聚合能力。
 
 ## 为什么需要 coco-ext？
 
-团队仓库业务知识复杂度高，AI agent 对代码理解强但缺乏业务上下文；同时，PRD 落地、review、commit、push 等研发动作也缺少统一的仓库内工作流。
+团队仓库业务知识复杂度高，AI agent 对代码理解强但缺乏业务上下文；同时，review、commit、push 等研发动作也缺少统一的仓库内工作流。
 
-coco-ext 解决这个问题：自动沉淀仓库上下文 → 基于 PRD 生成 task 产物 → 对代码变更执行 review → 辅助 commit / push → 产出本地可观测 metrics。
+coco-ext 解决这个问题：自动沉淀仓库上下文 → 对代码变更执行 review → 辅助 commit / push → 产出本地可观测 metrics。
 
 ## 知识文件
 
@@ -45,90 +45,50 @@ coco-ext context query "讲解卡"
 coco-ext context query --file glossary.md "PopCard"
 coco-ext context status
 
-# 2. PRD 工作流
-cd /path/to/your/repo
-coco-ext prd run -i "做一个支持飞书链接导入的 PRD 工作流"   # 一键：refine → plan
-coco-ext prd run -i "跨仓需求" --repo /path/to/repo-b        # 多仓：统一生成跨仓 plan
-coco-ext prd refine --prd "做一个支持飞书链接导入的 PRD 工作流"
-coco-ext prd refine --prd https://bytedance.larkoffice.com/docx/xxx
-coco-ext prd status
-coco-ext prd plan
-coco-ext prd list
-
-# 3. Code Review
+# 2. Code Review
 coco-ext review              # 审查最后一个 commit
 coco-ext review --full       # 审查分支整体 diff
 coco-ext review --async      # 后台启动 review，立即返回日志和报告目录
 coco-ext review --json       # 输出结构化 JSON，同时写入 report.md / *.json
 coco-ext review --json-only  # 仅输出 JSON，不打印过程日志
 
-# 4. Commit Message 生成
+# 3. Commit Message 生成
 coco-ext gcmsg              # 生成 message
 coco-ext gcmsg --amend      # 生成并覆盖上一个 commit
 coco-ext gcmsg --staged     # 基于暂存区 diff 生成 message
 coco-ext gcmsg --commit-msg-file .git/COMMIT_EDITMSG   # 写入 commit message 文件
 
-# 5. Push 包装命令
+# 4. Push 包装命令
 cd /path/to/your/repo
 coco-ext push              # 等价于 git push；成功后后台启动 review + lint
 coco-ext push origin main  # 透传 git push 参数
 
-# 6. Submit 工作流命令
+# 5. Submit 工作流命令
 cd /path/to/your/repo
 coco-ext submit                  # AI 优先生成 message，失败时自动本地兜底
 coco-ext submit "fix: 调整 hook"  # 若 message 足够规范，则直接使用
 
-# 7. 本地指标聚合
+# 6. 本地指标聚合
 cd /path/to/your/repo
 coco-ext metrics
 coco-ext metrics --json
 
-# 8. 代码风格检查（golangci-lint）
+# 7. 代码风格检查（golangci-lint）
 coco-ext lint              # 前台运行 lint
 coco-ext lint --async      # 后台异步运行
 coco-ext lint --json       # JSON 输出
 
-# 9. 安装钩子
+# 8. 安装钩子
 cd /path/to/your/repo
 coco-ext install            # 安装 commit-msg + pre-commit hook + 同步 skills + 生成 lint 配置
 coco-ext uninstall          # 卸载 hooks + skills（仅删除从 coco-ext 安装的部分）
 
-# 10. Daemon 管理
+# 9. Daemon 管理
 coco-ext daemon status      # 查看 daemon 状态
 coco-ext daemon start       # 前台启动 daemon（阻塞）
 coco-ext daemon start -d    # 后台启动 daemon
 coco-ext daemon stop        # 停止 daemon
 ```
-
-## PRD 工作流
-
-### 一键流水线
-
-```bash
-coco-ext prd run -i "需求描述或飞书链接"
-```
-
-自动执行 refine → plan 两步，task-id 自动生成，全流程流式输出，结尾输出汇总表：
-
-```
-━━━ 汇总 ━━━
-   ✓ refine   30s
-   ✓ plan     4m12s
-```
-
-### 分步执行
-
-- `coco-ext prd refine --prd <文本|本地文件|飞书链接>` 为需求生成全局 task 目录，默认落盘到 `~/.config/coco-ext/tasks/<task-id>/`
-- `coco-ext prd status` 查看最近 task 的当前状态、缺失产物和下一步命令
-- `coco-ext prd plan` 启动只读 explorer agent 调研仓库，生成 `design.md` 与 `plan.md`（失败回退本地模板）
-- `coco-ext prd list` 列出所有 task
-- 历史 task 中若存在 `coding/coded/archived/failed` 等旧状态，CLI 仍保持只读兼容，但不再提供 `prd code/reset/archive` 操作
-
-### Agent 模式
-
-`prd plan` 基于 coco-acp-sdk 的 agent 能力：
-- **Explorer agent**（只读）：调研仓库代码，生成技术方案和实施计划
-- 渐进式披露：context 文件只展示章节目录，agent 按需读取
 
 ## Review 产物
 
@@ -177,17 +137,16 @@ coco-ext prd run -i "需求描述或飞书链接"
 - `coco-ext metrics` 会聚合 `.livecoding/review`、`~/.config/coco-ext/tasks`、`.livecoding/metrics/events.jsonl`
 - 当前指标包含三类：
   - review 运行次数、评级分布、P0/P1/P2 与 finding 总量
-  - prd task 数量、状态分布、来源类型分布、plan complexity 分布
+  - 历史 task 数量、状态分布、来源类型分布、plan complexity 分布
   - submit / gcmsg 成功率、message source 分布、最近事件时间
 - `coco-ext metrics --json` 适合接脚本或后续 dashboard
 
 ## 内置 Skills
 
-`coco-ext` 二进制内置了 skills 资源，执行 `coco-ext install` 时会直接同步到 `~/.trae/skills/`。当前内置 6 个 skill：
+`coco-ext` 二进制内置了 skills 资源，执行 `coco-ext install` 时会直接同步到 `~/.trae/skills/`。当前内置 5 个 skill：
 
 - `coco-repo-context`：初始化、更新、查询 `.livecoding/context/`
 - `coco-repo-setup`：安装/卸载 hooks 与同步 repo 内置 skills
-- `coco-prd`：执行和排查 PRD 工作流，覆盖 refine / plan / code / reset / archive
 - `coco-review`：手动补跑 review、查看异步日志和报告
 - `coco-commit`：生成或排查 commit message，理解 hook 与兜底策略
 - `coco-submit`：基于 staged 变更自动生成 message、commit 并 push
@@ -226,7 +185,7 @@ make install        # 编译并安装到 ~/.local/bin/
 ```
 coco-ext/
 ├── main.go                  # 入口
-├── cmd/                     # CLI 命令：context / prd / review / gcmsg / push / submit / lint / metrics / daemon / install
+├── cmd/                     # CLI 命令：context / review / gcmsg / push / submit / lint / metrics / daemon / install
 ├── internal/
 │   ├── config/              # 默认配置与超时
 │   ├── generator/           # 调 coco daemon / AI 生成内容
@@ -234,7 +193,7 @@ coco-ext/
 │   ├── knowledge/           # .livecoding/context/ 文件读写
 │   ├── lint/                # golangci-lint 执行与结果写入
 │   ├── metrics/             # 本地事件采集
-│   ├── prd/                 # PRD refine / status / plan 产物生成
+│   ├── prd/                 # 历史 task 产物解析与兼容逻辑（供 metrics 等复用）
 │   ├── review/              # review facts/scope/release/impact/quality 管线
 │   └── scanner/             # 仓库扫描（目录树、Go 类型、IDL 文件）
 └── docs/                    # PRD、协议文档、技术设计
